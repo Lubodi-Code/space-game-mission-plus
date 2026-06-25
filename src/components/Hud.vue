@@ -1,18 +1,14 @@
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { gameState } from '../game/gameState.js'
 import { bus } from '../game/bus.js'
-import { STRUCTURES } from '../game/constants.js'
+import { STRUCTURES, SPEED } from '../game/constants.js'
 import { goToLobby } from '../game/appState.js'
 
 const structures = STRUCTURES
 
-const speeds = [
-  { label: 'Pausa', value: 0 },
-  { label: 'Lenta', value: 0.5 },
-  { label: 'Normal', value: 1 },
-  { label: 'Rápida', value: 2 },
-]
+const speedLabels = ['Pausa', 'Lenta', 'Normal', 'Rápida']
+const speeds = SPEED.steps.map((v, i) => ({ label: speedLabels[i] || v, value: v }))
 
 function setSpeed(v) {
   bus.emit('speed', v)
@@ -45,9 +41,51 @@ const waveStatus = computed(() => {
   return { kind: 'active', text: `Oleada ${gameState.wave} · enemigos: ${gameState.enemiesAlive}` }
 })
 
+// Core damage vignette flash.
+const vignetteActive = ref(false)
+let vignetteTimer = null
+watch(() => gameState.coreHp, (newVal, oldVal) => {
+  if (newVal < oldVal) {
+    vignetteActive.value = true
+    if (vignetteTimer) clearTimeout(vignetteTimer)
+    vignetteTimer = setTimeout(() => { vignetteActive.value = false }, 250)
+  }
+})
+
+// Wave banner.
+const waveBanner = ref(null)
+let waveBannerTimer = null
+watch(() => gameState.wave, (newVal, oldVal) => {
+  if (newVal > 0) {
+    if (waveBannerTimer) clearTimeout(waveBannerTimer)
+    const isBoss = gameState.bossWave
+    const text = isBoss ? `⚠ OLEADA ${newVal} — JEFE` : `OLEADA ${newVal}`
+    waveBanner.value = { text, isBoss }
+    waveBannerTimer = setTimeout(() => { waveBanner.value = null }, 1800)
+  }
+})
+
+// Tooltip state.
+const hoveredStructure = ref(null)
+const tooltipPos = ref({ x: 0, y: 0 })
+function showTooltip(s, event) {
+  hoveredStructure.value = s
+  const rect = event.target.closest('button').getBoundingClientRect()
+  tooltipPos.value = { x: rect.left + rect.width / 2, y: rect.top - 8 }
+}
+function hideTooltip() {
+  hoveredStructure.value = null
+}
+const tooltipStyle = computed(() => {
+  if (!hoveredStructure.value) return {}
+  return {
+    left: tooltipPos.value.x + 'px',
+    top: tooltipPos.value.y + 'px',
+  }
+})
+
 function pick(s) {
   if (gameState.minerals < s.cost) return
-  // Toggle off if re-clicking the active tool.
   if (gameState.activeBuild === s.key) bus.emit('cancel')
   else bus.emit('build', s.key)
 }
@@ -167,6 +205,27 @@ function restart() {
       ⏸ PAUSA
     </div>
 
+    <!-- Core damage vignette -->
+    <div
+      v-if="vignetteActive"
+      class="absolute inset-0 pointer-events-none"
+      style="background: radial-gradient(ellipse at center, transparent 50%, rgba(255,0,0,0.3) 100%); transition: opacity 0.25s;"
+    ></div>
+
+    <!-- Wave / Boss banner -->
+    <div
+      v-if="waveBanner"
+      class="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+    >
+      <div
+        class="px-8 py-3 rounded-xl text-2xl font-bold tracking-wider text-center"
+        :class="waveBanner.isBoss ? 'bg-red-900/40 text-red-300 ring-2 ring-red-500/60' : 'bg-cyan-900/40 text-cyan-200 ring-2 ring-cyan-400/40'"
+        style="text-shadow: 0 0 20px currentColor; animation: fadeInOut 1.8s ease-out;"
+      >
+        {{ waveBanner.text }}
+      </div>
+    </div>
+
     <!-- Placement hint -->
     <div
       v-if="activeLabel"
@@ -190,7 +249,9 @@ function restart() {
           'build-btn--active': gameState.activeBuild === s.key,
           'build-btn--disabled': gameState.minerals < s.cost,
         }"
-        :title="`${s.label} — ${s.cost} min`"
+        @mouseenter="showTooltip(s, $event)"
+        @mousemove="(e) => { tooltipPos.x = e.clientX; tooltipPos.y = e.clientY - 8 }"
+        @mouseleave="hideTooltip"
         @click="pick(s)"
       >
         <span class="text-2xl leading-none" :style="{ color: s.css }">{{ s.glyph }}</span>
@@ -200,11 +261,52 @@ function restart() {
         </span>
       </button>
     </div>
+
+    <!-- Tooltip -->
+    <div
+      v-if="hoveredStructure"
+      class="fixed z-50 pointer-events-none px-3 py-2 rounded-lg bg-[#0a0f1c]/95 ring-1 ring-cyan-400/30 text-xs
+             text-cyan-100 shadow-lg"
+      :style="{ left: tooltipPos.x + 'px', top: tooltipPos.y + 'px', transform: 'translate(-50%, -100%)' }"
+    >
+      <div class="font-bold text-sm mb-1" :style="{ color: hoveredStructure.css }">{{ hoveredStructure.label }}</div>
+      <div class="text-cyan-200/70 mb-1">{{ hoveredStructure.desc }}</div>
+      <div class="text-cyan-300/50 space-y-0.5">
+        <div v-if="hoveredStructure.role === 'turret' || hoveredStructure.role === 'missile'">
+          Daño: {{ hoveredStructure.damage }} · Alcance: {{ hoveredStructure.atkRange }}
+        </div>
+        <div v-if="hoveredStructure.role === 'turret'">
+          Velocidad: {{ (1000 / hoveredStructure.cooldown).toFixed(1) }}/s
+        </div>
+        <div v-if="hoveredStructure.role === 'missile'">
+          Velocidad: {{ (1000 / hoveredStructure.cooldown).toFixed(1) }}/s · Área: {{ hoveredStructure.splash }}
+        </div>
+        <div v-if="hoveredStructure.role === 'collector'">
+          Tasa: {{ hoveredStructure.rate }}/s · Rango mina: {{ hoveredStructure.miningRange }}
+        </div>
+        <div v-if="hoveredStructure.role === 'battery'">
+          Cap extra: {{ hoveredStructure.capBonus }}
+        </div>
+        <div v-if="hoveredStructure.role === 'healer'">
+          Cura: {{ hoveredStructure.healRate }}/s · Esferas: {{ hoveredStructure.maxSpheres }}
+        </div>
+        <div v-if="hoveredStructure.role === 'relay'">
+          Alcance red: {{ hoveredStructure.range }}
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 @reference 'tailwindcss';
+
+@keyframes fadeInOut {
+  0% { opacity: 0; transform: translateY(8px); }
+  15% { opacity: 1; transform: translateY(0); }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+}
 
 .hud-btn {
   @apply px-3 py-1 text-xs rounded-md bg-white/5 ring-1 ring-cyan-400/20

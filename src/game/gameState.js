@@ -1,13 +1,13 @@
 import { reactive } from 'vue'
-import { STARTING_MINERALS } from './constants.js'
+import { appState, DIFFICULTY } from './appState.js'
 
 /**
  * Shared reactive state bridge between Phaser and the Vue HUD.
  * Phaser scenes mutate these fields; Vue components read them reactively.
  */
 export const gameState = reactive({
-  minerals: STARTING_MINERALS,
-  mineralsCap: 1000,
+  minerals: 200,
+  mineralsCap: 700,
   energy: 100,
   energyMax: 100,
   wave: 0,
@@ -20,6 +20,7 @@ export const gameState = reactive({
   nextWaveIn: 0, // seconds until the next wave (0 = wave in progress)
   enemiesAlive: 0,
   speed: 1, // game-speed multiplier: 0 paused, 0.5 slow, 1 normal, 2 fast
+  bossWave: false,
 })
 
 if (import.meta.env.DEV && typeof window !== 'undefined') {
@@ -27,9 +28,13 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 }
 
 export function resetGameState() {
+  const diffKey = appState.difficulty || 'normal'
+  const diff = DIFFICULTY[diffKey] || DIFFICULTY.normal
+  const startMinerals = diff.startMinerals ?? 200
+
   Object.assign(gameState, {
-    minerals: STARTING_MINERALS,
-    mineralsCap: 1000,
+    minerals: startMinerals,
+    mineralsCap: 700,
     energy: 100,
     energyMax: 100,
     wave: 0,
@@ -42,5 +47,6 @@ export function resetGameState() {
     nextWaveIn: 0,
     enemiesAlive: 0,
     speed: 1,
+    bossWave: false,
   })
 }

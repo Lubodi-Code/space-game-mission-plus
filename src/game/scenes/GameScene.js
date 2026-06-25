@@ -10,12 +10,17 @@ import {
   WAVE_TOTAL,
   INTERMISSION_MS,
   FIRST_WAVE_MS,
+  BUILD,
+  COMBAT,
+  FX,
+  METEOR,
+  ENEMY,
+  STARFIELD,
 } from '../constants.js'
 
 const MINERAL_GREEN = 0x49e07a
 const LINK_ON = 0x6cc8ff
 const LINK_OFF = 0x37506a
-const LASER_TTL = 90 // ms a laser beam stays drawn
 
 /**
  * GameScene: deep-space background, the player's Core, and the build/energy
@@ -73,7 +78,12 @@ export class GameScene extends Phaser.Scene {
   setupInput() {
     this.input.mouse?.disableContextMenu()
 
-    this.input.on('pointermove', (p) => this.updateGhost(p.x, p.y))
+    this.rangePreview = this.add.graphics().setDepth(5).setVisible(false)
+
+    this.input.on('pointermove', (p) => {
+      this.updateGhost(p.x, p.y)
+      this.updateRangePreview(p.x, p.y)
+    })
     this.input.on('pointerdown', (p) => {
       if (p.rightButtonDown()) {
         this.cancelPlacement()
@@ -90,6 +100,24 @@ export class GameScene extends Phaser.Scene {
       bus.on('restart', () => this.scene.restart()),
       bus.on('speed', (v) => this.setSpeed(v)),
     ]
+  }
+
+  updateRangePreview(x, y) {
+    const g = this.rangePreview
+    g.clear()
+    // Find hovered structure.
+    const hovered = this.structures.find((s) => {
+      if (s.isCore) return false
+      const d = Phaser.Math.Distance.Between(x, y, s.x, s.y)
+      return d <= Math.max(s.radius, 20)
+    })
+    if (hovered && (hovered.role === 'turret' || hovered.role === 'missile')) {
+      g.lineStyle(1, 0xffffff, 0.15)
+      g.strokeCircle(hovered.x, hovered.y, hovered.def.atkRange || 0)
+      g.setVisible(true)
+    } else {
+      g.setVisible(false)
+    }
   }
 
   // Game-speed multiplier. 0 = paused. Also scales Phaser tweens & timers so
@@ -128,22 +156,59 @@ export class GameScene extends Phaser.Scene {
     const def = structureByKey(this.placementKey)
     if (!def) return
     if (gameState.minerals < def.cost) return
-    if (!this.canConnectAt(x, y, def)) return
-    if (this.overlapsExisting(x, y)) return
+    if (!this.canConnectAt(x, y, def)) {
+      this.flashPlacementFeedback(false)
+      return
+    }
+    if (this.overlapsExisting(x, y)) {
+      this.flashPlacementFeedback(false)
+      return
+    }
 
     gameState.minerals -= def.cost
     if (def.role === 'battery') gameState.mineralsCap += def.capBonus
 
     this.addStructure(def, x, y)
     this.recomputeNetwork()
+    this.flashPlacementFeedback(true, x, y, def)
 
     // Stay in placement mode for rapid building; exit if now unaffordable.
     if (gameState.minerals < def.cost) this.cancelPlacement()
     else this.updateGhost(x, y)
   }
 
+  flashPlacementFeedback(success, x, y, def) {
+    if (success) {
+      // Show a brief green pulse circle at the placement location.
+      const feedback = this.add.graphics().setDepth(35)
+      feedback.lineStyle(2, 0x49e07a, 0.8)
+      feedback.strokeCircle(x, y, def ? def.size * 1.5 : 20)
+      this.tweens.add({
+        targets: feedback,
+        alpha: 0,
+        scale: 1.6,
+        duration: 300,
+        ease: 'Quad.out',
+        onComplete: () => feedback.destroy(),
+      })
+      this.spawnFloatingText(x, y - 20, `-${def.cost}`, '#ff5566')
+    } else {
+      // Flash the ghost red briefly.
+      const ghostColor = 0xff5566
+      const g = this.ghost
+      const px = this.input.activePointer.x
+      const py = this.input.activePointer.y
+      g.clear()
+      g.lineStyle(2, ghostColor, 0.8)
+      g.strokeCircle(px, py, 20)
+      this.time.delayedCall(200, () => {
+        if (this.placementKey) this.updateGhost(this.input.activePointer.x, this.input.activePointer.y)
+      })
+    }
+  }
+
   overlapsExisting(x, y) {
-    return this.structures.some((s) => Phaser.Math.Distance.Between(x, y, s.x, s.y) < 34)
+    return this.structures.some((s) => Phaser.Math.Distance.Between(x, y, s.x, s.y) < BUILD.overlapRadius)
   }
 
   // ------------------------------------------------------------ structures
@@ -224,10 +289,9 @@ export class GameScene extends Phaser.Scene {
   createMeteorites() {
     const cx = this.scale.width / 2
     const cy = this.scale.height / 2
-    const count = 12
-    for (let i = 0; i < count; i++) {
-      const angle = (i / count) * Math.PI * 2 + Phaser.Math.FloatBetween(-0.25, 0.25)
-      const dist = Phaser.Math.Between(150, 340)
+    for (let i = 0; i < METEOR.count; i++) {
+      const angle = (i / METEOR.count) * Math.PI * 2 + Phaser.Math.FloatBetween(-0.25, 0.25)
+      const dist = Phaser.Math.Between(METEOR.minDist, METEOR.maxDist)
       const x = cx + Math.cos(angle) * dist
       const y = cy + Math.sin(angle) * dist
       this.createMeteorite(x, y)
@@ -267,7 +331,7 @@ export class GameScene extends Phaser.Scene {
     }
     container.add(g)
 
-    const meteor = { x, y, container, amount: Phaser.Math.Between(450, 750), depleted: false }
+    const meteor = { x, y, container, amount: Phaser.Math.Between(METEOR.amountMin, METEOR.amountMax), depleted: false }
     this.meteorites.push(meteor)
     return meteor
   }
@@ -481,7 +545,7 @@ export class GameScene extends Phaser.Scene {
 
   // ----------------------------------------------------------------- waves
   initWaves() {
-    this.waves = buildWaves()
+    this.waves = buildWaves(appState.difficulty)
     this.wave = { index: 0, queue: [], spawnTimer: 0, gap: 0, state: 'intermission', timer: FIRST_WAVE_MS }
     gameState.wave = 0
     gameState.waveTotal = WAVE_TOTAL
@@ -522,20 +586,36 @@ export class GameScene extends Phaser.Scene {
     w.gap = def.gap
     w.spawnTimer = 0
     w.state = 'spawning'
+    gameState.bossWave = def.hasBoss || false
   }
 
   spawnEnemy(type) {
     const def = ENEMY_TYPES[type]
     const cx = this.core.x
     const cy = this.core.y
-    const R = Math.max(this.scale.width, this.scale.height) * 0.75
+    const R = Math.max(this.scale.width, this.scale.height) * ENEMY.spawnRadiusFactor
     const angle = Phaser.Math.FloatBetween(0, Math.PI * 2)
     const x = cx + Math.cos(angle) * R
     const y = cy + Math.sin(angle) * R
 
+    // Spawn telegraph: brief warning marker at the spawn point.
+    const marker = this.add.graphics().setDepth(14)
+    marker.lineStyle(2, 0xff5566, 0.7)
+    marker.strokeCircle(x, y, 12)
+    marker.fillStyle(0xff5566, 0.15)
+    marker.fillCircle(x, y, 12)
+    this.tweens.add({
+      targets: marker,
+      alpha: 0,
+      scale: 1.8,
+      duration: 500,
+      ease: 'Quad.out',
+      onComplete: () => marker.destroy(),
+    })
+
     const mult = DIFFICULTY[appState.difficulty] || DIFFICULTY.normal
-    const hp = Math.round(def.hp * mult.hp)
-    const damage = def.damage * mult.damage
+    const hp = Math.round(def.hp * mult.hpMult)
+    const damage = def.damage * mult.dmgMult
 
     const sprite = this.add.image(x, y, `enemy_${type}`).setScale(def.scale).setDepth(15)
     const bar = this.add.graphics().setDepth(16)
@@ -554,7 +634,7 @@ export class GameScene extends Phaser.Scene {
       const t = e.target
       if (t) {
         const d = Phaser.Math.Distance.Between(e.x, e.y, t.x, t.y)
-        const reach = t.radius + 14
+        const reach = t.radius + COMBAT.attackReachOffset
         if (d > reach) {
           const inv = d > 0 ? 1 / d : 0
           e.x += (t.x - e.x) * inv * e.def.speed * dt
@@ -609,6 +689,7 @@ export class GameScene extends Phaser.Scene {
     if (s.isCore) {
       gameState.coreHp = Math.max(0, Math.ceil(s.hp))
       this.updateHpBar(s)
+      this.cameras.main.shake(120, 0.004)
       if (s.hp <= 0) this.gameOver()
       return
     }
@@ -624,6 +705,26 @@ export class GameScene extends Phaser.Scene {
     s.container.destroy()
     for (const e of this.enemies) if (e.target === s) e.target = null
     this.recomputeNetwork()
+  }
+
+  // -------------------------------------------------------------- floating text
+  spawnFloatingText(x, y, text, color) {
+    const t = this.add.text(x, y - 10, text, {
+      fontSize: '13px',
+      fontFamily: 'monospace',
+      color: color,
+      fontStyle: 'bold',
+      stroke: '#000',
+      strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(35)
+    this.tweens.add({
+      targets: t,
+      y: y - 10 - FX.floatRise,
+      alpha: 0,
+      duration: FX.floatTextMs,
+      ease: 'Quad.out',
+      onComplete: () => t.destroy(),
+    })
   }
 
   // ---------------------------------------------------------------- combat
@@ -657,7 +758,7 @@ export class GameScene extends Phaser.Scene {
 
   fireLaser(s, e) {
     this.damageEnemy(e, s.def.damage)
-    this.lasers.push({ x1: s.x, y1: s.y, x2: e.x, y2: e.y, ttl: LASER_TTL, color: s.def.color })
+    this.lasers.push({ x1: s.x, y1: s.y, x2: e.x, y2: e.y, ttl: COMBAT.laserTtlMs, color: s.def.color })
   }
 
   fireMissile(s, e) {
@@ -708,6 +809,7 @@ export class GameScene extends Phaser.Scene {
   killEnemy(e) {
     e.dead = true
     gameState.minerals = Math.min(gameState.mineralsCap, gameState.minerals + e.def.reward)
+    this.spawnFloatingText(e.x, e.y, `+${e.def.reward}`, '#49e07a')
     this.explosion(e.x, e.y, e.def.color, 14 * e.def.scale)
     e.sprite.destroy()
     e.bar.destroy()
@@ -795,7 +897,7 @@ export class GameScene extends Phaser.Scene {
       targets: g,
       scale: 2.2,
       alpha: 0,
-      duration: 360,
+      duration: FX.explosionMs,
       ease: 'Quad.out',
       onComplete: () => g.destroy(),
     })
@@ -811,7 +913,7 @@ export class GameScene extends Phaser.Scene {
         this.lasers.splice(i, 1)
         continue
       }
-      const a = l.ttl / LASER_TTL
+      const a = l.ttl / COMBAT.laserTtlMs
       g.lineStyle(2.5, l.color, a)
       g.beginPath()
       g.moveTo(l.x1, l.y1)
@@ -824,7 +926,8 @@ export class GameScene extends Phaser.Scene {
   gameOver() {
     if (gameState.status !== 'playing') return
     gameState.status = 'gameover'
-    if (this.core) this.explosion(this.core.x, this.core.y, 0xff5566, 120)
+    if (this.core) this.explosion(this.core.x, this.core.y, 0xff5566, FX.coreExplosionRadius)
+    this.cameras.main.shake(400, 0.012)
     this.cancelPlacement()
   }
 
@@ -836,11 +939,7 @@ export class GameScene extends Phaser.Scene {
 
   // --------------------------------------------------------------- starfield
   createStarfield() {
-    const layerSpecs = [
-      { count: 110, scale: [0.25, 0.5], alpha: 0.35, depth: -30 },
-      { count: 80, scale: [0.4, 0.8], alpha: 0.6, depth: -20 },
-      { count: 40, scale: [0.7, 1.3], alpha: 0.9, depth: -10 },
-    ]
+    const layerSpecs = STARFIELD.layers
     const w = this.scale.width
     const h = this.scale.height
 
