@@ -16,16 +16,27 @@ export const FX = {
   floatRise: 28
 }
 
+export const WORLD = { width: 2400, height: 1600 }
+
+export const CAMERA = {
+  minZoom: 0.5,
+  maxZoom: 1.4,
+  startZoom: 1,
+  zoomStep: 0.1,
+  keyPanSpeed: 700,
+  dragThreshold: 6,
+}
+
 export const METEOR = {
-  count: 12,
-  minDist: 150,
-  maxDist: 340,
+  count: 34,
+  minDist: 220,
+  maxDist: 1000,
   amountMin: 450,
   amountMax: 750
 }
 
 export const ENEMY = {
-  spawnRadiusFactor: 0.75
+  spawnRadiusFactor: 0.75,
 }
 
 export const STARFIELD = {

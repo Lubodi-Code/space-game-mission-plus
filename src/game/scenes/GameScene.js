@@ -14,8 +14,9 @@ import {
   COMBAT,
   FX,
   METEOR,
-  ENEMY,
   STARFIELD,
+  WORLD,
+  CAMERA,
 } from '../constants.js'
 
 const MINERAL_GREEN = 0x49e07a
@@ -34,8 +35,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   create() {
-    const { width, height } = this.scale
-
     // Reset all per-run state here (not the constructor) so scene.restart works.
     resetGameState()
     this.starLayers = []
@@ -48,6 +47,17 @@ export class GameScene extends Phaser.Scene {
     this.lasers = [] // transient laser-beam effects
     this.elapsedMs = 0
     this.placementKey = null
+    this._downX = 0
+    this._downY = 0
+    this._dragging = false
+    this._rightDown = false
+    this._pinching = false
+    this._lastPinchDist = 0
+
+    // Fixed world camera setup.
+    this.cam = this.cameras.main
+    this.cam.setBounds(0, 0, WORLD.width, WORLD.height)
+    this.cam.setZoom(CAMERA.startZoom)
 
     this.createStarfield()
 
@@ -58,8 +68,10 @@ export class GameScene extends Phaser.Scene {
     this.ghost = this.add.graphics().setDepth(40).setVisible(false)
 
     this.createMeteorites()
-    this.createCore(width / 2, height / 2)
+    this.createCore(WORLD.width / 2, WORLD.height / 2)
     this.recomputeNetwork()
+
+    this.cam.centerOn(this.core.x, this.core.y)
 
     this.setupInput()
     this.initWaves()
@@ -67,10 +79,20 @@ export class GameScene extends Phaser.Scene {
 
     gameState.status = 'playing'
 
+    // Minimap in the bottom-left corner.
+    const mmW = 160; const mmH = 106
+    this.minimap = this.cameras.add(10, this.scale.height - mmH - 10, mmW, mmH)
+      .setZoom(mmW / WORLD.width)
+      .setBounds(0, 0, WORLD.width, WORLD.height)
+      .setBackgroundColor(0x05070f)
+      .setName('minimap')
+    this.minimap.ignore([this.ghost, this.rangePreview])
+
     this.scale.on('resize', this.handleResize, this)
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off('resize', this.handleResize, this)
       this.busOff?.forEach((off) => off())
+      if (this.minimap) this.cameras.remove(this.minimap)
     })
   }
 
@@ -80,19 +102,95 @@ export class GameScene extends Phaser.Scene {
 
     this.rangePreview = this.add.graphics().setDepth(5).setVisible(false)
 
+    // Cache pan keys once (creating them every frame leaks listeners).
+    this.cursors = this.input.keyboard?.createCursorKeys()
+    this.wasdKeys = this.input.keyboard?.addKeys('W,A,S,D')
+
     this.input.on('pointermove', (p) => {
-      this.updateGhost(p.x, p.y)
-      this.updateRangePreview(p.x, p.y)
+      this.updateGhost(p.worldX, p.worldY)
+      this.updateRangePreview(p.worldX, p.worldY)
+
+      // Pan by drag when pointer is down.
+      if (p.isDown && !this._pinching) {
+        const dx = p.x - p.prevPosition.x
+        const dy = p.y - p.prevPosition.y
+        const dist = Math.hypot(p.x - this._downX, p.y - this._downY)
+        if (dist > CAMERA.dragThreshold) {
+          this._dragging = true
+          this.cam.scrollX -= dx / this.cam.zoom
+          this.cam.scrollY -= dy / this.cam.zoom
+        }
+      }
     })
+
     this.input.on('pointerdown', (p) => {
+      this._downX = p.x
+      this._downY = p.y
+      this._dragging = false
       if (p.rightButtonDown()) {
+        this._rightDown = true
         this.cancelPlacement()
         return
       }
-      if (this.placementKey) this.tryPlace(p.x, p.y)
+      this._rightDown = false
+    })
+
+    this.input.on('pointerup', (p) => {
+      if (!this._dragging && !this._rightDown && this.placementKey) {
+        this.tryPlace(p.worldX, p.worldY)
+      }
+      this._dragging = false
+      this._rightDown = false
+    })
+
+    this.input.on('wheel', (_pointer, _over, _dx, dy) => {
+      const step = dy > 0 ? -CAMERA.zoomStep : CAMERA.zoomStep
+      const newZoom = Phaser.Math.Clamp(this.cam.zoom + step, CAMERA.minZoom, CAMERA.maxZoom)
+      const pointer = this.input.activePointer
+      const wx = (pointer.x + this.cam.scrollX * this.cam.zoom) / this.cam.zoom
+      const wy = (pointer.y + this.cam.scrollY * this.cam.zoom) / this.cam.zoom
+      this.cam.setZoom(newZoom)
+      const newWx = (pointer.x + this.cam.scrollX * newZoom) / newZoom
+      const newWy = (pointer.y + this.cam.scrollY * newZoom) / newZoom
+      this.cam.scrollX += (wx - newWx) * newZoom
+      this.cam.scrollY += (wy - newWy) * newZoom
+    })
+
+    // Pinch zoom (multi-touch).
+    this.input.on('pointerdown', (p) => {
+      if (this.input.pointer1?.isDown && this.input.pointer2?.isDown) {
+        this._pinching = true
+        this._lastPinchDist = Phaser.Math.Distance.Between(
+          this.input.pointer1.x, this.input.pointer1.y,
+          this.input.pointer2.x, this.input.pointer2.y,
+        )
+      }
+    })
+
+    this.input.on('pointermove', () => {
+      if (this._pinching && this.input.pointer1?.isDown && this.input.pointer2?.isDown) {
+        const dist = Phaser.Math.Distance.Between(
+          this.input.pointer1.x, this.input.pointer1.y,
+          this.input.pointer2.x, this.input.pointer2.y,
+        )
+        const delta = dist - this._lastPinchDist
+        const step = delta * 0.005
+        this._lastPinchDist = dist
+        const newZoom = Phaser.Math.Clamp(this.cam.zoom + step, CAMERA.minZoom, CAMERA.maxZoom)
+        this.cam.setZoom(newZoom)
+      }
+    })
+
+    this.input.on('pointerup', () => {
+      if (!this.input.pointer1?.isDown || !this.input.pointer2?.isDown) {
+        this._pinching = false
+      }
     })
 
     this.input.keyboard?.on('keydown-ESC', () => this.cancelPlacement())
+    this.input.keyboard?.on('keydown-SPACE', () => {
+      if (this.core) this.cam.pan(this.core.x, this.core.y, 300, 'Sine.inOut')
+    })
 
     this.busOff = [
       bus.on('build', (key) => this.startPlacement(key)),
@@ -133,7 +231,7 @@ export class GameScene extends Phaser.Scene {
     this.placementKey = key
     gameState.activeBuild = key
     this.ghost.setVisible(true)
-    this.updateGhost(this.input.activePointer.x, this.input.activePointer.y)
+    this.updateGhost(this.input.activePointer.worldX, this.input.activePointer.worldY)
   }
 
   cancelPlacement() {
@@ -196,13 +294,13 @@ export class GameScene extends Phaser.Scene {
       // Flash the ghost red briefly.
       const ghostColor = 0xff5566
       const g = this.ghost
-      const px = this.input.activePointer.x
-      const py = this.input.activePointer.y
+      const px = this.input.activePointer.worldX
+      const py = this.input.activePointer.worldY
       g.clear()
       g.lineStyle(2, ghostColor, 0.8)
       g.strokeCircle(px, py, 20)
       this.time.delayedCall(200, () => {
-        if (this.placementKey) this.updateGhost(this.input.activePointer.x, this.input.activePointer.y)
+        if (this.placementKey) this.updateGhost(this.input.activePointer.worldX, this.input.activePointer.worldY)
       })
     }
   }
@@ -287,13 +385,14 @@ export class GameScene extends Phaser.Scene {
 
   // ------------------------------------------------------------- meteorites
   createMeteorites() {
-    const cx = this.scale.width / 2
-    const cy = this.scale.height / 2
+    const cx = WORLD.width / 2
+    const cy = WORLD.height / 2
+    const margin = 80
     for (let i = 0; i < METEOR.count; i++) {
-      const angle = (i / METEOR.count) * Math.PI * 2 + Phaser.Math.FloatBetween(-0.25, 0.25)
+      const angle = Phaser.Math.FloatBetween(0, Math.PI * 2)
       const dist = Phaser.Math.Between(METEOR.minDist, METEOR.maxDist)
-      const x = cx + Math.cos(angle) * dist
-      const y = cy + Math.sin(angle) * dist
+      const x = Phaser.Math.Clamp(cx + Math.cos(angle) * dist, margin, WORLD.width - margin)
+      const y = Phaser.Math.Clamp(cy + Math.sin(angle) * dist, margin, WORLD.height - margin)
       this.createMeteorite(x, y)
     }
   }
@@ -456,18 +555,18 @@ export class GameScene extends Phaser.Scene {
     g.strokePath()
   }
 
-  handleResize(gameSize) {
-    const core = this.structures.find((s) => s.isCore)
-    if (core) {
-      const dx = gameSize.width / 2 - core.x
-      const dy = gameSize.height / 2 - core.y
-      // Shift the whole base so the Core stays centered.
-      for (const s of this.structures) {
-        s.x += dx
-        s.y += dy
-        s.container.setPosition(s.x, s.y)
+  handleResize() {
+    if (this.core) {
+      const vp = this.cam.getWorldPoint(0, 0)
+      if (vp.x < 0 || vp.y < 0 || vp.x > WORLD.width || vp.y > WORLD.height) {
+        this.cam.centerOn(this.core.x, this.core.y)
       }
-      this.recomputeNetwork()
+    }
+    // Reposition minimap in bottom-left corner.
+    if (this.minimap) {
+      const mmW = this.minimap.width
+      const mmH = this.minimap.height
+      this.minimap.setPosition(10, this.scale.height - mmH - 10)
     }
   }
 
@@ -475,10 +574,20 @@ export class GameScene extends Phaser.Scene {
   update(time, delta) {
     const d = delta * (this.speed ?? 1) // simulation delta, scaled by game speed
 
-    // Starfield drifts in game-time (freezes on pause / end screens).
-    for (let i = 0; i < this.starLayers.length; i++) {
-      this.starLayers[i].x -= (i + 1) * 0.004 * d
-      if (this.starLayers[i].x < -this.scale.width) this.starLayers[i].x = 0
+    // Keyboard pan (works even in pause so the player can look around).
+    if (this.cursors && this.wasdKeys) {
+      let kx = 0; let ky = 0
+      const cursors = this.cursors
+      const wasd = this.wasdKeys
+      if (cursors.left.isDown || wasd.A.isDown) kx = -1
+      if (cursors.right.isDown || wasd.D.isDown) kx = 1
+      if (cursors.up.isDown || wasd.W.isDown) ky = -1
+      if (cursors.down.isDown || wasd.S.isDown) ky = 1
+      if (kx !== 0 || ky !== 0) {
+        const norm = Math.hypot(kx, ky)
+        this.cam.scrollX += (kx / norm) * CAMERA.keyPanSpeed * (delta / 1000)
+        this.cam.scrollY += (ky / norm) * CAMERA.keyPanSpeed * (delta / 1000)
+      }
     }
 
     if (gameState.status !== 'playing' || d === 0) return
@@ -593,10 +702,11 @@ export class GameScene extends Phaser.Scene {
     const def = ENEMY_TYPES[type]
     const cx = this.core.x
     const cy = this.core.y
-    const R = Math.max(this.scale.width, this.scale.height) * ENEMY.spawnRadiusFactor
+    const radius = Math.hypot(WORLD.width, WORLD.height) * 0.5
     const angle = Phaser.Math.FloatBetween(0, Math.PI * 2)
-    const x = cx + Math.cos(angle) * R
-    const y = cy + Math.sin(angle) * R
+    const ex = Phaser.Math.Clamp(cx + Math.cos(angle) * radius, 40, WORLD.width - 40)
+    const ey = Phaser.Math.Clamp(cy + Math.sin(angle) * radius, 40, WORLD.height - 40)
+    const x = ex; const y = ey
 
     // Spawn telegraph: brief warning marker at the spawn point.
     const marker = this.add.graphics().setDepth(14)
@@ -940,13 +1050,15 @@ export class GameScene extends Phaser.Scene {
   // --------------------------------------------------------------- starfield
   createStarfield() {
     const layerSpecs = STARFIELD.layers
-    const w = this.scale.width
-    const h = this.scale.height
 
     for (const spec of layerSpecs) {
       const layer = this.add.container(0, 0).setDepth(spec.depth)
       for (let i = 0; i < spec.count; i++) {
-        const star = this.add.image(Phaser.Math.Between(0, w * 2), Phaser.Math.Between(0, h), 'star')
+        const star = this.add.image(
+          Phaser.Math.Between(0, WORLD.width),
+          Phaser.Math.Between(0, WORLD.height),
+          'star'
+        ).setScrollFactor(1)
         star.setScale(Phaser.Math.FloatBetween(spec.scale[0], spec.scale[1])).setAlpha(spec.alpha)
         this.tweens.add({
           targets: star,
