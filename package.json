@@ -1,0 +1,22 @@
+{
+  "name": "space-game-mission-plus",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Space Game Mission Plus - RTS / Tower Defense / Arena Survival remaster",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "phaser": "^3.90.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.0",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "tailwindcss": "^4.1.0",
+    "vite": "^6.3.5"
+  }
+}
