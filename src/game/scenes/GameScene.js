@@ -81,7 +81,7 @@ export class GameScene extends Phaser.Scene {
     this.cam.centerOn(this.core.x, this.core.y)
 
     // Capa de render 3D (fondo + meteoritos + estructuras + naves + explosiones).
-    this.three = new ThreeLayer(this.game.canvas.parentElement)
+    this.three = new ThreeLayer(this.game.canvas.parentElement, this.game.canvas)
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.render3D, this)
 
     this.world = {
@@ -134,21 +134,12 @@ export class GameScene extends Phaser.Scene {
       if (net.conn && net.conn.open) activate()
     }
 
-    const mmW = 160; const mmH = 106
-    this.minimap = this.cameras.add(10, this.scale.height - mmH - 10, mmW, mmH)
-      .setZoom(mmW / WORLD.width)
-      .setBounds(0, 0, WORLD.width, WORLD.height)
-      .setBackgroundColor(0x05070f)
-      .setName('minimap')
-    this.minimap.ignore([this.ghost, this.rangePreview, ...this.nebulae])
-
     this.scale.on('resize', this.handleResize, this)
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off('resize', this.handleResize, this)
       this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.render3D, this)
       if (this.three) { this.three.dispose(); this.three = null }
       this.busOff?.forEach((off) => off())
-      if (this.minimap) this.cameras.remove(this.minimap)
       if (this.epSystem) this.epSystem.clear()
       if (this.general) { this.general.sprite.destroy(); this.general.bar.destroy() }
       if (this.clientGeneral) { this.clientGeneral.sprite.destroy(); this.clientGeneral.bar.destroy() }
@@ -316,11 +307,6 @@ export class GameScene extends Phaser.Scene {
       if (vp.x < 0 || vp.y < 0 || vp.x > WORLD.width || vp.y > WORLD.height) {
         this.cam.centerOn(this.core.x, this.core.y)
       }
-    }
-    if (this.minimap) {
-      const mmW = this.minimap.width
-      const mmH = this.minimap.height
-      this.minimap.setPosition(10, this.scale.height - mmH - 10)
     }
   }
 

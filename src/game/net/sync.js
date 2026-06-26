@@ -95,18 +95,9 @@ export function createRemote(scene) {
   scene.placementKey = null
   setupRemoteInput(scene)
 
-  const mmW = 160; const mmH = 106
-  scene.minimap = scene.cameras.add(10, scene.scale.height - mmH - 10, mmW, mmH)
-    .setZoom(mmW / WORLD.width)
-    .setBounds(0, 0, WORLD.width, WORLD.height)
-    .setBackgroundColor(0x05070f)
-    .setName('minimap')
-  scene.minimap.ignore(scene.nebulae)
-
   scene.scale.on('resize', scene.handleResize, scene)
   scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
     scene.scale.off('resize', scene.handleResize, scene)
-    if (scene.minimap) scene.cameras.remove(scene.minimap)
     net.onData = () => {}
     for (const spr of scene.eById.values()) spr.destroy()
     for (const s of scene.sById.values()) s.container.destroy()

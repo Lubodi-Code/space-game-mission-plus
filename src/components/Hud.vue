@@ -126,7 +126,7 @@ function restart() {
 </script>
 
 <template>
-  <div class="absolute inset-0 pointer-events-none text-cyan-100 font-sans">
+  <div class="absolute inset-0 z-20 pointer-events-none text-cyan-100 font-sans">
     <!-- Top bar -->
     <div
       class="absolute top-0 left-0 right-0 flex items-center gap-4 px-3 py-2

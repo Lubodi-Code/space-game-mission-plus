@@ -5,33 +5,37 @@ import { WORLD, METEOR } from '../balance.js'
 export function createMeteorite(scene, x, y) {
   const container = scene.add.container(x, y).setDepth(8)
   const radius = Phaser.Math.Between(16, 26)
-  const g = scene.add.graphics()
 
-  g.fillStyle(0x3a342c, 1)
-  g.lineStyle(2, 0x5a5247, 1)
-  const pts = []
-  const segs = 9
-  for (let i = 0; i < segs; i++) {
-    const a = (i / segs) * Math.PI * 2
-    const r = radius * Phaser.Math.FloatBetween(0.75, 1.15)
-    pts.push(new Phaser.Geom.Point(Math.cos(a) * r, Math.sin(a) * r))
-  }
-  g.beginPath()
-  g.moveTo(pts[0].x, pts[0].y)
-  for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y)
-  g.closePath()
-  g.fillPath()
-  g.strokePath()
+  // El host/single-player renderiza el meteorito en 3D (ThreeLayer.sync). El cliente remoto no tiene
+  // capa Three, así que dibuja la roca 2D como antes. El container se crea siempre (tween/destroy/red).
+  if (scene.remote) {
+    const g = scene.add.graphics()
+    g.fillStyle(0x3a342c, 1)
+    g.lineStyle(2, 0x5a5247, 1)
+    const pts = []
+    const segs = 9
+    for (let i = 0; i < segs; i++) {
+      const a = (i / segs) * Math.PI * 2
+      const r = radius * Phaser.Math.FloatBetween(0.75, 1.15)
+      pts.push(new Phaser.Geom.Point(Math.cos(a) * r, Math.sin(a) * r))
+    }
+    g.beginPath()
+    g.moveTo(pts[0].x, pts[0].y)
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y)
+    g.closePath()
+    g.fillPath()
+    g.strokePath()
 
-  g.fillStyle(0x49e07a, 0.9)
-  for (let i = 0; i < 5; i++) {
-    g.fillCircle(
-      Phaser.Math.Between(-radius * 0.5, radius * 0.5),
-      Phaser.Math.Between(-radius * 0.5, radius * 0.5),
-      Phaser.Math.FloatBetween(1.5, 3)
-    )
+    g.fillStyle(0x49e07a, 0.9)
+    for (let i = 0; i < 5; i++) {
+      g.fillCircle(
+        Phaser.Math.Between(-radius * 0.5, radius * 0.5),
+        Phaser.Math.Between(-radius * 0.5, radius * 0.5),
+        Phaser.Math.FloatBetween(1.5, 3)
+      )
+    }
+    container.add(g)
   }
-  container.add(g)
 
   const meteor = { x, y, container, radius, amount: Phaser.Math.Between(METEOR.amountMin, METEOR.amountMax), depleted: false }
   scene.meteorites.push(meteor)

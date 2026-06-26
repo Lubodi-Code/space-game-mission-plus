@@ -1,6 +1,8 @@
 node_modules
 dist
 dist-ssr
+# fuentes full-res de assets 3D (originales para regenerar LODs; no se sirven, ~26MB)
+assets-src
 *.local
 .DS_Store
 .vscode/*

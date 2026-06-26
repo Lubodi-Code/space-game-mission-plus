@@ -1,15 +1,22 @@
 import * as THREE from 'three'
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { WORLD } from '../balance.js'
 
-// Capa de render 3D (Three.js) que vive DETRÁS del canvas de Phaser.
-// Phaser conserva la simulación, input, HUD, links, barras y minimapa (canvas transparente al frente).
-// Esta capa dibuja: fondo espacial con parallax, meteoritos, naves, estructuras y explosiones en 3D,
-// sincronizados con la cámara principal de Phaser. Los cuerpos 2D de Phaser se ocultan de la cámara
-// principal (cam.ignore) pero siguen vivos para el minimapa y la lógica.
+// Capa de render 3D (Three.js) que vive DETRÁS del canvas de Phaser (canvas transparente al frente).
+// Modo actual: FONDO 3D + METEORITOS 3D + explosiones. Dibuja el fondo espacial (estrellas con
+// twinkle + nebulosas con parallax), los meteoritos (malla OBJ con texturas PBR, ver _loadMeteor/
+// sync) y las explosiones. El resto del gameplay (estructuras/enemigos), el selector, los enlaces,
+// las barras y el HUD los dibuja Phaser en 2D encima. _makeStructure/_makeEnemy quedan disponibles
+// para reactivar el 3D completo paso a paso cuando se resuelva el compositing 2D/3D.
 
 const ASSET = {
   nebula: ['assets/bg/nebula1.jpg', 'assets/bg/nebula2.png', 'assets/bg/nebula3.png'],
-  meteor: 'assets/meteor.png',
+  meteor3D: {
+    obj: 'assets/3D/Meteorito/base.obj',
+    diffuse: 'assets/3D/Meteorito/texture_diffuse.png',
+    normal: 'assets/3D/Meteorito/texture_normal.png',
+    roughness: 'assets/3D/Meteorito/texture_roughness.png',
+  },
   ships: {
     enemy_grunt: 'assets/ships/ship_grunt.svg',
     enemy_runner: 'assets/ships/ship_runner.svg',
@@ -39,7 +46,7 @@ function darken(hex, f = 0.22) {
 }
 
 export class ThreeLayer {
-  constructor(parent) {
+  constructor(parent, phaserCanvas) {
     this.parent = parent
     this.tickPrev = performance.now()
     this.viewCenter = { x: WORLD.width / 2, y: WORLD.height / 2 }
@@ -49,12 +56,14 @@ export class ThreeLayer {
     renderer.autoClear = false
     renderer.setClearColor(0x04060d, 1)
     const cv = renderer.domElement
-    cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none'
+    cv.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;z-index:0;pointer-events:none'
     parent.insertBefore(cv, parent.firstChild)
-    // El canvas de Phaser queda al frente y transparente.
-    if (parent.querySelector('canvas:last-child')) {
-      const pcv = [...parent.querySelectorAll('canvas')].find((c) => c !== cv)
-      if (pcv) { pcv.style.position = 'absolute'; pcv.style.zIndex = '1'; pcv.style.background = 'transparent' }
+    // Canvas de Phaser (transparente) ENCIMA de Three: z-index 1. El HUD de Vue debe tener un
+    // z-index mayor para seguir recibiendo clics por encima del juego.
+    if (phaserCanvas) {
+      phaserCanvas.style.position = 'absolute'
+      phaserCanvas.style.zIndex = '1'
+      phaserCanvas.style.background = 'transparent'
     }
     this.renderer = renderer
 
@@ -69,7 +78,9 @@ export class ThreeLayer {
     this._buildBackground()
 
     this.meshes = new Map()   // objeto de juego -> { root, ... }
+    this.meteors = new Map()  // meteorito de juego -> { mesh, baseScale, spin, axis, dying, dieT }
     this.explosions = []
+    this._loadMeteor()
 
     this.resize(parent.clientWidth || window.innerWidth, parent.clientHeight || window.innerHeight)
   }
@@ -89,11 +100,11 @@ export class ThreeLayer {
     this.camera = new THREE.OrthographicCamera(-100, 100, 100, -100, -2000, 2000)
     this.camera.position.set(0, 0, 600)
 
-    this.scene.add(new THREE.AmbientLight(0x445577, 1.1))
-    const key = new THREE.DirectionalLight(0xbcd0ff, 1.6)
+    this.scene.add(new THREE.AmbientLight(0x6a7da0, 1.9))
+    const key = new THREE.DirectionalLight(0xdfe9ff, 2.6)
     key.position.set(-0.5, -0.8, 1)
     this.scene.add(key)
-    const rim = new THREE.DirectionalLight(0x66aaff, 0.7)
+    const rim = new THREE.DirectionalLight(0x66aaff, 1.1)
     rim.position.set(0.6, 0.5, 0.4)
     this.scene.add(rim)
   }
@@ -105,26 +116,22 @@ export class ThreeLayer {
     this.bgCamera.position.set(0, 0, 600)
 
     this.bgGroups = []
-    // Planos de nebulosa a distintas profundidades (additive, tenues y oscuros).
-    const depths = [-1400, -1000, -650]
-    const opac = [0.22, 0.28, 0.3]
-    ASSET.nebula.forEach((url, i) => {
-      const t = this.tex(url)
-      const z = depths[i]
-      const w = Math.abs(z) * 2.4
-      // Blending normal + tinte oscuro: nubes tenues sobre el negro, no luz aditiva
-      // que lavaría el centro y taparía el frente.
-      const mat = new THREE.MeshBasicMaterial({
-        map: t, transparent: true, opacity: opac[i], color: 0x5a6480,
-        blending: THREE.NormalBlending, depthWrite: false, depthTest: false,
-      })
-      const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, w * 0.62), mat)
-      plane.position.set(0, 0, z)
-      plane.userData.factor = 0.04 + i * 0.05
-      plane.userData.drift = (i % 2 ? 1 : -1) * 0.0006
-      this.bgScene.add(plane)
-      this.bgGroups.push(plane)
+
+    // Fondo estático (imagen de nebulosa, sin rotación). El plano se hace mucho más grande que el
+    // viewport para que sus bordes cuadrados queden fuera de pantalla y no generen siluetas.
+    const t = this.tex(ASSET.nebula[0])
+    const z = -1400
+    const w = Math.abs(z) * 6 // suficiente para cubrir el frustum incluso al paneo
+    const mat = new THREE.MeshBasicMaterial({
+      map: t, transparent: true, opacity: 0.45, color: 0x5a6480,
+      blending: THREE.NormalBlending, depthWrite: false, depthTest: false,
     })
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, w * 0.62), mat)
+    plane.position.set(0, 0, z)
+    plane.userData.factor = 0.04
+    plane.userData.drift = 0 // No rota
+    this.bgScene.add(plane)
+    this.bgGroups.push(plane)
 
     // Estrellas titilantes (Points con shader de twinkle).
     const N = 2400
@@ -177,7 +184,8 @@ export class ThreeLayer {
     this.bgScene.add(this.stars)
 
     // Viñeta oscura (mantiene el centro de juego claro y bordes oscuros).
-    const vig = radialTexture([[0, 'rgba(0,0,0,0)'], [0.55, 'rgba(2,4,10,0.0)'], [1, 'rgba(1,2,6,0.92)']])
+    // El borde exterior debe ser totalmente opaco para ocultar el contorno cuadrado del plano.
+    const vig = radialTexture([[0, 'rgba(0,0,0,0)'], [0.55, 'rgba(2,4,10,0.0)'], [1, 'rgba(1,2,6,1.0)']])
     const vmat = new THREE.MeshBasicMaterial({ map: vig, transparent: true, depthWrite: false, depthTest: false })
     this.vignette = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), vmat)
     this.vignette.position.z = -50
@@ -200,64 +208,91 @@ export class ThreeLayer {
     this.viewCenter.y = wv.y + wv.height / 2
   }
 
-  // Reconciliación pull-based: recorre los arrays de la escena, crea/actualiza/elimina meshes.
-  sync(gs) {
-    const seen = new Set()
-
-    for (const m of gs.meteorites) {
-      if (m.depleted) continue
-      seen.add(m)
-      let e = this.meshes.get(m)
-      if (!e) { e = this._makeMeteor(m); this.meshes.set(m, e); if (m.container) gs.cam.ignore(m.container) }
-      e.root.position.set(m.x, m.y, 2)
-      e.spr.material.rotation += e.spin
-    }
-
-    for (const s of gs.structures) {
-      if (s.dead) continue
-      seen.add(s)
-      let e = this.meshes.get(s)
-      if (!e) { e = this._makeStructure(s); this.meshes.set(s, e); if (s.container) gs.cam.ignore(s.container) }
-      e.root.position.set(s.x, s.y, 6)
-      e.root.rotation.z += e.spin
-      const lit = s.powered ? 1 : 0.18
-      e.mat.emissiveIntensity = (s.building ? 0.25 : 0.9) * lit
-      e.glow.material.opacity = (s.building ? 0.15 : 0.5) * lit
-    }
-
-    for (const en of gs.enemies) {
-      if (en.dead) continue
-      seen.add(en)
-      let e = this.meshes.get(en)
-      if (!e) { e = this._makeEnemy(en); this.meshes.set(en, e); gs.cam.ignore(en.sprite); gs.cam.ignore(en.glow) }
-      e.root.position.set(en.x, en.y, 10)
-      e.spr.material.rotation = -en.heading
-      e.glow.material.rotation = -en.heading
-      const pulse = 0.4 + Math.sin(performance.now() * 0.006 + en.heading) * 0.18
-      e.glow.material.opacity = pulse
-      if (en.flash > 0) e.spr.material.color.setRGB(2, 2, 2)
-      else e.spr.material.color.setRGB(1, 1, 1)
-    }
-
-    // eliminar meshes de objetos que ya no existen
-    for (const [obj, e] of this.meshes) {
-      if (!seen.has(obj)) { this._dispose(e); this.meshes.delete(obj) }
+  // Modo "fondo 3D + meteoritos 3D + explosiones": Three solo sincroniza meteoritos (estructuras/
+  // enemigos los dibuja Phaser en 2D encima). Reconcilia mallas con scene.meteorites: crea una malla
+  // por meteorito vivo y la encoge/elimina cuando se agota (depleted) o su container muere.
+  sync(scene) {
+    if (!this.meteorGeo || !scene?.meteorites) return
+    for (const m of scene.meteorites) {
+      let e = this.meteors.get(m)
+      // El container muere al agotarse (tween de Collector) o al quitarlo el cliente remoto.
+      const dead = m.depleted || !m.container || m.container.scene == null
+      if (!e) {
+        if (dead) continue
+        const root = new THREE.Group()
+        root.position.set(m.x, m.y, 0)
+        const mesh = new THREE.Mesh(this.meteorGeo, this.meteorMat)
+        mesh.rotation.set(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28)
+        mesh.scale.setScalar(m.radius)
+        const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: this.glowTex, color: 0x49e07a, transparent: true, opacity: 0.5,
+          blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, alphaTest: 0.01,
+        }))
+        halo.scale.set(m.radius * 4, m.radius * 4, 1)
+        halo.position.z = -2
+        root.add(halo, mesh)
+        this.scene.add(root)
+        e = {
+          root, mesh, halo, dying: false, dieT: 0,
+          spin: (Math.random() - 0.5) * 0.6,
+          axis: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize(),
+        }
+        this.meteors.set(m, e)
+      }
+      if (dead) e.dying = true
     }
   }
 
-  _makeMeteor(m) {
-    const root = new THREE.Group()
-    const r = m.radius
-    const halo = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: this.glowTex, color: 0x49e07a, transparent: true, opacity: 0.35,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-    }))
-    halo.scale.set(r * 4, r * 4, 1)
-    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.tex(ASSET.meteor), transparent: true, depthWrite: false }))
-    spr.scale.set(r * 2.6, r * 2.6, 1)
-    root.add(halo, spr)
-    this.scene.add(root)
-    return { root, spr, spin: (Math.random() - 0.5) * 0.01 }
+  // Carga la malla OBJ + texturas PBR una vez; la geometría se normaliza a radio 1 (la escala por
+  // meteorito = m.radius). Asíncrono: sync() no crea mallas hasta que meteorGeo está listo.
+  _loadMeteor() {
+    const A = ASSET.meteor3D
+    const tx = (url, srgb) => {
+      const t = this._loader.load(url)
+      t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace
+      t.anisotropy = 4
+      return t
+    }
+    // ponytail: roca = no metálica; omito metalnessMap (~1.4MB) — imperceptible a 40px. metalness=0.
+    // DoubleSide: la malla decimada no es 100% estanca; dibujar la cara trasera tapa los huecos.
+    // emissiveMap = el mismo diffuse: la roca se auto-ilumina (brilla aunque la luz no le pegue).
+    const diff = tx(A.diffuse, true)
+    this.meteorMat = new THREE.MeshStandardMaterial({
+      map: diff,
+      emissiveMap: diff, emissive: 0xffffff, emissiveIntensity: 0.32,
+      normalMap: tx(A.normal, false),
+      roughnessMap: tx(A.roughness, false),
+      metalness: 0, roughness: 1,
+      side: THREE.DoubleSide,
+    })
+    new OBJLoader().load(A.obj, (grp) => {
+      let geo = null
+      grp.traverse((o) => { if (o.isMesh && !geo) geo = o.geometry })
+      if (!geo) { console.warn('[meteor3D] OBJ sin malla:', A.obj, '(¿404 → index.html? reinicia el dev server)'); return }
+      geo.computeBoundingSphere()
+      const c = geo.boundingSphere.center, r = geo.boundingSphere.radius || 1
+      geo.translate(-c.x, -c.y, -c.z)
+      geo.scale(1 / r, 1 / r, 1 / r) // ahora radio ~1; el OBJ ya trae normales (no recomputar)
+      this.meteorGeo = geo
+    })
+  }
+
+  _updateMeteors(dt) {
+    for (const [m, e] of this.meteors) {
+      if (e.dying) {
+        e.dieT += dt
+        const k = 1 - e.dieT / 0.45
+        if (k <= 0) {
+          this.scene.remove(e.root)
+          e.halo.material.dispose()
+          this.meteors.delete(m)
+          continue
+        }
+        e.root.scale.setScalar(k)
+      } else {
+        e.mesh.rotateOnAxis(e.axis, e.spin * dt)
+      }
+    }
   }
 
   _makeStructure(s) {
@@ -289,7 +324,7 @@ export class ThreeLayer {
     )
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({
       map: this.glowTex, color, transparent: true, opacity: 0.5,
-      blending: THREE.AdditiveBlending, depthWrite: false,
+      blending: THREE.AdditiveBlending, depthWrite: false, alphaTest: 0.01,
     }))
     glow.scale.set(size * 5, size * 5, 1)
     glow.position.z = -1
@@ -304,10 +339,12 @@ export class ThreeLayer {
     const r = en.radius * 2.6
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({
       map: this.glowTex, color: en.def.color, transparent: true, opacity: 0.4,
-      blending: THREE.AdditiveBlending, depthWrite: false,
+      blending: THREE.AdditiveBlending, depthWrite: false, alphaTest: 0.01,
     }))
     glow.scale.set(r * 1.7, r * 1.7, 1)
-    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.tex(url), transparent: true, depthWrite: false }))
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: this.tex(url), transparent: true, depthWrite: false, alphaTest: 0.01,
+    }))
     spr.scale.set(r, r, 1)
     root.add(glow, spr)
     this.scene.add(root)
@@ -336,7 +373,7 @@ export class ThreeLayer {
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
     const mat = new THREE.PointsMaterial({
       size: Math.max(6, radius * 0.6), map: this.sparkTex, vertexColors: true,
-      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, alphaTest: 0.01,
     })
     const pts = new THREE.Points(geo, mat)
     this.scene.add(pts)
@@ -384,6 +421,7 @@ export class ThreeLayer {
 
     this.starUniforms.uTime.value = now * 0.001
     this._updateExplosions(dt)
+    this._updateMeteors(dt)
 
     // parallax de fondo respecto al centro de vista
     const ox = (this.viewCenter.x - WORLD.width / 2)
@@ -420,6 +458,14 @@ export class ThreeLayer {
   dispose() {
     for (const [, e] of this.meshes) this._dispose(e)
     this.meshes.clear()
+    for (const [, e] of this.meteors) { this.scene.remove(e.root); e.halo.material.dispose() }
+    this.meteors.clear()
+    this.meteorGeo?.dispose()
+    if (this.meteorMat) {
+      // map y emissiveMap son la misma textura (diff); normal/roughness aparte
+      for (const k of ['map', 'normalMap', 'roughnessMap']) this.meteorMat[k]?.dispose()
+      this.meteorMat.dispose()
+    }
     for (const ex of this.explosions) { this.scene.remove(ex.pts); this.scene.remove(ex.ring) }
     this.explosions = []
     this.renderer.domElement.remove()
