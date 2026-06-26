@@ -1,49 +1,78 @@
 import { DIFFICULTY } from './appState.js'
+import { EnemyType } from './enemies/EnemyType.js'
 
 export const BUILD = {
-  overlapRadius: 34
+  overlapRadius: 18
 }
 
 export const COMBAT = {
-  attackReachOffset: 14,
-  laserTtlMs: 90
+  attackReachOffset: 12,
+  laserTtlMs: 90,
+  missileTurnRate: 1.2,
+  missileMaxLifeMs: 5000,
+  bigbeamCooldown: 150,   // ms: el rayo "anti-grande" dispara casi en continuo
+  bigbeamRampStep: 0.12,  // incremento de daño por tick sobre el mismo blanco
+  bigbeamRampMax: 3,      // tope de la rampa → daño máx = base × (1 + 3) = ×4
+}
+
+// Economía de energía. La energía es un pool global (gameState.energy / energyMax).
+// La producen los recolectores al minar; la almacenan núcleo + baterías; la
+// consumen las torretas al disparar. Sin energía, los consumidores se apagan.
+export const ENERGY = {
+  batterySelfChargeRate: 4, // energía/s que regenera una batería con auto-recarga
+}
+
+export const STEERING = {
+  shipBase: 24,
+  wMove: 1.0,
+  wSeparate: 1.3,
+  wAvoid: 1.6,
+  wWander: 0.4,
+  wEvade: 3.0,
+  separationRadius: 24,
+  avoidLookahead: 60,
+  wanderDistance: 35,
+  wanderRadius: 14,
+  wanderJitter: 3.5,
+  threatHorizon: 2.5,
+  evadeMargin: 12,
 }
 
 export const FX = {
   explosionMs: 360,
-  coreExplosionRadius: 120,
+  coreExplosionRadius: 80,
   floatTextMs: 700,
   floatRise: 28
 }
 
-export const WORLD = { width: 2400, height: 1600 }
+export const WORLD = { width: 7200, height: 4800 }
 
 export const CAMERA = {
-  minZoom: 0.5,
-  maxZoom: 1.4,
-  startZoom: 1,
-  zoomStep: 0.1,
-  keyPanSpeed: 700,
-  dragThreshold: 6,
+  minZoom: 0.25,
+  maxZoom: 1.0,
+  startZoom: 0.55,
+  zoomStep: 0.05,
+  keyPanSpeed: 1500,
+  dragThreshold: 4,
 }
 
 export const METEOR = {
-  count: 34,
-  minDist: 220,
-  maxDist: 1000,
-  amountMin: 450,
-  amountMax: 750
+  count: 80,
+  minDist: 400,
+  maxDist: 3000,
+  amountMin: 300,
+  amountMax: 600
 }
 
 export const ENEMY = {
-  spawnRadiusFactor: 0.75,
+  spawnRadiusFactor: 0.9,
 }
 
 export const STARFIELD = {
   layers: [
-    { count: 110, scale: [0.25, 0.5], alpha: 0.35, depth: -30 },
-    { count: 80, scale: [0.4, 0.8], alpha: 0.6, depth: -20 },
-    { count: 40, scale: [0.7, 1.3], alpha: 0.9, depth: -10 }
+    { count: 260, scale: [0.15, 0.35], alpha: 0.3, depth: -30 },
+    { count: 180, scale: [0.25, 0.5], alpha: 0.5, depth: -20 },
+    { count: 100, scale: [0.4, 0.8], alpha: 0.8, depth: -10 }
   ]
 }
 
@@ -53,13 +82,15 @@ export const SPEED = {
 
 export const CORE = {
   key: 'core',
-  range: 190,
+  range: 350,
   color: 0x8be9fd,
   role: 'core',
-  hp: 100,
+  hp: 250,
+  maxPorts: 8, // el núcleo es el relay raíz: hasta 8 conexiones
+  energyCap: 100, // almacén base de energía del sistema
 }
 
-export const STARTING_MINERALS = 200
+export const STARTING_MINERALS = 300
 
 export const STRUCTURES = [
   { 
@@ -69,12 +100,14 @@ export const STRUCTURES = [
     cost: 20, 
     color: 0x6cc8ff, 
     css: '#6cc8ff', 
-    range: 235, 
-    sides: 6, 
-    size: 13, 
-    role: 'relay', 
+    range: 200,
+    sides: 6,
+    size: 9,
+    role: 'relay',
     hp: 40,
-    desc: 'Extiende el rango de energía de la red.' 
+    maxPorts: 5,
+    buildTime: 1500,
+    desc: 'Conecta estructuras a la red. Único nexo de conexión (5 puertos).'
   },
   { 
     key: 'collector', 
@@ -83,14 +116,16 @@ export const STRUCTURES = [
     cost: 45, 
     color: 0x49e07a, 
     css: '#49e07a', 
-    range: 135, 
+    range: 120, 
     sides: 5, 
-    size: 15, 
-    role: 'collector', 
-    hp: 50, 
-    miningRange: 175, 
+    size: 10, 
+    role: 'collector',
+    hp: 50,
+    miningRange: 150,
     rate: 9,
-    desc: 'Mina minerales de meteoritos cercanos automáticamente.' 
+    energyRate: 7,
+    buildTime: 2500,
+    desc: 'Mina minerales de meteoritos cercanos y genera energía.'
   },
   { 
     key: 'battery', 
@@ -99,13 +134,15 @@ export const STRUCTURES = [
     cost: 60, 
     color: 0xffcc55, 
     css: '#ffcc55', 
-    range: 130, 
+    range: 110, 
     sides: 4, 
-    size: 14, 
-    role: 'battery', 
-    hp: 60, 
-    capBonus: 600,
-    desc: 'Incrementa la capacidad máxima de almacenamiento de minerales.' 
+    size: 9, 
+    role: 'battery',
+    hp: 60,
+    capBonus: 800,
+    energyCap: 120,
+    buildTime: 3000,
+    desc: 'Amplía el almacén de energía y de minerales del sistema.'
   },
   { 
     key: 'healer', 
@@ -114,52 +151,58 @@ export const STRUCTURES = [
     cost: 120, 
     color: 0xff7ad9, 
     css: '#ff7ad9', 
-    range: 130, 
+    range: 110, 
     sides: 8, 
-    size: 14, 
-    role: 'healer', 
-    hp: 70, 
-    healInterval: 2600, 
-    maxSpheres: 3, 
-    healRate: 22, 
+    size: 9, 
+    role: 'healer',
+    hp: 70,
+    healInterval: 2600,
+    maxSpheres: 4,
+    healRate: 22,
     sphereSpeed: 135,
+    energyDrain: 2,
+    buildTime: 4000,
     desc: 'Genera esferas de reparación autónomas para curar estructuras dañadas.' 
   },
   { 
     key: 'laser', 
-    label: 'Torreta', 
+    label: 'Torreta Láser', 
     glyph: '▲', 
     cost: 80, 
     color: 0xff5566, 
     css: '#ff5566', 
-    range: 130, 
+    range: 110, 
     sides: 3, 
-    size: 17, 
+    size: 11, 
     role: 'turret', 
     hp: 60, 
-    atkRange: 165, 
-    damage: 7, 
-    cooldown: 130,
-    desc: 'Dispara ráfagas rápidas de láser de un solo objetivo.' 
+    atkRange: 140,
+    damage: 28,
+    cooldown: 20000,
+    energyDrain: 1,
+    buildTime: 5000,
+    desc: 'Dispara ráfagas rápidas de láser de un solo objetivo.'
   },
   { 
     key: 'missile', 
-    label: 'Misiles', 
+    label: 'Torreta de Misiles', 
     glyph: '⬡', 
     cost: 150, 
     color: 0xc08bff, 
     css: '#c08bff', 
-    range: 130, 
+    range: 110, 
     sides: 6, 
-    size: 17, 
+    size: 11, 
     role: 'missile', 
     hp: 55, 
-    atkRange: 255, 
-    damage: 26, 
-    cooldown: 1500, 
-    splash: 58, 
-    projSpeed: 210,
-    desc: 'Dispara misiles de largo alcance que infligen daño de área.' 
+    atkRange: 2250, 
+    damage: 18, 
+    cooldown: 15000,
+    splash: 30,
+    projSpeed: 200,
+    energyDrain: 6,
+    buildTime: 5000,
+    desc: 'Dispara una tanda de misiles guiados de largo alcance.'
   },
 ]
 
@@ -175,42 +218,48 @@ export const ENEMY_TYPES = {
   purple: { key: 'purple', hp: 440, speed: 18, damage: 30, atkCooldown: 900, color: 0xc08bff, scale: 2.7, reward: 160, boss: true },
 }
 
-export function buildWaves(difficultyKey = 'normal') {
+const DIRECTIONS = [-Math.PI, Math.PI / 2, 0, -Math.PI / 2, Math.PI * 0.75, Math.PI * 0.25, -Math.PI * 0.25, -Math.PI * 0.75, Math.PI, Math.PI / 2]
+
+export function buildWaves(difficultyKey = 'normal', waveCount = WAVE_TOTAL) {
   const diff = DIFFICULTY[difficultyKey] || DIFFICULTY.normal
   const countMult = diff.countMult ?? 1
   const gapMult = diff.gapMult ?? 1
 
   const waves = []
-  for (let i = 1; i <= 10; i++) {
+  for (let i = 1; i <= waveCount; i++) {
     const list = []
+    const factor = 1 + i * 0.5
     const push = (type, n) => {
-      const count = Math.max(1, Math.round(n * countMult))
+      const count = Math.max(1, Math.round(n * countMult * factor))
       for (let k = 0; k < count; k++) {
         list.push(type)
       }
     }
 
-    push('green', 4 + i * 2)
+    push(EnemyType.GRUNT, 20 + i * 10)
+    if (i >= 2) {
+      push(EnemyType.RUNNER, (i - 1) * 6)
+    }
     if (i >= 3) {
-      push('yellow', (i - 2) * 2)
+      push(EnemyType.SABOTEUR, Math.max(3, (i - 2) * 3))
+    }
+    if (i >= 4) {
+      push(EnemyType.SKIRMISHER, Math.max(3, (i - 3) * 4))
+      push(EnemyType.BRUTE, Math.max(3, (i - 3) * 3))
     }
     if (i >= 5) {
-      push('red', i - 4)
+      push(EnemyType.ARTILLERY, Math.max(2, (i - 4) * 3))
     }
-    if (i === 8) {
-      push('purple', 1)
-      push('red', 3) // 2-3 red escort enemies
-    }
-    if (i === 10) {
-      push('purple', 2)
-      push('red', 3) // 2-3 red escort enemies
+    if (i >= 7) {
+      push(EnemyType.MOTHERSHIP, Math.max(1, (i - 5) * 2))
+      push(EnemyType.BRUTE, (i - 5) * 4)
     }
 
-    // Interleave so types arrive mixed, not in blocks.
     shuffle(list)
 
-    const hasBoss = (i === 8 || i === 10)
-    waves.push({ list, gap: Math.max(260, 920 - i * 60) * gapMult, hasBoss })
+    const hasBoss = (i >= 7)
+    const dir = DIRECTIONS[(i - 1) % DIRECTIONS.length]
+    waves.push({ list, gap: Math.max(50, 300 - i * 25) * gapMult, hasBoss, dir })
   }
   return waves
 }

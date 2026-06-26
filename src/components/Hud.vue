@@ -1,9 +1,10 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { gameState } from '../game/gameState.js'
 import { bus } from '../game/bus.js'
 import { STRUCTURES, SPEED } from '../game/constants.js'
 import { goToLobby } from '../game/appState.js'
+import { getUpgradesFor } from '../game/structures/upgrades.js'
 
 const structures = STRUCTURES
 
@@ -34,6 +35,9 @@ const coreHpPct = computed(() =>
   Math.max(0, Math.round((gameState.coreHp / gameState.coreHpMax) * 100))
 )
 
+const energyLabel = computed(() => `${Math.round(gameState.energy)} / ${gameState.energyMax}`)
+const brownout = computed(() => gameState.energy < 1)
+
 const waveStatus = computed(() => {
   if (gameState.nextWaveIn > 0) {
     return { kind: 'countdown', text: `Oleada ${gameState.wave + 1} en ${gameState.nextWaveIn}s` }
@@ -51,6 +55,32 @@ watch(() => gameState.coreHp, (newVal, oldVal) => {
     vignetteTimer = setTimeout(() => { vignetteActive.value = false }, 250)
   }
 })
+
+// ---- Selection / inspection panel
+const selectedStructure = ref(null)
+const offSelect = bus.on('select', (payload) => {
+  selectedStructure.value = payload
+})
+onUnmounted(() => offSelect())
+
+const availableUpgrades = computed(() => {
+  const s = selectedStructure.value
+  if (!s) return []
+  return getUpgradesFor(s.role, s.upgrades || [])
+})
+
+function toggleFireMode() {
+  const s = selectedStructure.value
+  if (!s) return
+  const newMode = s.fireMode === 'focus' ? 'auto' : 'focus'
+  bus.emit('fireMode', { structureId: s.id, mode: newMode })
+}
+
+function applyUpgrade(upgradeId) {
+  const s = selectedStructure.value
+  if (!s) return
+  bus.emit('upgrade', { structureId: s.id, upgradeId })
+}
 
 // Wave banner.
 const waveBanner = ref(null)
@@ -134,8 +164,11 @@ function restart() {
       <div class="text-emerald-300/90 tabular-nums">
         {{ gameState.minerals }} / {{ gameState.mineralsCap }} minerales
       </div>
-      <div class="text-amber-300/90 tabular-nums">
-        {{ gameState.energy }} / {{ gameState.energyMax }} energía
+      <div class="tabular-nums" :class="brownout ? 'text-red-400 font-semibold' : 'text-amber-300/90'">
+        {{ energyLabel }} energía
+      </div>
+      <div v-if="brownout" class="text-red-400 font-semibold animate-pulse">
+        ⚠ SIN ENERGÍA — torretas apagadas
       </div>
     </div>
 
@@ -157,6 +190,17 @@ function restart() {
         :class="waveStatus.kind === 'countdown' ? 'bg-fuchsia-500/15 text-fuchsia-200' : 'bg-red-500/15 text-red-200'"
       >
         {{ waveStatus.text }}
+      </div>
+
+      <!-- General status (below wave) -->
+      <div v-if="gameState.general.alive" class="mt-1 text-xs flex items-center gap-1 text-cyan-300/80">
+        <span>General</span>
+        <span class="tabular-nums" :class="gameState.general.hp > 40 ? 'text-cyan-200' : 'text-red-400'">
+          {{ gameState.general.hp }}/{{ gameState.general.hpMax }}
+        </span>
+      </div>
+      <div v-else class="mt-1 text-xs text-red-400/90 animate-pulse">
+        ⚠ General caído — reaparece en {{ gameState.general.respawnIn }}s
       </div>
     </div>
 
@@ -233,6 +277,111 @@ function restart() {
              bg-cyan-400/15 ring-1 ring-cyan-300/40 text-xs text-cyan-100"
     >
       Colocando <b>{{ activeLabel }}</b> — clic para construir · clic derecho / Esc para cancelar
+    </div>
+
+    <!-- Inspection panel (right side) -->
+    <div
+      v-if="selectedStructure"
+      class="absolute top-28 right-3 w-56 p-3 rounded-xl bg-[#0a0f1c]/90 backdrop-blur-sm
+             ring-1 ring-cyan-400/20 pointer-events-auto text-xs space-y-2"
+    >
+      <div class="font-bold text-sm" style="color: #6cc8ff">{{ selectedStructure.label }}</div>
+
+      <!-- Estado: building / powered -->
+      <div v-if="selectedStructure.building" class="text-cyan-400/70">Construyendo...</div>
+      <div v-else-if="!selectedStructure.powered" class="text-red-400/70">Sin señal</div>
+
+      <!-- Stats contextuales -->
+      <div class="text-cyan-200/70 space-y-0.5">
+        <div v-if="selectedStructure.stats.hp !== null || selectedStructure.hp !== undefined">
+          HP: {{ Math.round(selectedStructure.hp || 0) }} / {{ selectedStructure.maxHp }}
+        </div>
+        <div v-if="selectedStructure.stats.damage !== null">
+          Daño: {{ selectedStructure.stats.damage }}
+          <span v-if="selectedStructure.stats.splash">· Área: {{ selectedStructure.stats.splash }}</span>
+        </div>
+        <div v-if="selectedStructure.stats.atkRange !== null">
+          Alcance: {{ selectedStructure.stats.atkRange }}
+        </div>
+        <div v-if="selectedStructure.stats.cooldown !== null">
+          Velocidad: {{ (1000 / selectedStructure.stats.cooldown).toFixed(1) }}/s
+        </div>
+        <div v-if="selectedStructure.stats.energyDrain !== null && selectedStructure.stats.energyDrain > 0">
+          Energía/disparo: {{ selectedStructure.stats.energyDrain }}
+        </div>
+        <div v-if="selectedStructure.stats.rate !== null">
+          Tasa mina: {{ selectedStructure.stats.rate }}/s
+        </div>
+        <div v-if="selectedStructure.stats.energyRate !== null">
+          Energía/s: {{ selectedStructure.stats.energyRate }}
+        </div>
+        <div v-if="selectedStructure.stats.miningRange !== null">
+          Rango mina: {{ selectedStructure.stats.miningRange }}
+        </div>
+        <div v-if="selectedStructure.stats.healRate !== null">
+          Cura: {{ selectedStructure.stats.healRate }}/s · {{ selectedStructure.stats.maxSpheres }} esferas
+        </div>
+        <div v-if="selectedStructure.stats.energyCap !== null">
+          Cap energía extra: {{ selectedStructure.stats.energyCap }}
+        </div>
+        <div v-if="selectedStructure.stats.capBonus !== null">
+          Cap mineral extra: {{ selectedStructure.stats.capBonus }}
+        </div>
+        <div v-if="selectedStructure.stats.range !== null">
+          Alcance red: {{ selectedStructure.stats.range }}
+        </div>
+      </div>
+
+      <!-- Fire mode toggle (solo torretas) -->
+      <div v-if="selectedStructure.role === 'turret' || selectedStructure.role === 'missile'" class="pt-1 border-t border-cyan-400/10">
+        <div class="flex gap-2 items-center">
+          <button
+            class="px-2 py-1 rounded text-[11px] ring-1 transition-colors"
+            :class="selectedStructure.fireMode === 'auto'
+              ? 'bg-cyan-400/20 text-white ring-cyan-300/50'
+              : 'bg-white/5 text-cyan-200/60 ring-cyan-400/20'"
+            @click="toggleFireMode"
+          >
+            Automático
+          </button>
+          <button
+            class="px-2 py-1 rounded text-[11px] ring-1 transition-colors"
+            :class="selectedStructure.fireMode === 'focus'
+              ? 'bg-cyan-400/20 text-white ring-cyan-300/50'
+              : 'bg-white/5 text-cyan-200/60 ring-cyan-400/20'"
+            @click="toggleFireMode"
+          >
+            Fijar blanco
+          </button>
+        </div>
+        <div v-if="selectedStructure.fireMode === 'focus'" class="mt-1 text-cyan-400/60 text-[10px]">
+          Clic en un enemigo para fijar como blanco
+        </div>
+      </div>
+
+      <!-- Mejoras disponibles (solo torretas) -->
+      <div v-if="availableUpgrades.length" class="pt-1 border-t border-cyan-400/10 space-y-1">
+        <div class="text-cyan-300/80 text-[11px] font-semibold">Mejoras</div>
+        <div
+          v-for="u in availableUpgrades"
+          :key="u.id"
+          class="flex items-center justify-between px-2 py-1 rounded bg-white/5 ring-1 ring-cyan-400/10"
+        >
+          <span class="text-cyan-100/80 text-[10px]">{{ u.label }}</span>
+          <span class="flex items-center gap-1">
+            <span class="text-amber-300/70 text-[10px] tabular-nums">{{ u.cost }}</span>
+            <button
+              class="px-1.5 py-0.5 rounded text-[10px] bg-emerald-400/15 text-emerald-200
+                     hover:bg-emerald-400/25 transition-colors"
+              :disabled="gameState.minerals < u.cost"
+              :class="{ 'opacity-40 cursor-not-allowed': gameState.minerals < u.cost }"
+              @click="applyUpgrade(u.id)"
+            >
+              +Añadir
+            </button>
+          </span>
+        </div>
+      </div>
     </div>
 
     <!-- Bottom build bar -->

@@ -10,7 +10,7 @@ export function createGame(parent) {
   const config = {
     type: Phaser.AUTO, // WebGL when available, Canvas fallback
     parent,
-    backgroundColor: '#05070f',
+    transparent: true, // el fondo lo dibuja la capa Three.js detrás del canvas
     scale: {
       mode: Phaser.Scale.RESIZE,
       autoCenter: Phaser.Scale.CENTER_BOTH,

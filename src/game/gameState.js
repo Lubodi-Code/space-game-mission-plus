@@ -19,8 +19,9 @@ export const gameState = reactive({
   activeBuild: null, // key of the structure currently being placed, or null
   nextWaveIn: 0, // seconds until the next wave (0 = wave in progress)
   enemiesAlive: 0,
-  speed: 1, // game-speed multiplier: 0 paused, 0.5 slow, 1 normal, 2 fast
+  speed: 1,
   bossWave: false,
+  general: { alive: true, hp: 120, hpMax: 120, respawnIn: 0 },
 })
 
 if (import.meta.env.DEV && typeof window !== 'undefined') {
@@ -48,5 +49,6 @@ export function resetGameState() {
     enemiesAlive: 0,
     speed: 1,
     bossWave: false,
+    general: { alive: true, hp: 120, hpMax: 120, respawnIn: 0 },
   })
 }

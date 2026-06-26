@@ -7,6 +7,8 @@ import { reactive } from 'vue'
 export const appState = reactive({
   view: 'lobby', // 'lobby' | 'game'
   difficulty: 'normal', // 'normal' | 'hard'
+  mode: 'campaign', // ver src/game/modes/index.js
+  mp: { role: 'solo', connected: false, code: null, ping: false },
 })
 
 // Multipliers applied to enemy stats per difficulty.
@@ -16,8 +18,9 @@ export const DIFFICULTY = {
   hard:   { label: 'Difícil', hpMult: 1.5, dmgMult: 1.35, countMult: 1.25, gapMult: 0.85, startMinerals: 150 },
 }
 
-export function startGame(difficulty) {
+export function startGame(difficulty, mode = appState.mode) {
   appState.difficulty = difficulty
+  appState.mode = mode
   appState.view = 'game'
 }
 

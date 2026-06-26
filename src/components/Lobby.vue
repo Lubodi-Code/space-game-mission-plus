@@ -1,11 +1,39 @@
 <script setup>
 import { ref } from 'vue'
 import { startGame, DIFFICULTY } from '../game/appState.js'
+import { appState } from '../game/appState.js'
+import { MODES } from '../game/modes/index.js'
+import { net } from '../game/net.js'
 
 const difficulty = ref('normal')
+const mode = ref('campaign')
+const joinCode = ref('')
 
 function play() {
-  startGame(difficulty.value)
+  startGame(difficulty.value, mode.value)
+}
+
+function hostGame() {
+  const code = Math.random().toString(36).slice(2, 6).toUpperCase()
+  appState.mp.role = 'host'
+  appState.mp.code = code
+  net.onOpen = () => { appState.mp.connected = true; net.send({ t: 'ping' }) }
+  net.onData = (d) => { if (d.t === 'pong') appState.mp.ping = true }
+  net.onError = () => { appState.mp.role = 'solo'; appState.mp.code = null }
+  net.host(code)
+}
+
+function joinGame() {
+  if (!joinCode.value) return
+  appState.mp.role = 'client'
+  appState.mp.code = joinCode.value.toUpperCase()
+  net.onOpen = () => { appState.mp.connected = true }
+  net.onData = (d) => {
+    if (d.t === 'ping') { appState.mp.ping = true; net.send({ t: 'pong' }) }
+    else if (d.t === 'snap') { appState.mp.connected = true; appState.view = 'game' }
+  }
+  net.onError = () => { appState.mp.role = 'solo' }
+  net.join(appState.mp.code)
 }
 </script>
 
@@ -27,23 +55,73 @@ function play() {
 
       <p class="mt-4 max-w-md text-sm text-cyan-200/60 leading-relaxed">
         Expande tu red de energía desde el Núcleo, mina meteoritos, construye
-        defensas y sobrevive a <b class="text-cyan-200">10 oleadas</b> de la horda.
+        defensas y sobrevive a <b class="text-cyan-200">{{ MODES[mode].waveCount }} oleadas</b> de la horda.
       </p>
 
+      <!-- Modo -->
+      <div class="mt-8">
+        <p class="text-xs text-cyan-300/50 mb-2 tracking-widest">MODO</p>
+        <div class="flex gap-2">
+          <button
+            v-for="(m, key) in MODES"
+            :key="key"
+            class="diff-btn"
+            :class="{ 'diff-btn--active': mode === key }"
+            :title="m.desc"
+            @click="mode = key"
+          >
+            {{ m.label }}
+          </button>
+        </div>
+      </div>
+
       <!-- Difficulty -->
-      <div class="mt-8 flex gap-2">
-        <button
-          v-for="(d, key) in DIFFICULTY"
-          :key="key"
-          class="diff-btn"
-          :class="{ 'diff-btn--active': difficulty === key }"
-          @click="difficulty = key"
-        >
-          {{ d.label }}
-        </button>
+      <div class="mt-4">
+        <p class="text-xs text-cyan-300/50 mb-2 tracking-widest">DIFICULTAD</p>
+        <div class="flex gap-2">
+          <button
+            v-for="(d, key) in DIFFICULTY"
+            :key="key"
+            class="diff-btn"
+            :class="{ 'diff-btn--active': difficulty === key }"
+            @click="difficulty = key"
+          >
+            {{ d.label }}
+          </button>
+        </div>
       </div>
 
       <button class="play-btn mt-8" @click="play">JUGAR</button>
+
+      <!-- Multijugador -->
+      <div class="mt-8 border-t border-cyan-400/10 pt-6 w-full max-w-xs">
+        <p class="text-xs text-cyan-300/50 mb-3 tracking-widest">MULTIJUGADOR</p>
+
+        <div v-if="appState.mp.role === 'solo'" class="flex flex-col gap-3">
+          <button class="mp-btn" @click="hostGame">Crear partida</button>
+          <div class="flex gap-2">
+            <input
+              v-model="joinCode"
+              class="flex-1 bg-white/5 border border-cyan-400/20 rounded px-3 py-1.5 text-sm
+                     text-cyan-200 placeholder-cyan-400/30 outline-none focus:border-cyan-300/50"
+              placeholder="Código"
+              maxlength="4"
+              @keyup.enter="joinGame"
+            />
+            <button class="mp-btn" @click="joinGame">Unirse</button>
+          </div>
+        </div>
+
+        <div v-else class="flex flex-col items-center gap-2 text-sm">
+          <div class="flex items-center gap-2">
+            <span class="text-cyan-300/60">Código:</span>
+            <span class="text-cyan-200 font-mono tracking-widest">{{ appState.mp.code }}</span>
+          </div>
+          <div v-if="appState.mp.connected" class="text-xs text-green-400/80">Conectado</div>
+          <div v-else class="text-xs text-yellow-400/60 animate-pulse">Esperando...</div>
+          <div v-if="appState.mp.ping" class="text-xs text-green-400/80">ping OK ✓</div>
+        </div>
+      </div>
 
       <div class="mt-10 text-[11px] text-cyan-300/40 space-y-1">
         <p>Clic en una estructura del panel inferior y clic en el mapa para construir.</p>
@@ -81,6 +159,11 @@ function play() {
   @apply px-14 py-3 text-lg font-bold tracking-widest rounded-xl text-[#05070f]
          bg-cyan-300 hover:bg-cyan-200 active:scale-95 transition-all;
   box-shadow: 0 0 30px rgba(108, 200, 255, 0.5);
+}
+
+.mp-btn {
+  @apply px-4 py-1.5 text-sm rounded-md bg-white/5 ring-1 ring-cyan-400/20
+         text-cyan-200/80 hover:bg-cyan-400/10 hover:text-white active:scale-95 transition-all;
 }
 
 /* CSS starfield via layered radial-gradient dots that drift slowly. */
