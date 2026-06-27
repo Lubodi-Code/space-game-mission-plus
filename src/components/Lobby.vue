@@ -8,33 +8,68 @@ import { net } from '../game/net.js'
 const difficulty = ref('normal')
 const mode = ref('campaign')
 const joinCode = ref('')
+const playerName = ref(localStorage.getItem('sgmp_name') || 'Comandante')
 
 function play() {
+  appState.playerName = playerName.value.slice(0, 16) || 'Comandante'
+  localStorage.setItem('sgmp_name', appState.playerName)
   startGame(difficulty.value, mode.value)
 }
 
+function saveName() {
+  appState.playerName = playerName.value.slice(0, 16) || 'Comandante'
+  localStorage.setItem('sgmp_name', appState.playerName)
+}
+
 function hostGame() {
+  saveName()
   const code = Math.random().toString(36).slice(2, 6).toUpperCase()
   appState.mp.role = 'host'
   appState.mp.code = code
-  net.onOpen = () => { appState.mp.connected = true; net.send({ t: 'ping' }) }
-  net.onData = (d) => { if (d.t === 'pong') appState.mp.ping = true }
-  net.onError = () => { appState.mp.role = 'solo'; appState.mp.code = null }
-  net.host(code)
+  appState.mp.players = [{ name: appState.playerName, host: true }]
+  net.onOpen = (conn) => { appState.mp.connected = true; net.send({ t: 'ping', name: appState.playerName }) }
+  net.onData = (d, conn) => {
+    if (d.t === 'pong') {
+      appState.mp.ping = true
+      if (d.name) {
+        conn.name = d.name // el host recuerda el nombre por conexión (general etiquetado en juego)
+        if (!appState.mp.players.find((p) => p.name === d.name)) {
+          appState.mp.players.push({ name: d.name, host: false })
+        }
+      }
+    }
+  }
+  net.onError = () => { appState.mp.role = 'solo'; appState.mp.code = null; appState.mp.players = [] }
+  net.onDisconnect = (conn) => {
+    appState.mp.players = appState.mp.players.filter((p) => p.name !== conn.name)
+  }
+  net.host(code, appState.playerName)
 }
 
 function joinGame() {
+  saveName()
   if (!joinCode.value) return
   appState.mp.role = 'client'
   appState.mp.code = joinCode.value.toUpperCase()
-  net.onOpen = () => { appState.mp.connected = true }
-  net.onData = (d) => {
-    if (d.t === 'ping') { appState.mp.ping = true; net.send({ t: 'pong' }) }
-    else if (d.t === 'snap') { appState.mp.connected = true; appState.view = 'game' }
+  appState.mp.players = [{ name: appState.playerName, host: false }]
+  net.onOpen = (conn) => { appState.mp.connected = true }
+  net.onData = (d, conn) => {
+    if (d.t === 'ping') {
+      appState.mp.ping = true
+      if (d.name && !appState.mp.players.find((p) => p.name === d.name)) {
+        appState.mp.players.push({ name: d.name, host: true })
+      }
+      net.send({ t: 'pong', name: appState.playerName })
+    } else if (d.t === 'snap') {
+      appState.mp.connected = true
+      appState.view = 'game'
+    }
   }
-  net.onError = () => { appState.mp.role = 'solo' }
-  net.join(appState.mp.code)
+  net.onError = () => { appState.mp.role = 'solo'; appState.mp.players = [] }
+  net.join(appState.mp.code, appState.playerName)
 }
+
+
 </script>
 
 <template>
@@ -58,8 +93,20 @@ function joinGame() {
         defensas y sobrevive a <b class="text-cyan-200">{{ MODES[mode].waveCount }} oleadas</b> de la horda.
       </p>
 
+      <!-- Nombre de jugador -->
+      <div class="mt-6 w-full max-w-xs">
+        <p class="text-xs text-cyan-300/50 mb-2 tracking-widest">NOMBRE</p>
+        <input
+          v-model="playerName"
+          class="w-full bg-white/5 border border-cyan-400/20 rounded px-3 py-1.5 text-sm
+                 text-cyan-200 placeholder-cyan-400/30 outline-none focus:border-cyan-300/50 text-center"
+          placeholder="Tu nombre"
+          maxlength="16"
+        />
+      </div>
+
       <!-- Modo -->
-      <div class="mt-8">
+      <div class="mt-6">
         <p class="text-xs text-cyan-300/50 mb-2 tracking-widest">MODO</p>
         <div class="flex gap-2">
           <button

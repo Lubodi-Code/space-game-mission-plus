@@ -11,6 +11,7 @@ import { drawLinks } from '../systems/energyNet.js'
 import { tryPlace } from '../systems/placement.js'
 import { explosion, hitFlash, drawBeam } from '../render/fx.js'
 import { glowBlend } from '../render/blend.js'
+import { GEN_TINTS } from '../General.js'
 
 // Capa de sincronización multijugador (host-authoritative ~12 Hz).
 // Host: buildSnapshot/sendSnapshot/onIntent. Cliente: createRemote/applySnapshot/
@@ -18,15 +19,17 @@ import { glowBlend } from '../render/blend.js'
 // (eById, sById, rbeams, _snap…) vive en la escena. GameScene solo orquesta y hace input.
 
 // ---------------------------------------------------------------- host
-export function onIntent(scene, d) {
+export function onIntent(scene, d, nc) {
   if (d.t === 'build') {
     const k = scene.placementKey
     scene.placementKey = d.key
     tryPlace(scene, d.x, d.y)
     scene.placementKey = k
   } else if (d.t === 'general') {
-    if (!scene.cgActive) { scene.cgActive = true; scene.clientGeneral.sprite.setVisible(true) }
-    scene.clientGeneral.setTarget(d.x, d.y, scene)
+    scene.generals.get(nc.pid)?.setTarget(d.x, d.y, scene)
+  } else if (d.t === 'hello') {
+    nc.name = d.name || nc.name
+    if (d.name) scene.generals.get(nc.pid)?.setLabel(d.name)
   } else if (d.t === 'speed') {
     scene.setSpeed(d.v)
   }
@@ -61,16 +64,15 @@ export function buildSnapshot(scene) {
       gmining: scene.general?.gmining || null,
       expl,
     },
-    gen: scene.cgActive
-      ? [[0, Math.round(scene.general.x), Math.round(scene.general.y), Math.round(scene.general.hp), scene.general.alive ? 1 : 0],
-         [1, Math.round(scene.clientGeneral.x), Math.round(scene.clientGeneral.y), Math.round(scene.clientGeneral.hp), scene.clientGeneral.alive ? 1 : 0]]
-      : [[0, Math.round(scene.general.x), Math.round(scene.general.y), Math.round(scene.general.hp), scene.general.alive ? 1 : 0]],
+    // [pid, x, y, hp, alive, name]. El nombre va en cada snap (≤16 chars × ≤4 generales,
+    // ~12 Hz). ponytail: trivial; separar a un mensaje aparte solo si el ancho de banda importa.
+    gen: [...scene.generals.values()].map((g) => [g.pid, Math.round(g.x), Math.round(g.y), Math.round(g.hp), g.alive ? 1 : 0, g.labelName || '']),
   }
 }
 
 // Bloque del update() del host: emite snapshot ~12 Hz (incluso en game over para propagar status).
 export function sendSnapshot(scene, d) {
-  if (net.isHost && net.conn) {
+  if (net.isHost && net.conns.length) {
     scene._snapAccum = (scene._snapAccum || 0) + d
     if (scene._snapAccum >= 80) {
       scene._snapAccum = 0
@@ -96,12 +98,13 @@ export function createRemote(scene) {
   scene.speed = 1
   scene.placementKey = null
   setupRemoteInput(scene)
+  net.send({ t: 'hello', name: net.myName }) // el host etiqueta mi general con mi nombre
 
   scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
     net.onData = () => {}
     for (const spr of scene.eById.values()) spr.destroy()
     for (const s of scene.sById.values()) s.container.destroy()
-    for (const g of scene.genSprites.values()) g.destroy()
+    for (const g of scene.genSprites.values()) { g.label?.destroy(); g.destroy() }
     for (const m of scene.mById.values()) m.container.destroy()
     for (const s of scene.pMissiles.values()) s.destroy()
     for (const s of scene.eMissiles.values()) s.destroy()
@@ -172,19 +175,22 @@ export function applySnapshot(scene, snap) {
   }
   for (const [id, spr] of scene.eById) if (!seenE.has(id)) { spr.glow?.destroy(); spr.destroy(); scene.eById.delete(id) }
 
-  // Generales con interpolación (tx/ty para movimiento suave en update).
+  // Generales con interpolación (tx/ty para movimiento suave en update) + nombre encima.
   const seenG = new Set()
-  for (const [pid, x, y, hp, alive] of snap.gen) {
+  for (const [pid, x, y, hp, alive, name] of snap.gen) {
     seenG.add(pid)
     let g = scene.genSprites.get(pid)
     if (!g) {
-      g = scene.add.image(x, y, 'enemy_skirmisher').setTint(pid === 0 ? 0xffaa44 : 0x8be9fd).setScale(1.3).setDepth(17)
+      g = scene.add.image(x, y, 'enemy_skirmisher').setTint(GEN_TINTS[pid % GEN_TINTS.length]).setScale(1.3).setDepth(17)
       g.tx = x; g.ty = y
+      g.label = scene.add.text(x, y - 30, name || '', { fontSize: '11px', color: '#cfe8ff', fontFamily: 'monospace' }).setOrigin(0.5).setDepth(19)
       scene.genSprites.set(pid, g)
     }
     g.tx = x; g.ty = y; g.setVisible(!!alive)
+    if (name && g.label.text !== name) g.label.setText(name)
+    g.label.setVisible(!!alive)
   }
-  for (const [pid, g] of scene.genSprites) if (!seenG.has(pid)) { g.destroy(); scene.genSprites.delete(pid) }
+  for (const [pid, g] of scene.genSprites) if (!seenG.has(pid)) { g.label?.destroy(); g.destroy(); scene.genSprites.delete(pid) }
 
   // Rayos: encolar cada evento. b = [x1,y1,x2,y2,color,width,ttl,ttlBase]; índice 6 cuenta atrás.
   for (const b of (snap.fx?.beams || [])) scene.rbeams.push([...b])
@@ -310,11 +316,12 @@ export function renderRemote(scene, time, delta) {
     }
   }
 
-  // Generales: interpolar + rotar
+  // Generales: interpolar + rotar + reposicionar nombre
   for (const [, gen] of scene.genSprites) {
     const dx = gen.tx - gen.x; const dy = gen.ty - gen.y
     gen.x += dx * 0.3; gen.y += dy * 0.3
     if (Math.hypot(dx, dy) > 1) gen.setRotation(Math.atan2(dy, dx))
+    if (gen.label) gen.label.setPosition(gen.x, gen.y - 30)
   }
 
   // Rayos desde la cola rbeams: reusa drawBeam() del host → render idéntico (glow en boca incluido).

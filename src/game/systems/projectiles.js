@@ -1,5 +1,5 @@
 import { COMBAT } from '../balance.js'
-import { explosion } from '../render/fx.js'
+import { explosion, auraBurst } from '../render/fx.js'
 
 // Misiles del jugador (torreta de misiles). delta en MS; dt en segundos para el movimiento.
 
@@ -22,12 +22,20 @@ export function updateProjectiles(scene, delta) {
     const hitR = (p.target && !p.target.dead ? p.target.radius || 6 : 6) + 6
 
     if (d <= Math.max(hitR, step)) {
-      if (p.target && !p.target.dead) {
+      if (p.aura && p.splash > 0) {
+        // Ojiva de plasma: daño en área a todos los enemigos dentro del radio de salpicadura.
+        for (const e of scene.enemies) {
+          if (e.dead) continue
+          if (Math.hypot(e.x - p.x, e.y - p.y) <= p.splash) damageEnemy(scene, e, p.damage)
+        }
+        auraBurst(scene, p.x, p.y, p.color, p.splash)
+      } else if (p.target && !p.target.dead) {
         const dtg = Math.hypot(p.target.x - p.x, p.target.y - p.y)
         if (dtg <= (p.target.radius || 6) + 12) damageEnemy(scene, p.target, p.damage)
       }
       explosion(scene, p.x, p.y, p.color, p.splash > 0 ? p.splash : 12)
       p.sprite.destroy()
+      p.glow?.destroy()
       scene.projectiles.splice(i, 1)
       continue
     }
@@ -41,6 +49,7 @@ export function updateProjectiles(scene, delta) {
     if ((p.life > 200 && aim < -0.2) || p.life > maxLife) {
       explosion(scene, p.x, p.y, p.color, 8)
       p.sprite.destroy()
+      p.glow?.destroy()
       scene.projectiles.splice(i, 1)
       continue
     }
@@ -60,5 +69,9 @@ export function updateProjectiles(scene, delta) {
     p.y += newDir.y * step
     p.sprite.setPosition(p.x, p.y)
     p.sprite.setRotation(Math.atan2(newDir.y, newDir.x) + Math.PI / 2)
+    if (p.glow && p.glow.active) {
+      p.glow.setPosition(p.x - newDir.x * 7, p.y - newDir.y * 7)
+      p.glow.setRotation(Math.atan2(newDir.y, newDir.x) + Math.PI / 2)
+    }
   }
 }

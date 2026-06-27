@@ -24,13 +24,13 @@ export function selectStructure(scene, s) {
       damage: s.laserDamage ?? s.missileDamage ?? s.def.damage ?? null,
       cooldown: s.cooldown || s.def.cooldown || null,
       energyDrain: s.energyDrain || s.def.energyDrain || null,
-      healRate: s.def.healRate || null,
-      maxSpheres: s.def.maxSpheres || null,
+      healRate: (s.healRate ?? s.def.healRate) || null,
+      maxSpheres: (s.maxSpheres ?? s.def.maxSpheres) || null,
       miningRange: s.def.miningRange || null,
       rate: s.def.rate || null,
-      energyRate: s.def.energyRate || null,
-      energyCap: s.def.energyCap || null,
-      capBonus: s.def.capBonus || null,
+      energyRate: (s.energyRate ?? s.def.energyRate) || null,
+      energyCap: (s.energyCap ?? s.def.energyCap) || null,
+      capBonus: (s.capBonus ?? s.def.capBonus) || null,
       splash: s.splash || s.def.splash || null,
       projSpeed: s.projSpeed || s.def.projSpeed || null,
       range: s.range,
@@ -53,6 +53,7 @@ export function applyUpgrade(scene, structureId, upgradeId) {
   if (gameState.minerals < cost) return
   gameState.minerals -= cost
   s.applyUpgrade(upg)
+  if (s.applyUpgradeVisual) s.applyUpgradeVisual(upg)
   selectStructure(scene, s)
 }
 

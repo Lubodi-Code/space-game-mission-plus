@@ -122,11 +122,11 @@ export class LaserTurret extends Structure {
     this.scene.lasers.push({
       x1: this.x, y1: this.y, x2, y2,
       ttl: big ? COMBAT.laserTtlMs * 3 : COMBAT.laserTtlMs,
-      color: this.def.color,
+      color: this.fxColor,
       width: big ? 5 : 2.5,
     })
     if (this.scene.netHost) this.scene._beamQueue.push(
-      [Math.round(this.x), Math.round(this.y), Math.round(x2), Math.round(y2), this.def.color, big ? 5 : 2.5,
+      [Math.round(this.x), Math.round(this.y), Math.round(x2), Math.round(y2), this.fxColor, big ? 5 : 2.5,
        big ? COMBAT.laserTtlMs * 3 : COMBAT.laserTtlMs, COMBAT.laserTtlMs]) // ttl + base de alfa: el cliente reusa drawBeam() y desvanece igual
   }
 

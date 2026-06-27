@@ -176,9 +176,9 @@ export const STRUCTURES = [
     size: 9, 
     role: 'healer',
     hp: 70,
-    healInterval: 2600,
+    healInterval: 1600,
     maxSpheres: 4,
-    healRate: 22,
+    healRate: 14,
     sphereSpeed: 135,
     energyDrain: 2,
     buildTime: 4000,
@@ -216,9 +216,9 @@ export const STRUCTURES = [
     role: 'missile', 
     hp: 55, 
     atkRange: 2250, 
-    damage: 18, 
+    damage: 9, 
     cooldown: 15000,
-    splash: 30,
+    splash: 15,
     projSpeed: 200,
     energyDrain: 6,
     buildTime: 5000,
@@ -248,32 +248,25 @@ export function buildWaves(difficultyKey = 'normal', waveCount = WAVE_TOTAL) {
   const waves = []
   for (let i = 1; i <= waveCount; i++) {
     const list = []
-    const factor = 1 + i * 0.5
+    // Crecimiento lineal por tipo (sin el `factor` multiplicativo de antes, que disparaba los
+    // grunts a cientos y tapaba la variedad). Cada tipo crece a su ritmo y mantiene una cuota
+    // sana en oleadas altas → variedad real (~30% grunt, 23% runner, 18% skirmisher, etc.).
     const push = (type, n) => {
-      const count = Math.max(1, Math.round(n * countMult * factor))
-      for (let k = 0; k < count; k++) {
-        list.push(type)
-      }
+      const count = Math.round(n * countMult)
+      for (let k = 0; k < count; k++) list.push(type)
     }
 
-    push(EnemyType.GRUNT, 20 + i * 10)
-    if (i >= 2) {
-      push(EnemyType.RUNNER, (i - 1) * 6)
-    }
+    push(EnemyType.GRUNT, 12 + i * 4)
+    if (i >= 2) push(EnemyType.RUNNER, 4 + (i - 1) * 4)
+    // Saboteadores desde la oleada 1 para presionar temprano.
+    push(EnemyType.SABOTEUR, 2 + i * 2)
     if (i >= 3) {
-      push(EnemyType.SABOTEUR, Math.max(3, (i - 2) * 3))
+      // Skirmishers más numerosos y desde la oleada 3.
+      push(EnemyType.SKIRMISHER, 4 + (i - 2) * 6)
+      push(EnemyType.BRUTE, 2 + (i - 3) * 2)
     }
-    if (i >= 4) {
-      push(EnemyType.SKIRMISHER, Math.max(3, (i - 3) * 4))
-      push(EnemyType.BRUTE, Math.max(3, (i - 3) * 3))
-    }
-    if (i >= 5) {
-      push(EnemyType.ARTILLERY, Math.max(2, (i - 4) * 3))
-    }
-    if (i >= 7) {
-      push(EnemyType.MOTHERSHIP, Math.max(1, (i - 5) * 2))
-      push(EnemyType.BRUTE, (i - 5) * 4)
-    }
+    if (i >= 5) push(EnemyType.ARTILLERY, 2 + (i - 4) * 2)
+    if (i >= 7) push(EnemyType.MOTHERSHIP, 1 + (i - 6))
 
     shuffle(list)
 

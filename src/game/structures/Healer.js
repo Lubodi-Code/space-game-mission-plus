@@ -10,6 +10,15 @@ export class Healer extends Structure {
     this.sphereSpeed = def.sphereSpeed
     this.healInterval = def.healInterval
     this.energyDrain = def.energyDrain || 0
+    this.upgrades = []
+  }
+
+  applyUpgrade(upg) {
+    if (upg.healInterval) this.healInterval = Math.round(this.healInterval * upg.healInterval)
+    if (upg.healRate) this.healRate = this.healRate * upg.healRate
+    if (upg.maxSpheres) this.maxSpheres += upg.maxSpheres
+    if (upg.sphereSpeed) this.sphereSpeed = this.sphereSpeed * upg.sphereSpeed
+    this.upgrades.push(upg.id)
   }
 
   update(dt, world, time) {

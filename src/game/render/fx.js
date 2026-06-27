@@ -71,6 +71,25 @@ export function explosion(scene, x, y, color, radius) {
   scene.time.delayedCall(450, () => burst.destroy())
 }
 
+// Aura de plasma: anillo translúcido que se expande y desvanece en el punto de impacto.
+export function auraBurst(scene, x, y, color, radius) {
+  const g = scene.add.graphics().setDepth(27).setBlendMode(Phaser.BlendModes.ADD).setPosition(x, y)
+  // Aura más tenue y granular: anillos concéntricos en lugar de relleno plano.
+  g.lineStyle(2, color, 0.55).strokeCircle(0, 0, radius)
+  g.lineStyle(1, color, 0.35).strokeCircle(0, 0, radius * 0.65)
+  g.lineStyle(1, color, 0.22).strokeCircle(0, 0, radius * 0.35)
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2
+    const r = radius * (0.55 + Math.random() * 0.35)
+    g.fillStyle(color, 0.35).fillCircle(Math.cos(a) * r, Math.sin(a) * r, 1.5 + Math.random())
+  }
+  scene.tweens.add({
+    targets: g, scale: 1.6, alpha: 0,
+    duration: 420, ease: 'Quad.out',
+    onComplete: () => g.destroy(),
+  })
+}
+
 // Pura: dibuja un haz sobre el Graphics `g` (la usan el host y el cliente remoto).
 export function drawBeam(g, x1, y1, x2, y2, color, width, a) {
   g.lineStyle(width * 3, color, a * 0.22); g.lineBetween(x1, y1, x2, y2)

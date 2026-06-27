@@ -6,6 +6,26 @@ export class Battery extends Structure {
   constructor(def, x, y, scene) {
     super(def, x, y, scene, false)
     this.selfCharge = false // lo activa una mejora (Fase 3)
+    this.upgrades = []
+    // Stats que pueden mejorar; por defecto vienen de def.
+    this.energyCap = def.energyCap || 0
+    this.capBonus = def.capBonus || 0
+    this.energyRate = ENERGY.batteryPassiveRate
+  }
+
+  applyUpgrade(upg) {
+    if (upg.energyCap) {
+      this.energyCap = Math.round(this.energyCap * upg.energyCap)
+    }
+    if (upg.capBonus) {
+      const old = this.capBonus
+      this.capBonus = Math.round(this.capBonus * upg.capBonus)
+      gameState.mineralsCap += this.capBonus - old
+    }
+    if (upg.energyRate) {
+      this.energyRate += upg.energyRate
+    }
+    this.upgrades.push(upg.id)
   }
 
   update(dt, world, time) {
@@ -15,7 +35,7 @@ export class Battery extends Structure {
     // Generación pasiva constante de energía mientras la batería está encendida.
     gameState.energy = Math.min(
       gameState.energyMax,
-      gameState.energy + ENERGY.batteryPassiveRate * (dt / 1000),
+      gameState.energy + this.energyRate * (dt / 1000),
     )
 
     if (!this.selfCharge) return

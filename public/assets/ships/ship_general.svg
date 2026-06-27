@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-28 -28 56 56">
+  <defs>
+    <radialGradient id="g" cx="0" cy="0" r="24">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <circle cx="0" cy="0" r="24" fill="url(#g)"/>
+  <!-- alas en flecha hacia adelante (nave heroica) -->
+  <polygon points="7,-5 -3,-21 -17,-15 -8,-4" fill="#cfeeff" opacity="0.9"/>
+  <polygon points="7,5 -3,21 -17,15 -8,4" fill="#cfeeff" opacity="0.9"/>
+  <polygon points="7,-5 -3,-21 -17,-15 -8,-4" fill="none" stroke="#ffffff" stroke-width="0.9"/>
+  <polygon points="7,5 -3,21 -17,15 -8,4" fill="none" stroke="#ffffff" stroke-width="0.9"/>
+  <!-- fuselaje -->
+  <polygon points="26,0 6,-7 -15,-4 -11,0 -15,4 6,7" fill="#eaf6ff" opacity="0.96"/>
+  <polygon points="26,0 6,-7 -15,-4 -11,0 -15,4 6,7" fill="none" stroke="#ffffff" stroke-width="1.1"/>
+  <!-- cabina + motor -->
+  <circle cx="9" cy="0" r="3" fill="#ffffff"/>
+  <circle cx="-14" cy="0" r="2.6" fill="#ffffff" opacity="0.85"/>
+</svg>

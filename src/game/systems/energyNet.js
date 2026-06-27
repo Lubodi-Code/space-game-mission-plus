@@ -74,7 +74,7 @@ export function recomputeNetwork(scene) {
 export function recomputeEnergyCap(scene) {
   let cap = CORE.energyCap || 100
   for (const s of scene.structures) {
-    if (!s.dead && !s.building && s.role === 'battery') cap += s.def.energyCap || 0
+    if (!s.dead && !s.building && s.role === 'battery') cap += s.energyCap ?? s.def.energyCap ?? 0
   }
   gameState.energyMax = cap
   gameState.energy = Math.min(gameState.energy, cap)

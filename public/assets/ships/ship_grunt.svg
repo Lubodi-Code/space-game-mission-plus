@@ -6,6 +6,9 @@
     </radialGradient>
   </defs>
   <circle cx="0" cy="0" r="20" fill="url(#g)"/>
-  <polygon points="22,0 -16,-10 -10,0 -16,10" fill="#49e07a" opacity="0.9"/>
-  <polygon points="22,0 -16,-10 -10,0 -16,10" fill="none" stroke="#7affa0" stroke-width="0.8"/>
+  <polygon points="22,0 -10,-9 -16,0 -10,9" fill="#49e07a" opacity="0.9"/>
+  <polygon points="-10,-9 -19,-13 -13,-4" fill="#49e07a" opacity="0.55"/>
+  <polygon points="-10,9 -19,13 -13,4" fill="#49e07a" opacity="0.55"/>
+  <polygon points="22,0 -10,-9 -16,0 -10,9" fill="none" stroke="#7affa0" stroke-width="0.9"/>
+  <circle cx="6" cy="0" r="2.5" fill="#d4ffe6" opacity="0.95"/>
 </svg>

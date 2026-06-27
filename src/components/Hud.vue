@@ -76,6 +76,14 @@ const availableUpgrades = computed(() => {
   return getUpgradesFor(s.role, s.upgrades || [])
 })
 
+const generalAvailableUpgrades = computed(() =>
+  getUpgradesFor('general', gameState.generalUpgrades)
+)
+
+function applyGeneralUpgrade(id) {
+  bus.emit('upgradeGeneral', id)
+}
+
 function toggleFireMode() {
   const s = selectedStructure.value
   if (!s) return
@@ -87,6 +95,13 @@ function applyUpgrade(upgradeId) {
   const s = selectedStructure.value
   if (!s) return
   bus.emit('upgrade', { structureId: s.id, upgradeId })
+}
+
+function demolish() {
+  const s = selectedStructure.value
+  if (!s || s.role === 'core') return
+  bus.emit('demolish', { structureId: s.id })
+  selectedStructure.value = null
 }
 
 // Wave banner.
@@ -134,6 +149,16 @@ function pickGeneral() {
 
 function restart() {
   bus.emit('restart')
+}
+
+// Puntos de un polígono regular para el icono SVG de cada estructura.
+function polyPoints(sides, radius) {
+  const pts = []
+  for (let i = 0; i < sides; i++) {
+    const a = (i / sides) * Math.PI * 2 - Math.PI / 2
+    pts.push(`${12 + Math.cos(a) * radius},${12 + Math.sin(a) * radius}`)
+  }
+  return pts.join(' ')
 }
 </script>
 
@@ -185,17 +210,30 @@ function restart() {
     </div>
 
     <!-- Core integrity + wave status (top-left) -->
-    <div class="absolute top-14 left-3 w-52 space-y-1">
-      <div class="flex items-center justify-between text-[11px]">
-        <span class="text-cyan-300/80">Núcleo</span>
-        <span class="tabular-nums" :class="coreHpPct > 30 ? 'text-cyan-200' : 'text-red-400'">{{ coreHpPct }}%</span>
-      </div>
-      <div class="h-2 rounded-full bg-white/10 overflow-hidden ring-1 ring-cyan-400/20">
-        <div
-          class="h-full rounded-full transition-[width] duration-200"
-          :class="coreHpPct > 50 ? 'bg-cyan-400' : coreHpPct > 25 ? 'bg-amber-400' : 'bg-red-500'"
-          :style="{ width: coreHpPct + '%' }"
-        ></div>
+    <div class="absolute top-14 left-3 w-56 space-y-1.5 p-2.5 rounded-xl bg-[#0a0f1c]/60 backdrop-blur-sm ring-1 ring-cyan-400/20">
+      <div class="flex items-center gap-2">
+        <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+          <polygon
+            :points="polyPoints(6, 10)"
+            fill="#8be9fd"
+            stroke="rgba(255,255,255,0.9)"
+            stroke-width="1.2"
+            :class="coreHpPct <= 25 ? 'animate-pulse' : ''"
+          />
+        </svg>
+        <div class="flex-1">
+          <div class="flex items-center justify-between text-[11px]">
+            <span class="text-cyan-300/80 font-semibold tracking-wide">Nexo</span>
+            <span class="tabular-nums font-bold" :class="coreHpPct > 30 ? 'text-cyan-200' : 'text-red-400'">{{ coreHpPct }}%</span>
+          </div>
+          <div class="h-2.5 rounded-full bg-white/10 overflow-hidden ring-1 ring-cyan-400/30 mt-1">
+            <div
+              class="h-full rounded-full transition-[width] duration-200"
+              :class="coreHpPct > 50 ? 'bg-cyan-400 shadow-[0_0_10px_rgba(139,233,253,0.5)]' : coreHpPct > 25 ? 'bg-amber-400' : 'bg-red-500 animate-pulse'"
+              :style="{ width: coreHpPct + '%' }"
+            ></div>
+          </div>
+        </div>
       </div>
       <div
         class="mt-1 inline-block px-2 py-0.5 rounded text-[11px]"
@@ -401,6 +439,56 @@ function restart() {
           </span>
         </div>
       </div>
+
+      <!-- Demoler (cualquier estructura menos el núcleo) -->
+      <div v-if="selectedStructure.role !== 'core'" class="pt-1 border-t border-cyan-400/10">
+        <button
+          class="w-full px-2 py-1 rounded text-[11px] ring-1 ring-red-400/30 bg-red-500/15
+                 text-red-200 hover:bg-red-500/25 transition-colors"
+          @click="demolish"
+        >
+          Demoler · recuperás 50%
+        </button>
+      </div>
+    </div>
+
+    <!-- General upgrades panel (right side) -->
+    <div
+      v-if="gameState.generalMode === 'selected'"
+      class="absolute top-28 right-3 w-56 p-3 rounded-xl bg-[#0a0f1c]/90 backdrop-blur-sm
+             ring-1 ring-cyan-400/20 pointer-events-auto text-xs space-y-2"
+    >
+      <div class="font-bold text-sm" style="color: #8be9fd">General</div>
+      <div class="text-cyan-200/70 space-y-0.5">
+        <div>HP: {{ gameState.general.hp }}/{{ gameState.general.hpMax }}</div>
+        <div>Daño: {{ gameState.general.damage || 8 }}</div>
+        <div>Alcance: {{ gameState.general.atkRange || 160 }}</div>
+        <div>Recolección: {{ Math.round((gameState.general.collectRate || 18) * 10) / 10 }}/s</div>
+      </div>
+
+      <div v-if="generalAvailableUpgrades.length" class="pt-1 border-t border-cyan-400/10 space-y-1">
+        <div class="text-cyan-300/80 text-[11px] font-semibold">Mejoras</div>
+        <div
+          v-for="u in generalAvailableUpgrades"
+          :key="u.id"
+          class="flex items-center justify-between px-2 py-1 rounded bg-white/5 ring-1 ring-cyan-400/10"
+        >
+          <span class="text-cyan-100/80 text-[10px]">{{ u.label }}</span>
+          <span class="flex items-center gap-1">
+            <span class="text-amber-300/70 text-[10px] tabular-nums">{{ u.cost }}</span>
+            <button
+              class="px-1.5 py-0.5 rounded text-[10px] bg-emerald-400/15 text-emerald-200
+                     hover:bg-emerald-400/25 transition-colors"
+              :disabled="gameState.minerals < u.cost"
+              :class="{ 'opacity-40 cursor-not-allowed': gameState.minerals < u.cost }"
+              @click="applyGeneralUpgrade(u.id)"
+            >
+              +Añadir
+            </button>
+          </span>
+        </div>
+      </div>
+      <div v-else class="text-cyan-400/50 text-[10px]">No hay más mejoras disponibles.</div>
     </div>
 
     <!-- Bottom build bar -->
@@ -422,7 +510,15 @@ function restart() {
         @mouseleave="hideTooltip"
         @click="pick(s)"
       >
-        <span class="text-2xl leading-none" :style="{ color: s.css }">{{ s.glyph }}</span>
+        <svg class="w-6 h-6" viewBox="0 0 24 24">
+          <polygon
+            :points="polyPoints(s.sides, s.size)"
+            :fill="s.css"
+            stroke="rgba(255,255,255,0.85)"
+            stroke-width="1.2"
+            opacity="0.95"
+          />
+        </svg>
         <span class="text-[10px] text-cyan-200/70 group-hover:text-cyan-100">{{ s.label }}</span>
         <span class="text-[10px] tabular-nums" :class="gameState.minerals < s.cost ? 'text-red-400/80' : 'text-emerald-300/80'">
           {{ s.cost }}

@@ -8,7 +8,8 @@ export const appState = reactive({
   view: 'lobby', // 'lobby' | 'game'
   difficulty: 'normal', // 'normal' | 'hard'
   mode: 'campaign', // ver src/game/modes/index.js
-  mp: { role: 'solo', connected: false, code: null, ping: false },
+  playerName: 'Comandante',
+  mp: { role: 'solo', connected: false, code: null, ping: false, players: [] },
 })
 
 // Multipliers applied to enemy stats per difficulty.

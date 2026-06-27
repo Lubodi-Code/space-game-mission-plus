@@ -5,6 +5,53 @@ import { glowBlend } from '../render/blend.js'
 
 let _seq = 0
 
+// Adorno distintivo por mejora, dibujado sobre el Graphics de acento (centrado en 0,0; "arriba" = -y,
+// igual que drawPolygon). Cada `decor` da una silueta propia a la torreta mejorada.
+function drawUpgradeDecor(g, decor, R, color) {
+  g.clear()
+  switch (decor) {
+    case 'fast': // doble cañón corto (cadencia)
+      g.lineStyle(2, color, 0.95)
+      g.lineBetween(-3, -R, -3, -R - 6)
+      g.lineBetween(3, -R, 3, -R - 6)
+      break
+    case 'triple': // tres púas en abanico (ráfaga triple)
+      g.lineStyle(2, color, 0.95)
+      for (const a of [-0.5, 0, 0.5]) {
+        g.lineBetween(Math.sin(a) * R, -Math.cos(a) * R, Math.sin(a) * (R + 8), -Math.cos(a) * (R + 8))
+      }
+      break
+    case 'wide': // anillo amplio (radio)
+      g.lineStyle(1.5, color, 0.5).strokeCircle(0, 0, R + 9)
+      break
+    case 'heavy': // doble anillo grueso + núcleo (rayo progresivo)
+      g.lineStyle(3, color, 0.85).strokeCircle(0, 0, R + 4)
+      g.lineStyle(1.5, color, 0.45).strokeCircle(0, 0, R + 9)
+      g.fillStyle(color, 0.5).fillCircle(0, 0, R * 0.4)
+      break
+    case 'pods': // pods de misiles alrededor (enjambre)
+      g.fillStyle(color, 0.95)
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * Math.PI * 2
+        g.fillCircle(Math.cos(a) * (R + 5), Math.sin(a) * (R + 5), 2)
+      }
+      break
+    case 'plasma': // anillo de plasma relleno (aura/área)
+      g.fillStyle(color, 0.18).fillCircle(0, 0, R + 7)
+      g.lineStyle(2, color, 0.9).strokeCircle(0, 0, R + 7)
+      break
+    case 'long': // antena larga (largo alcance)
+      g.lineStyle(2, color, 0.95).lineBetween(0, -R, 0, -R - 12)
+      g.fillStyle(color, 0.95).fillCircle(0, -R - 12, 2)
+      break
+    case 'pierce': // púa afilada (perforante)
+      g.fillStyle(color, 0.95).fillTriangle(-3, -R, 3, -R, 0, -R - 13)
+      break
+    default:
+      g.lineStyle(2, color, 0.85).strokeCircle(0, 0, R + 5)
+  }
+}
+
 export class Structure {
   constructor(def, x, y, scene, isCore = false) {
     this.id = ++_seq
@@ -15,6 +62,7 @@ export class Structure {
     this.x = x
     this.y = y
     this.range = def.range
+    this.fxColor = def.color // color de láser/misil/explosión; cambia con la mejora
     this.radius = isCore ? 46 : def.size
     this.hp = def.hp
     this.maxHp = def.hp
@@ -71,6 +119,24 @@ export class Structure {
   }
 
   onBuilt(world) {}
+
+  // Cambia el aspecto al mejorar: recolorea la torreta hacia el color de la rama y dibuja un
+  // adorno DISTINTIVO según la mejora (upgrade.decor). Llamado desde systems/selection.js.
+  applyUpgradeVisual(upgrade) {
+    const color = upgrade.tint || this.def.color
+    if (!this._accent) {
+      this._accent = this.scene.add.graphics().setName('accent')
+      this.container.addAt(this._accent, 2) // sobre la forma, bajo las barras
+    }
+    if (upgrade.style || upgrade.tint) {
+      this.shape.clear()
+      drawPolygon(this.shape, 0, 0, this.def.size, this.def.sides, color, 2, 1, darken(color))
+      this.glow.setTint(color)
+      this.fxColor = color // láser/misil/explosión adoptan el color de la mejora
+    }
+    // El adorno de la última mejora define el aspecto (las ramas son escalonadas A→A2).
+    drawUpgradeDecor(this._accent, upgrade.decor, this.radius, color)
+  }
 
   drawBuildBar() {
     const g = this.buildBar

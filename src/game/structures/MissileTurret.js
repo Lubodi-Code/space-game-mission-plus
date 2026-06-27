@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { gameState } from '../gameState.js'
 import { COMBAT } from '../balance.js'
 import { Structure } from './Structure.js'
+import { glowBlend } from '../render/blend.js'
 import { sfxMissile, sfxLock } from '../sound.js'
 
 export class MissileTurret extends Structure {
@@ -16,7 +17,8 @@ export class MissileTurret extends Structure {
     this.fireMode = 'auto'
     this.focusTarget = null
     this.upgrades = []
-    this.volleySize = 5
+    this.volleySize = 3
+    this.aura = false // lo activa la mejora "Ojiva de plasma" → daño en área al impactar
   }
 
   update(dt, world, time) {
@@ -69,7 +71,13 @@ export class MissileTurret extends Structure {
   fireMissile(target) {
     const scene = this.scene
     sfxMissile(this.x, this.y)
-    const sprite = scene.add.image(this.x, this.y, 'missile_rod').setTint(this.def.color).setScale(0.55).setDepth(20)
+    const sprite = scene.add.image(this.x, this.y, 'missile_rod').setTint(this.fxColor).setScale(0.6).setDepth(20)
+    const glow = scene.add.image(this.x, this.y, 'glow')
+      .setTint(this.fxColor)
+      .setBlendMode(glowBlend())
+      .setScale(0.06)
+      .setAlpha(0.75)
+      .setDepth(19)
     const dx = target.x - this.x
     const dy = target.y - this.y
     const d = Math.hypot(dx, dy) || 1
@@ -80,7 +88,7 @@ export class MissileTurret extends Structure {
     const predY = target.y + (target.vy || 0) * timeToTarget + (Math.random() - 0.5) * spreadVal
     scene.projectiles.push({
       x: this.x, y: this.y, tx: predX, ty: predY, target,
-      speed: this.projSpeed, damage: this.missileDamage, splash: this.splash, color: this.def.color, sprite,
+      speed: this.projSpeed, damage: this.missileDamage, splash: this.splash, aura: this.aura, color: this.fxColor, sprite, glow,
       _dir: { x: dx / d, y: dy / d },
       id: (scene._missileSeq = (scene._missileSeq || 0) + 1),
       vx: (dx / d) * this.projSpeed, vy: (dy / d) * this.projSpeed,
@@ -96,6 +104,8 @@ export class MissileTurret extends Structure {
     if (upgrade.projSpeed) this.projSpeed = Math.round(this.projSpeed * upgrade.projSpeed)
     if (upgrade.volleySize) this.volleySize += upgrade.volleySize
     if (upgrade.spread !== undefined) this.spread = upgrade.spread
+    if (upgrade.splash !== undefined) this.splash = upgrade.splash
+    if (upgrade.aura) this.aura = true
     this.upgrades.push(upgrade.id)
   }
 }

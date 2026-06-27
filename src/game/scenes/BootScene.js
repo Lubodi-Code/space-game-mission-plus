@@ -27,6 +27,8 @@ export class BootScene extends Phaser.Scene {
       const size = Math.round(STEERING.shipBase * def.scale)
       this.load.svg(def.textureKey, `assets/ships/${file}.svg`, { width: size, height: size })
     }
+    // Nave propia del General (comandante del jugador), rasterizada a buena resolución.
+    this.load.svg('general_ship', 'assets/ships/ship_general.svg', { width: 40, height: 40 })
   }
 
   create() {

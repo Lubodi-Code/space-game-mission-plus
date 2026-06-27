@@ -10,9 +10,11 @@ import {
 import { ROLE_GROUPS } from '../enemies/EnemyType.js'
 import { EnemyProjectileSystem } from '../enemies/EnemyProjectiles.js'
 import { createStructure } from '../structures/StructureRegistry.js'
+import { UPGRADES } from '../structures/upgrades.js'
 import { SpatialGrid } from '../enemies/SpatialGrid.js'
-import { General } from '../General.js'
+import { General, GEN_TINTS } from '../General.js'
 import { net } from '../net.js'
+import { appState } from '../appState.js'
 import { populateMeteorites } from '../systems/worldgen.js'
 import { initWaves, updateWaves } from '../systems/waves.js'
 import { recomputeNetwork as recomputeNetworkSys } from '../systems/energyNet.js'
@@ -43,6 +45,7 @@ export class GameScene extends Phaser.Scene {
     this.projectiles = []
     this.healers = []
     this.lasers = []
+    this.generals = new Map() // pid -> General (0 = host, 1..3 = clientes). Vacío en cliente.
     this.elapsedMs = 0
     this.placementKey = null
     this._downX = 0
@@ -69,7 +72,7 @@ export class GameScene extends Phaser.Scene {
     this.enemyBars = this.add.graphics().setDepth(16)
     this.enemyGrid = new SpatialGrid(48)
 
-    this.remote = !net.isHost && !!net.conn
+    this.remote = !net.isHost && net.conns.length > 0
 
     // Capa de render 3D (fondo + meteoritos + explosiones) — compartida entre host y cliente.
     this.three = new ThreeLayer(this.game.canvas.parentElement, this.game.canvas)
@@ -83,8 +86,7 @@ export class GameScene extends Phaser.Scene {
       if (this.three) { this.three.dispose(); this.three = null }
       this.busOff?.forEach((off) => off())
       if (this.epSystem) this.epSystem.clear()
-      if (this.general) { this.general.sprite.destroy(); this.general.bar.destroy() }
-      if (this.clientGeneral) { this.clientGeneral.sprite.destroy(); this.clientGeneral.bar.destroy() }
+      for (const g of this.generals.values()) g.destroy()
     })
 
     if (this.remote) { createRemote(this); return }
@@ -128,7 +130,10 @@ export class GameScene extends Phaser.Scene {
       enemyGrid: this.enemyGrid,
     }
 
-    this.general = new General(this, this.core.x + 60, this.core.y)
+    this.general = new General(this, this.core.x + 60, this.core.y, GEN_TINTS[0])
+    this.general.pid = 0
+    this.general.setLabel(appState.playerName || 'Comandante')
+    this.generals.set(0, this.general)
 
     this.selectedStructure = null
     this._pendingFocusId = null
@@ -140,14 +145,24 @@ export class GameScene extends Phaser.Scene {
     gameState.status = 'playing'
 
     if (net.isHost) {
-      net.onData = (d) => onIntent(this, d)
-      this.clientGeneral = new General(this, this.core.x - 60, this.core.y)
-      this.cgActive = false
-      this.clientGeneral.sprite.setVisible(false)
-      const activate = () => { this.cgActive = true; this.clientGeneral.sprite.setVisible(true) }
-      net.onOpen = activate
-      if (net.conn && net.conn.open) activate()
+      net.onData = (d, nc) => onIntent(this, d, nc)
+      net.onOpen = (nc) => this.addClientGeneral(nc)
+      for (const nc of net.conns) if (nc.open) this.addClientGeneral(nc)
     }
+  }
+
+  // Un general por cliente conectado (host-authoritative). Idempotente por pid.
+  addClientGeneral(nc) {
+    if (this.generals.has(nc.pid)) return
+    const g = new General(this, this.core.x - 60, this.core.y, GEN_TINTS[nc.pid % GEN_TINTS.length])
+    g.pid = nc.pid
+    g.setLabel(nc.name || ('Aliado ' + nc.pid))
+    // Mejoras ya compradas, para que un jugador que entra tarde no quede atrás.
+    for (const id of gameState.generalUpgrades) {
+      const u = UPGRADES.find((x) => x.id === id)
+      if (u) g.applyUpgrade(u)
+    }
+    this.generals.set(nc.pid, g)
   }
 
   // ---------------------------------------------------------------- input
@@ -305,7 +320,9 @@ export class GameScene extends Phaser.Scene {
       bus.on('selectGeneral', () => this.selectGeneral()),
       bus.on('restart', () => this.scene.restart()),
       bus.on('speed', (v) => { this.setSpeed(v); sfxSpeed() }),
+      bus.on('demolish', ({ structureId }) => this.demolishStructure(structureId)),
       bus.on('upgrade', ({ structureId, upgradeId }) => applyUpgrade(this, structureId, upgradeId)),
+      bus.on('upgradeGeneral', (upgradeId) => this.applyGeneralUpgrade(upgradeId)),
       bus.on('fireMode', ({ structureId, mode }) => setFireMode(this, structureId, mode)),
     ]
   }
@@ -328,6 +345,16 @@ export class GameScene extends Phaser.Scene {
   deselectGeneral() {
     gameState.generalMode = null
     if (this.general) this.general.deselect()
+  }
+
+  applyGeneralUpgrade(upgradeId) {
+    const upg = UPGRADES.find((u) => u.id === upgradeId)
+    if (!upg || upg.forRole !== 'general') return
+    if (gameState.generalUpgrades.includes(upgradeId)) return
+    if (gameState.minerals < upg.cost) return
+    gameState.minerals -= upg.cost
+    gameState.generalUpgrades.push(upgradeId)
+    for (const g of this.generals.values()) g.applyUpgrade(upg)
   }
 
   // Lógica en systems/energyNet.js. Wrapper conservado porque Structure.js llama
@@ -407,11 +434,13 @@ export class GameScene extends Phaser.Scene {
 
     updateWaves(this, d)
     updateEnemies(this, d)
-    this.general.update(d / 1000, this.world)
-    if (this.cgActive) this.clientGeneral.update(d / 1000, this.world)
+    for (const g of this.generals.values()) g.update(d / 1000, this.world)
     gameState.general.alive = this.general.alive
     gameState.general.hp = Math.ceil(this.general.hp)
     gameState.general.respawnIn = Math.ceil(Math.max(0, this.general.respawn) / 1000)
+    gameState.general.damage = this.general.damage
+    gameState.general.atkRange = this.general.atkRange
+    gameState.general.collectRate = Math.round(this.general.collectRate * 10) / 10
     updateProjectiles(this, d)
     this.epSystem.update(d / 1000) // espera segundos (rayos y misiles enemigos)
     updateHealers(this, d)
@@ -420,6 +449,18 @@ export class GameScene extends Phaser.Scene {
 
   damageStructure(s, dmg) {
     s.damage(dmg)
+  }
+
+  // Demoler una estructura: reembolsa el 50% del coste y la elimina (s.destroy hace splice +
+  // recomputeNetwork + limpia targets). El núcleo no se puede demoler. Solo host/single-player.
+  demolishStructure(id) {
+    if (this.remote) return
+    const s = this.structures.find((x) => x.id === id)
+    if (!s || s.dead || s.isCore) return
+    const refund = Math.round((s.def.cost || 0) * 0.5)
+    gameState.minerals = Math.min(gameState.mineralsCap, gameState.minerals + refund)
+    deselectStructure(this)
+    s.destroy()
   }
 
   destroyStructure(s) {

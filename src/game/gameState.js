@@ -21,8 +21,9 @@ export const gameState = reactive({
   enemiesAlive: 0,
   speed: 1,
   bossWave: false,
-  general: { alive: true, hp: 120, hpMax: 120, respawnIn: 0 },
+  general: { alive: true, hp: 120, hpMax: 120, respawnIn: 0, damage: 8, atkRange: 160, collectRate: 18 },
   generalMode: null, // null | 'selected'
+  generalUpgrades: [], // ids de mejoras compradas para el General
 })
 
 if (import.meta.env.DEV && typeof window !== 'undefined') {
@@ -50,7 +51,8 @@ export function resetGameState() {
     enemiesAlive: 0,
     speed: 1,
     bossWave: false,
-    general: { alive: true, hp: 120, hpMax: 120, respawnIn: 0 },
+    general: { alive: true, hp: 120, hpMax: 120, respawnIn: 0, damage: 8, atkRange: 160, collectRate: 18 },
     generalMode: null,
+    generalUpgrades: [],
   })
 }

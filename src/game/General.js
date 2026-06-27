@@ -3,27 +3,46 @@ import { GENERAL } from './balance.js'
 import { gameState } from './gameState.js'
 import { spawnFloatingText } from './render/fx.js'
 
-const { hp, speed, radius, contactDps, respawnMs, color, atkRange, damage, cooldown, collectRange, collectRate, buffRadius, buffMultiplier } = GENERAL
+// Tinte por jugador (pid): 0 = host, 1..3 = clientes. Mismo orden en host y cliente
+// para que cada general se vea igual en ambas pantallas.
+export const GEN_TINTS = [0xffaa44, 0x8be9fd, 0x9bff8b, 0xd49bff]
 
 export class General {
   constructor(scene, x, y, tint = 0x8be9fd) {
     this.scene = scene
     this.x = x; this.y = y
     this.tx = x; this.ty = y
-    this.hp = hp; this.maxHp = hp
-    this.radius = radius
     this.alive = true
     this.respawn = 0
     this.tint = tint
-    this.sprite = scene.add.image(x, y, 'enemy_skirmisher')
-      .setTint(tint).setScale(1.3).setDepth(17)
+    this.sprite = scene.add.image(x, y, 'general_ship')
+      .setTint(tint).setScale(0.85).setDepth(17)
     this.bar = scene.add.graphics().setDepth(18)
     this.selected = false
     this.mineTarget = null
     this.minedAccum = 0
     this.atkTimer = 0
     this.buffActive = false
-    this.gmining = null // [gx, gy, mx, my] para sincronizar haz de minería
+    this.gmining = null
+    this.upgrades = []
+    this.pid = 0
+    this.labelName = ''
+    this.nameText = null
+
+    // Stats iniciales desde GENERAL; applyUpgrade las modifica.
+    this.maxHp = GENERAL.hp
+    this.hp = this.maxHp
+    this.radius = GENERAL.radius
+    this.speed = GENERAL.speed
+    this.contactDps = GENERAL.contactDps
+    this.respawnMs = GENERAL.respawnMs
+    this.atkRange = GENERAL.atkRange
+    this.damage = GENERAL.damage
+    this.cooldown = GENERAL.cooldown
+    this.collectRange = GENERAL.collectRange
+    this.collectRate = GENERAL.collectRate
+    this.buffRadius = GENERAL.buffRadius
+    this.buffMultiplier = GENERAL.buffMultiplier
   }
 
   moveTo(x, y) {
@@ -34,8 +53,6 @@ export class General {
     }
   }
 
-  // Clic con el General seleccionado: si hay un meteorito cerca del punto, minarlo;
-  // si no, simplemente moverse allí.
   setTarget(x, y, scene) {
     if (!this.alive) return
     this.tx = x; this.ty = y
@@ -50,6 +67,34 @@ export class General {
   select() { this.selected = true }
   deselect() { this.selected = false }
 
+  setLabel(name) {
+    this.labelName = name || ''
+    if (!this.nameText) {
+      this.nameText = this.scene.add.text(this.x, this.y - 30, this.labelName, {
+        fontSize: '11px', color: '#cfe8ff', fontFamily: 'monospace',
+      }).setOrigin(0.5).setDepth(19)
+    } else {
+      this.nameText.setText(this.labelName)
+    }
+  }
+
+  destroy() {
+    this.sprite.destroy()
+    this.bar.destroy()
+    this.nameText?.destroy()
+  }
+
+  applyUpgrade(upg) {
+    if (upg.damage) this.damage = Math.round(this.damage * upg.damage)
+    if (upg.atkRange) this.atkRange = Math.round(this.atkRange * upg.atkRange)
+    if (upg.cooldown) this.cooldown = Math.round(this.cooldown * upg.cooldown)
+    if (upg.speed) this.speed = Math.round(this.speed * upg.speed)
+    if (upg.collectRate) this.collectRate = this.collectRate * upg.collectRate
+    if (upg.buffMultiplier) this.buffMultiplier = this.buffMultiplier * upg.buffMultiplier
+    if (upg.buffRadius) this.buffRadius = Math.round(this.buffRadius * upg.buffRadius)
+    this.upgrades.push(upg.id)
+  }
+
   update(dt, world) {
     if (!this.alive) {
       this.respawn -= dt * 1000
@@ -57,31 +102,29 @@ export class General {
       return
     }
 
-    // Buff por proximidad a estructuras vivas.
     let nearStructure = false
     if (world.structures) {
       for (const s of world.structures) {
         if (s.dead) continue
-        if (Math.hypot(s.x - this.x, s.y - this.y) <= buffRadius + s.radius) {
+        if (Math.hypot(s.x - this.x, s.y - this.y) <= this.buffRadius + s.radius) {
           nearStructure = true
           break
         }
       }
     }
     this.buffActive = nearStructure
-    const mult = this.buffActive ? buffMultiplier : 1
+    const mult = this.buffActive ? this.buffMultiplier : 1
 
-    // Movimiento hacia el objetivo.
     const dx = this.tx - this.x, dy = this.ty - this.y
     const d = Math.hypot(dx, dy)
     if (d > 4) {
-      const step = Math.min(speed * dt, d)
+      const step = Math.min(this.speed * dt, d)
       this.x += (dx / d) * step; this.y += (dy / d) * step
       this.sprite.setRotation(Math.atan2(dy, dx))
     }
     this.sprite.setPosition(this.x, this.y)
+    if (this.nameText) this.nameText.setPosition(this.x, this.y - 30).setVisible(true)
 
-    // Daño por contacto con enemigos.
     const grid = world.enemyGrid
     if (grid) {
       let touching = false
@@ -89,10 +132,9 @@ export class General {
         if (e.dead) return
         if (Math.hypot(e.x - this.x, e.y - this.y) < this.radius + e.radius) touching = true
       })
-      if (touching) this.hp -= contactDps * dt
+      if (touching) this.hp -= this.contactDps * dt
     }
 
-    // Recolección de meteoritos.
     this.gmining = null
     if (this.mineTarget) {
       const m = this.mineTarget
@@ -101,15 +143,14 @@ export class General {
       } else {
         const mdx = m.x - this.x, mdy = m.y - this.y
         const md = Math.hypot(mdx, mdy)
-        if (md <= collectRange + m.radius) {
-          const amt = collectRate * mult * dt
-          const taken = Math.min(amt, m.amount)
-          m.amount -= taken
-          gameState.minerals = Math.min(gameState.minerals + taken, gameState.mineralsCap)
-          this.minedAccum += taken
-          if (this.minedAccum >= 1) {
-            spawnFloatingText(this.scene, this.x, this.y - 22, `+${Math.round(this.minedAccum)}`, '#49e07a')
-            this.minedAccum = 0
+        if (md <= this.collectRange + m.radius) {
+          this.minedAccum += this.collectRate * mult * dt
+          const whole = Math.min(Math.floor(this.minedAccum), m.amount, gameState.mineralsCap - gameState.minerals)
+          if (whole > 0) {
+            this.minedAccum -= whole
+            m.amount -= whole
+            gameState.minerals += whole
+            spawnFloatingText(this.scene, this.x, this.y - 22, `+${whole}`, '#49e07a')
           }
           if (m.amount <= 0) {
             m.depleted = true
@@ -128,24 +169,22 @@ export class General {
       }
     }
 
-    // Disparo automático al enemigo más cercano.
     this.atkTimer -= dt * 1000
     if (this.atkTimer <= 0) {
-      let best = null, bestD = atkRange
+      let best = null, bestD = this.atkRange
       for (const e of world.enemies) {
         if (e.dead) continue
         const ed = Math.hypot(e.x - this.x, e.y - this.y) - e.radius
         if (ed < bestD) { bestD = ed; best = e }
       }
       if (best) {
-        best.hp -= damage
+        best.hp -= this.damage
         if (best.hp <= 0) world.killEnemy(best)
-        this.atkTimer = cooldown / mult
+        this.atkTimer = this.cooldown / mult
         this.scene.beamGraphics.lineStyle(2, this.tint, 0.95)
         this.scene.beamGraphics.lineBetween(this.x, this.y, best.x, best.y)
         this.scene.beamGraphics.fillStyle(this.tint, 0.8)
         this.scene.beamGraphics.fillCircle(best.x, best.y, 3)
-        // Sincronizar rayo con clientes.
         if (this.scene.netHost && this.scene._beamQueue) {
           this.scene._beamQueue.push([Math.round(this.x), Math.round(this.y), Math.round(best.x), Math.round(best.y), this.tint, 2, 90, 90])
         }
@@ -154,7 +193,6 @@ export class General {
 
     if (this.hp <= 0) this.die()
 
-    // Dibujar barra de HP y anillo de selección.
     const g = this.bar; g.clear()
     if (this.selected) {
       g.lineStyle(2, 0xffffff, 0.9)
@@ -171,8 +209,9 @@ export class General {
 
   die() {
     this.alive = false
-    this.respawn = respawnMs
+    this.respawn = this.respawnMs
     this.sprite.setVisible(false)
+    this.nameText?.setVisible(false)
     this.bar.clear()
     this.mineTarget = null
     this.minedAccum = 0
