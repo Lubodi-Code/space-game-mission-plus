@@ -22,6 +22,7 @@ export const gameState = reactive({
   speed: 1,
   bossWave: false,
   general: { alive: true, hp: 120, hpMax: 120, respawnIn: 0 },
+  generalMode: null, // null | 'selected'
 })
 
 if (import.meta.env.DEV && typeof window !== 'undefined') {
@@ -50,5 +51,6 @@ export function resetGameState() {
     speed: 1,
     bossWave: false,
     general: { alive: true, hp: 120, hpMax: 120, respawnIn: 0 },
+    generalMode: null,
   })
 }

@@ -24,6 +24,7 @@ import { updateEnemies, nearestStructure, killEnemy } from '../systems/enemies.j
 import { startPlacement, cancelPlacement, tryPlace, updateGhost, updateRangePreview } from '../systems/placement.js'
 import { selectStructure, deselectStructure, applyUpgrade, setFireMode } from '../systems/selection.js'
 import { onIntent, createRemote, renderRemote, sendSnapshot } from '../net/sync.js'
+import { initSound, updateSound, setMusicState, updateShipBeds, sfxSpeed } from '../sound.js'
 
 
 export class GameScene extends Phaser.Scene {
@@ -54,7 +55,6 @@ export class GameScene extends Phaser.Scene {
     this._explQueue = [] // explosiones de este intervalo, para enviar a clientes
     this._beamQueue = [] // rayos disparados en este intervalo, para enviar a clientes
     this.netHost = net.isHost
-    this.epSystem = new EnemyProjectileSystem(this)
 
     this.cam = this.cameras.main
     this.cam.setBounds(0, 0, WORLD.width, WORLD.height)
@@ -70,7 +70,26 @@ export class GameScene extends Phaser.Scene {
     this.enemyGrid = new SpatialGrid(48)
 
     this.remote = !net.isHost && !!net.conn
+
+    // Capa de render 3D (fondo + meteoritos + explosiones) — compartida entre host y cliente.
+    this.three = new ThreeLayer(this.game.canvas.parentElement, this.game.canvas)
+    initSound(this)
+    this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.render3D, this)
+
+    this.scale.on('resize', this.handleResize, this)
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off('resize', this.handleResize, this)
+      this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.render3D, this)
+      if (this.three) { this.three.dispose(); this.three = null }
+      this.busOff?.forEach((off) => off())
+      if (this.epSystem) this.epSystem.clear()
+      if (this.general) { this.general.sprite.destroy(); this.general.bar.destroy() }
+      if (this.clientGeneral) { this.clientGeneral.sprite.destroy(); this.clientGeneral.bar.destroy() }
+    })
+
     if (this.remote) { createRemote(this); return }
+
+    this.epSystem = new EnemyProjectileSystem(this)
 
     populateMeteorites(this)
     const core = createStructure('core', WORLD.width / 2, WORLD.height / 2, this)
@@ -79,10 +98,6 @@ export class GameScene extends Phaser.Scene {
     this.recomputeNetwork()
 
     this.cam.centerOn(this.core.x, this.core.y)
-
-    // Capa de render 3D (fondo + meteoritos + estructuras + naves + explosiones).
-    this.three = new ThreeLayer(this.game.canvas.parentElement, this.game.canvas)
-    this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.render3D, this)
 
     this.world = {
       core: this.core,
@@ -133,17 +148,6 @@ export class GameScene extends Phaser.Scene {
       net.onOpen = activate
       if (net.conn && net.conn.open) activate()
     }
-
-    this.scale.on('resize', this.handleResize, this)
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.scale.off('resize', this.handleResize, this)
-      this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.render3D, this)
-      if (this.three) { this.three.dispose(); this.three = null }
-      this.busOff?.forEach((off) => off())
-      if (this.epSystem) this.epSystem.clear()
-      if (this.general) { this.general.sprite.destroy(); this.general.bar.destroy() }
-      if (this.clientGeneral) { this.clientGeneral.sprite.destroy(); this.clientGeneral.bar.destroy() }
-    })
   }
 
   // ---------------------------------------------------------------- input
@@ -184,6 +188,28 @@ export class GameScene extends Phaser.Scene {
     })
 
     this.input.on('pointerup', (p) => {
+      // Modo General seleccionado: clic izquierdo mueve/recolecta, derecho cancela.
+      if (gameState.generalMode === 'selected') {
+        if (!this._dragging && !this._rightDown) {
+          const wx = p.worldX; const wy = p.worldY
+          const hit = this.structures.find((s) => {
+            if (s.dead) return false
+            return Phaser.Math.Distance.Between(wx, wy, s.x, s.y) <= Math.max(s.radius, 12)
+          })
+          if (hit) {
+            this.deselectGeneral()
+            selectStructure(this, hit)
+          } else {
+            this.general.setTarget(wx, wy, this)
+          }
+        } else if (this._rightDown) {
+          this.deselectGeneral()
+        }
+        this._dragging = false
+        this._rightDown = false
+        return
+      }
+
       if (!this._dragging && !this._rightDown && this.placementKey) {
         tryPlace(this, p.worldX, p.worldY)
         this._dragging = false
@@ -213,7 +239,6 @@ export class GameScene extends Phaser.Scene {
           this._pendingFocusId = null
         } else {
           deselectStructure(this)
-          this.general.moveTo(wx, wy)
         }
       }
       this._dragging = false
@@ -263,20 +288,28 @@ export class GameScene extends Phaser.Scene {
       }
     })
 
-    this.input.keyboard?.on('keydown-ESC', () => cancelPlacement(this))
+    this.input.keyboard?.on('keydown-ESC', () => {
+      if (gameState.generalMode === 'selected') this.deselectGeneral()
+      else cancelPlacement(this)
+    })
     this.input.keyboard?.on('keydown-SPACE', () => {
       if (this.core) this.cam.pan(this.core.x, this.core.y, 300, 'Sine.inOut')
     })
 
     this.busOff = [
-      bus.on('build', (key) => startPlacement(this, key)),
-      bus.on('cancel', () => cancelPlacement(this)),
+      bus.on('build', (key) => { this.deselectGeneral(); startPlacement(this, key) }),
+      bus.on('cancel', () => {
+        if (gameState.generalMode === 'selected') this.deselectGeneral()
+        else cancelPlacement(this)
+      }),
+      bus.on('selectGeneral', () => this.selectGeneral()),
       bus.on('restart', () => this.scene.restart()),
-      bus.on('speed', (v) => this.setSpeed(v)),
+      bus.on('speed', (v) => { this.setSpeed(v); sfxSpeed() }),
       bus.on('upgrade', ({ structureId, upgradeId }) => applyUpgrade(this, structureId, upgradeId)),
       bus.on('fireMode', ({ structureId, mode }) => setFireMode(this, structureId, mode)),
     ]
   }
+
 
   setSpeed(v) {
     this.speed = v
@@ -285,7 +318,18 @@ export class GameScene extends Phaser.Scene {
     this.time.timeScale = v
   }
 
-  // -------------------------------------------------------------- network
+  selectGeneral() {
+    cancelPlacement(this)
+    deselectStructure(this)
+    gameState.generalMode = 'selected'
+    if (this.general) this.general.select()
+  }
+
+  deselectGeneral() {
+    gameState.generalMode = null
+    if (this.general) this.general.deselect()
+  }
+
   // Lógica en systems/energyNet.js. Wrapper conservado porque Structure.js llama
   // this.scene.recomputeNetwork() al construir/destruir (con guard).
   recomputeNetwork() { recomputeNetworkSys(this) }
@@ -329,6 +373,16 @@ export class GameScene extends Phaser.Scene {
         this.cam.scrollY += (ky / norm) * CAMERA.keyPanSpeed * (delta / 1000)
       }
     }
+
+    // Audio: centro de cámara para espacializar SFX + música según estado de oleada
+    // (intermission = transición → Transition.mp3; combate → inGame.mp3).
+    const wv = this.cam.worldView
+    updateSound(wv.centerX, wv.centerY, wv.width)
+    setMusicState(this.wave?.state === 'intermission' ? 'transition' : 'ingame')
+    // Camas de movimiento de naves: vol según nº de enemigos (pesados = radio grande).
+    let lightN = 0, heavyN = 0
+    for (const e of this.enemies) { if (e.dead) continue; e.radius >= 16 ? heavyN++ : lightN++ }
+    updateShipBeds(lightN, heavyN)
 
     if (this.remote) {
       renderRemote(this, time, delta)

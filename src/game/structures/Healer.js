@@ -1,6 +1,6 @@
-import Phaser from 'phaser'
 import { gameState } from '../gameState.js'
 import { Structure } from './Structure.js'
+import { glowBlend } from '../render/blend.js'
 
 export class Healer extends Structure {
   constructor(def, x, y, scene) {
@@ -30,8 +30,8 @@ export class Healer extends Structure {
 
   spawnSphere() {
     const scene = this.scene
-    const sprite = scene.add.image(this.x, this.y, 'glow').setTint(0xff7ad9).setScale(0.45)
-      .setBlendMode(Phaser.BlendModes.ADD).setDepth(18)
+    const sprite = scene.add.image(this.x, this.y, 'glow').setTint(0xff7ad9).setScale(0.15)
+      .setBlendMode(glowBlend()).setDepth(18)
     if (!this.scene.healers) this.scene.healers = []
     this.scene.healers.push({ owner: this, x: this.x, y: this.y, target: null, sprite })
   }

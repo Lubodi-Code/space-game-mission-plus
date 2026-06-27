@@ -8,6 +8,13 @@ import { getUpgradesFor } from '../game/structures/upgrades.js'
 
 const structures = STRUCTURES
 
+const generalTooltip = {
+  label: 'General',
+  desc: 'Tu comandante. Clic para mover, clic en meteorito para recolectar, dispara automáticamente a enemigos cercanos. Cerca de estructuras dispara y recolecta más rápido.',
+  role: 'general',
+  css: '#8be9fd',
+}
+
 const speedLabels = ['Pausa', 'Lenta', 'Normal', 'Rápida']
 const speeds = SPEED.steps.map((v, i) => ({ label: speedLabels[i] || v, value: v }))
 
@@ -118,6 +125,11 @@ function pick(s) {
   if (gameState.minerals < s.cost) return
   if (gameState.activeBuild === s.key) bus.emit('cancel')
   else bus.emit('build', s.key)
+}
+
+function pickGeneral() {
+  if (gameState.generalMode === 'selected') bus.emit('cancel')
+  else bus.emit('selectGeneral')
 }
 
 function restart() {
@@ -278,6 +290,13 @@ function restart() {
     >
       Colocando <b>{{ activeLabel }}</b> — clic para construir · clic derecho / Esc para cancelar
     </div>
+    <div
+      v-if="gameState.generalMode === 'selected'"
+      class="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full
+             bg-cyan-400/15 ring-1 ring-cyan-300/40 text-xs text-cyan-100"
+    >
+      General seleccionado — clic para mover / clic en meteorito para recolectar · derecho / Esc para cancelar
+    </div>
 
     <!-- Inspection panel (right side) -->
     <div
@@ -408,6 +427,21 @@ function restart() {
         <span class="text-[10px] tabular-nums" :class="gameState.minerals < s.cost ? 'text-red-400/80' : 'text-emerald-300/80'">
           {{ s.cost }}
         </span>
+      </button>
+
+      <div class="w-px h-10 bg-cyan-400/20 mx-1"></div>
+
+      <button
+        class="build-btn group"
+        :class="{ 'build-btn--active': gameState.generalMode === 'selected' }"
+        @mouseenter="hoveredStructure = generalTooltip"
+        @mousemove="(e) => { tooltipPos.x = e.clientX; tooltipPos.y = e.clientY - 8 }"
+        @mouseleave="hideTooltip"
+        @click="pickGeneral"
+      >
+        <span class="text-2xl leading-none" style="color: #8be9fd">✦</span>
+        <span class="text-[10px] text-cyan-200/70 group-hover:text-cyan-100">General</span>
+        <span class="text-[10px] tabular-nums text-emerald-300/80">Comandante</span>
       </button>
     </div>
 

@@ -10,9 +10,17 @@ export class Battery extends Structure {
 
   update(dt, world, time) {
     super.update(dt, world, time)
-    if (this.building || !this.powered || !this.selfCharge) return
+    if (this.building || !this.powered) return
 
-    // Auto-recarga solo cuando ya no quedan meteoritos que minar.
+    // Generación pasiva constante de energía mientras la batería está encendida.
+    gameState.energy = Math.min(
+      gameState.energyMax,
+      gameState.energy + ENERGY.batteryPassiveRate * (dt / 1000),
+    )
+
+    if (!this.selfCharge) return
+
+    // Auto-recarga adicional solo cuando ya no quedan meteoritos que minar.
     const anyMinable = this.scene.meteorites.some((m) => !m.depleted)
     if (anyMinable) return
     gameState.energy = Math.min(

@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { sfxEnemyBeam } from '../sound.js'
 
 export class EnemyProjectileSystem {
   constructor(scene) {
@@ -30,6 +31,7 @@ export class EnemyProjectileSystem {
 
   fireBeam(opts) {
     const { from, to, damage, color, width } = opts
+    sfxEnemyBeam(from.x, from.y)
     this.beams.push({
       x1: from.x, y1: from.y,
       x2: to.x, y2: to.y,

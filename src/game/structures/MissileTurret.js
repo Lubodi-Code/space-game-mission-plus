@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { gameState } from '../gameState.js'
 import { COMBAT } from '../balance.js'
 import { Structure } from './Structure.js'
+import { sfxMissile, sfxLock } from '../sound.js'
 
 export class MissileTurret extends Structure {
   constructor(def, x, y, scene) {
@@ -34,10 +35,12 @@ export class MissileTurret extends Structure {
       target = this.nearestEnemy(world)
       if (this.fireMode === 'focus') this.focusTarget = null
     }
-    if (!target) return
+    if (!target) { this._engaged = false; return }
 
     if (this.energyDrain > 0 && gameState.energy < this.energyDrain) return
     if (this.energyDrain > 0) gameState.energy = Math.max(0, gameState.energy - this.energyDrain)
+
+    if (!this._engaged) { sfxLock(this.x, this.y); this._engaged = true }
 
     const scene = this.scene
     for (let i = 0; i < this.volleySize; i++) {
@@ -65,6 +68,7 @@ export class MissileTurret extends Structure {
 
   fireMissile(target) {
     const scene = this.scene
+    sfxMissile(this.x, this.y)
     const sprite = scene.add.image(this.x, this.y, 'missile_rod').setTint(this.def.color).setScale(0.55).setDepth(20)
     const dx = target.x - this.x
     const dy = target.y - this.y
@@ -80,6 +84,8 @@ export class MissileTurret extends Structure {
       _dir: { x: dx / d, y: dy / d },
       id: (scene._missileSeq = (scene._missileSeq || 0) + 1),
       vx: (dx / d) * this.projSpeed, vy: (dy / d) * this.projSpeed,
+      // Vida calculada para que el misil pueda recorrer exactamente su atkRange.
+      maxLife: (this.atkRange / this.projSpeed) * 1000,
     })
   }
 

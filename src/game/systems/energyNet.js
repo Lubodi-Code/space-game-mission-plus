@@ -84,6 +84,9 @@ export function drawLinks(scene) {
   const g = scene.linkGraphics
   g.clear()
   for (const [a, b] of scene.links) {
+    // No dibujar enlaces directos entre edificios que no son relays.
+    // Todo lo demás (relay↔relay y relay↔no-relay) sí se muestra.
+    if (!isRelay(a) && !isRelay(b)) continue
     const on = a.powered && b.powered
     g.lineStyle(on ? 2 : 1.5, on ? LINK_ON : LINK_OFF, on ? 0.5 : 0.18)
     g.beginPath()

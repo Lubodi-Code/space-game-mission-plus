@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { REGISTRY, EnemyType } from '../enemies/EnemyType.js'
 import { validateRegistry } from '../enemies/validateRegistry.js'
 import { STEERING } from '../balance.js'
+import { registerGlowBlend } from '../render/blend.js'
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -30,6 +31,7 @@ export class BootScene extends Phaser.Scene {
 
   create() {
     validateRegistry()
+    registerGlowBlend(this.renderer) // blend aditivo RGB-only para glows sobre el canvas transparente
     this.makeStarTexture()
     this.makeGlowTexture()
     this.makeRodTexture()
@@ -71,14 +73,20 @@ export class BootScene extends Phaser.Scene {
   }
 
   // A radial neon glow used behind structures (Core, nodes, etc.).
+  // Alta resolución + padding transparente para evitar siluetas cuadradas/pixeladas.
   makeGlowTexture() {
-    const size = 128
+    const size = 512
     const canvas = this.textures.createCanvas('glow', size, size)
     const ctx = canvas.getContext()
-    const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
-    g.addColorStop(0, 'rgba(255,255,255,0.9)')
-    g.addColorStop(0.25, 'rgba(120,200,255,0.45)')
-    g.addColorStop(1, 'rgba(120,200,255,0)')
+    const r = size * 0.45 // radio del resplandor; el resto es padding transparente
+    const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, r)
+    // El degradado DEBE caer a negro transparente (no a un color con alpha 0). Con blend ADD el
+    // factor de origen es gl.ONE (ignora el alpha): un relleno "azul, alpha 0" suma su RGB en todo
+    // el cuadro de la textura → se veía un cuadrado tintado alrededor de cada estructura.
+    g.addColorStop(0.0, 'rgba(255,255,255,0.85)')
+    g.addColorStop(0.35, 'rgba(120,180,235,0.40)')
+    g.addColorStop(0.75, 'rgba(40,80,130,0.08)')
+    g.addColorStop(1.0, 'rgba(0,0,0,0)')
     ctx.fillStyle = g
     ctx.fillRect(0, 0, size, size)
     canvas.refresh()

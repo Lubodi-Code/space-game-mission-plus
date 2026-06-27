@@ -37,7 +37,8 @@ export function updateProjectiles(scene, delta) {
     const curDir = p._dir || targetDir
 
     const aim = curDir.x * targetDir.x + curDir.y * targetDir.y
-    if ((p.life > 200 && aim < -0.2) || p.life > COMBAT.missileMaxLifeMs) {
+    const maxLife = p.maxLife || COMBAT.missileMaxLifeMs
+    if ((p.life > 200 && aim < -0.2) || p.life > maxLife) {
       explosion(scene, p.x, p.y, p.color, 8)
       p.sprite.destroy()
       scene.projectiles.splice(i, 1)

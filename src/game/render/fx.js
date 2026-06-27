@@ -1,6 +1,8 @@
 import Phaser from 'phaser'
 import { COMBAT, FX } from '../balance.js'
 import { net } from '../net.js'
+import { glowBlend } from './blend.js'
+import { sfxImpact } from '../sound.js'
 
 // Efectos visuales transitorios. Funciones que reciben `scene`; sin estado propio.
 
@@ -25,10 +27,10 @@ export function spawnFloatingText(scene, x, y, text, color) {
 
 export function hitFlash(scene, x, y) {
   const fl = scene.add.image(x, y, 'glow')
-    .setTint(0xffffff).setBlendMode(Phaser.BlendModes.ADD)
-    .setScale(0.25).setDepth(20)
+    .setTint(0xffffff).setBlendMode(glowBlend())
+    .setScale(0.08).setDepth(20)
   scene.tweens.add({
-    targets: fl, alpha: 0, scale: 0.5, duration: 160,
+    targets: fl, alpha: 0, scale: 0.16, duration: 160,
     onComplete: () => fl.destroy(),
   })
   for (let i = 0; i < 6; i++) {
@@ -43,6 +45,7 @@ export function hitFlash(scene, x, y) {
 
 export function explosion(scene, x, y, color, radius) {
   if (net.isHost && scene._explQueue) scene._explQueue.push([Math.round(x), Math.round(y), color, Math.round(radius)])
+  sfxImpact(x, y, radius / 14)
   if (scene.three) scene.three.explode(x, y, color, radius)
   const ring = scene.add.graphics().setDepth(28).setBlendMode(Phaser.BlendModes.ADD)
   ring.fillStyle(color, 0.5).fillCircle(x, y, radius * 0.6)

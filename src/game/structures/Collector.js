@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { gameState } from '../gameState.js'
 import { Structure } from './Structure.js'
+import { sfxMine } from '../sound.js'
 
 const MINERAL_GREEN = 0x49e07a
 
@@ -24,6 +25,7 @@ export class Collector extends Structure {
       gameState.energy = Math.min(gameState.energyMax, gameState.energy + eRate * (dt / 1000))
     }
 
+    sfxMine(this.x, this.y) // tick de minería (auto-throttled en sound.js)
     const g = this.scene.beamGraphics
     const pulse = 0.45 + 0.3 * Math.sin(time * 0.012)
     g.lineStyle(3, MINERAL_GREEN, pulse)

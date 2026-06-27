@@ -40,6 +40,23 @@ function radialTexture(stops) {
   return t
 }
 
+// Máscara radial en escala de grises: blanco en el centro, negro en los bordes.
+// Se usa como alphaMap para que los planos de nebulosa nunca muestren sus esquinas cuadradas.
+function radialAlphaTexture() {
+  const s = 256
+  const c = document.createElement('canvas'); c.width = c.height = s
+  const ctx = c.getContext('2d')
+  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2)
+  g.addColorStop(0.0, 'rgba(255,255,255,1)')
+  g.addColorStop(0.55, 'rgba(255,255,255,0.85)')
+  g.addColorStop(0.85, 'rgba(255,255,255,0.2)')
+  g.addColorStop(1.0, 'rgba(255,255,255,0)')
+  ctx.fillStyle = g; ctx.fillRect(0, 0, s, s)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.NoColorSpace
+  return t
+}
+
 function darken(hex, f = 0.22) {
   const c = new THREE.Color(hex)
   return new THREE.Color(c.r * f, c.g * f, c.b * f + 0.02)
@@ -100,13 +117,21 @@ export class ThreeLayer {
     this.camera = new THREE.OrthographicCamera(-100, 100, 100, -100, -2000, 2000)
     this.camera.position.set(0, 0, 600)
 
-    this.scene.add(new THREE.AmbientLight(0x6a7da0, 1.9))
-    const key = new THREE.DirectionalLight(0xdfe9ff, 2.6)
+    // Iluminación más suave para evitar siluetas duras y planos sobre-iluminados.
+    // Ambient bajo + hemisférico como relleno difuso, luz direccional moderada y un rim sutil.
+    this.scene.add(new THREE.AmbientLight(0x4a5a70, 0.35))
+    const hemi = new THREE.HemisphereLight(0x6a7da0, 0x0f1420, 0.45)
+    this.scene.add(hemi)
+    const key = new THREE.DirectionalLight(0xdfe9ff, 1.25)
     key.position.set(-0.5, -0.8, 1)
     this.scene.add(key)
-    const rim = new THREE.DirectionalLight(0x66aaff, 1.1)
+    const rim = new THREE.DirectionalLight(0x66aaff, 0.6)
     rim.position.set(0.6, 0.5, 0.4)
     this.scene.add(rim)
+    // Resplandor suave del núcleo sobre los meteoritos cercanos.
+    const coreGlow = new THREE.PointLight(0x4488ff, 0.7, 700)
+    coreGlow.position.set(0, 0, 100)
+    this.scene.add(coreGlow)
   }
 
   // ------------------------------------------------------------- fondo parallax
@@ -117,13 +142,14 @@ export class ThreeLayer {
 
     this.bgGroups = []
 
-    // Fondo estático (imagen de nebulosa, sin rotación). El plano se hace mucho más grande que el
-    // viewport para que sus bordes cuadrados queden fuera de pantalla y no generen siluetas.
+    // Fondo estático (imagen de nebulosa, sin rotación). Se aplica una máscara radial como
+    // alphaMap para desvanecer los bordes del plano y evitar cualquier silueta cuadrada.
+    this.nebulaAlpha = radialAlphaTexture()
     const t = this.tex(ASSET.nebula[0])
     const z = -1400
     const w = Math.abs(z) * 6 // suficiente para cubrir el frustum incluso al paneo
     const mat = new THREE.MeshBasicMaterial({
-      map: t, transparent: true, opacity: 0.45, color: 0x5a6480,
+      map: t, alphaMap: this.nebulaAlpha, transparent: true, opacity: 0.48, color: 0x5a6480,
       blending: THREE.NormalBlending, depthWrite: false, depthTest: false,
     })
     const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, w * 0.62), mat)
@@ -184,10 +210,17 @@ export class ThreeLayer {
     this.bgScene.add(this.stars)
 
     // Viñeta oscura (mantiene el centro de juego claro y bordes oscuros).
-    // El borde exterior debe ser totalmente opaco para ocultar el contorno cuadrado del plano.
-    const vig = radialTexture([[0, 'rgba(0,0,0,0)'], [0.55, 'rgba(2,4,10,0.0)'], [1, 'rgba(1,2,6,1.0)']])
+    // Comienza antes y termina en negro sólido para ocultar cualquier borde cuadrado residual.
+    const vig = radialTexture([
+      [0.0, 'rgba(0,0,0,0)'],
+      [0.35, 'rgba(2,4,10,0.0)'],
+      [0.75, 'rgba(1,2,6,0.75)'],
+      [1.0, 'rgba(0,0,0,1.0)'],
+    ])
     const vmat = new THREE.MeshBasicMaterial({ map: vig, transparent: true, depthWrite: false, depthTest: false })
-    this.vignette = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), vmat)
+    // El plano se hace mucho mayor que el frustum para cubrir siempre los bordes,
+    // ya que con la cámara en perspectiva un 2x2 quedaba como un pequeño cuadrado central.
+    this.vignette = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), vmat)
     this.vignette.position.z = -50
     this.bgScene.add(this.vignette)
   }
@@ -225,10 +258,10 @@ export class ThreeLayer {
         mesh.rotation.set(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28)
         mesh.scale.setScalar(m.radius)
         const halo = new THREE.Sprite(new THREE.SpriteMaterial({
-          map: this.glowTex, color: 0x49e07a, transparent: true, opacity: 0.5,
+          map: this.glowTex, color: 0x49e07a, transparent: true, opacity: 0.78,
           blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, alphaTest: 0.01,
         }))
-        halo.scale.set(m.radius * 4, m.radius * 4, 1)
+        halo.scale.set(m.radius * 5.5, m.radius * 5.5, 1)
         halo.position.z = -2
         root.add(halo, mesh)
         this.scene.add(root)
@@ -259,7 +292,7 @@ export class ThreeLayer {
     const diff = tx(A.diffuse, true)
     this.meteorMat = new THREE.MeshStandardMaterial({
       map: diff,
-      emissiveMap: diff, emissive: 0xffffff, emissiveIntensity: 0.32,
+      emissiveMap: diff, emissive: 0xffffff, emissiveIntensity: 0.75,
       normalMap: tx(A.normal, false),
       roughnessMap: tx(A.roughness, false),
       metalness: 0, roughness: 1,
@@ -468,6 +501,14 @@ export class ThreeLayer {
     }
     for (const ex of this.explosions) { this.scene.remove(ex.pts); this.scene.remove(ex.ring) }
     this.explosions = []
+    if (this.vignette) {
+      this.vignette.material.map?.dispose()
+      this.vignette.material.dispose()
+      this.bgScene.remove(this.vignette)
+    }
+    this.nebulaAlpha?.dispose()
+    this.glowTex?.dispose()
+    this.sparkTex?.dispose()
     this.renderer.domElement.remove()
     this.renderer.dispose()
   }

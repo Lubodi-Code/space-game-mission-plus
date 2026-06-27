@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { gameState } from '../gameState.js'
 import { drawPolygon, darken } from './draw.js'
+import { glowBlend } from '../render/blend.js'
 
 let _seq = 0
 
@@ -34,7 +35,8 @@ export class Structure {
     this.container = scene.add.container(x, y).setDepth(isCore ? 12 : 10)
 
     const glow = scene.add.image(0, 0, 'glow').setTint(def.color).setName('glow')
-    glow.setBlendMode(Phaser.BlendModes.ADD).setScale(isCore ? 2.2 : 1.1).setAlpha(isCore ? 0.5 : 0.35)
+    // Escalas ajustadas a la nueva textura glow de 512px con padding transparente.
+    glow.setBlendMode(glowBlend()).setScale(isCore ? 0.61 : 0.31).setAlpha(isCore ? 0.5 : 0.35)
     this.glow = glow
 
     const shape = scene.add.graphics().setName('shape')
@@ -105,10 +107,10 @@ export class Structure {
     this.hp -= dmg
 
     const fl = this.scene.add.image(this.x, this.y, 'glow')
-      .setTint(0xffffff).setBlendMode(Phaser.BlendModes.ADD)
-      .setScale(0.25).setDepth(20)
+      .setTint(0xffffff).setBlendMode(glowBlend())
+      .setScale(0.08).setDepth(20)
     this.scene.tweens.add({
-      targets: fl, alpha: 0, scale: 0.5, duration: 160,
+      targets: fl, alpha: 0, scale: 0.16, duration: 160,
       onComplete: () => fl.destroy(),
     })
     if (this.isCore) {

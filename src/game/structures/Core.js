@@ -17,6 +17,6 @@ export class Core extends Structure {
 
     scene.tweens.add({ targets: this.shape, angle: 360, duration: 18000, repeat: -1 })
     scene.tweens.add({ targets: inner, scale: 1.18, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.inOut' })
-    scene.tweens.add({ targets: glow, alpha: 0.6, scale: 2.6, duration: 1800, yoyo: true, repeat: -1, ease: 'Sine.inOut' })
+    scene.tweens.add({ targets: glow, alpha: 0.6, scale: 0.72, duration: 1800, yoyo: true, repeat: -1, ease: 'Sine.inOut' })
   }
 }

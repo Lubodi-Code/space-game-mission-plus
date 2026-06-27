@@ -10,6 +10,7 @@ import { createMeteorite } from '../systems/worldgen.js'
 import { drawLinks } from '../systems/energyNet.js'
 import { tryPlace } from '../systems/placement.js'
 import { explosion, hitFlash, drawBeam } from '../render/fx.js'
+import { glowBlend } from '../render/blend.js'
 
 // Capa de sincronización multijugador (host-authoritative ~12 Hz).
 // Host: buildSnapshot/sendSnapshot/onIntent. Cliente: createRemote/applySnapshot/
@@ -25,7 +26,7 @@ export function onIntent(scene, d) {
     scene.placementKey = k
   } else if (d.t === 'general') {
     if (!scene.cgActive) { scene.cgActive = true; scene.clientGeneral.sprite.setVisible(true) }
-    scene.clientGeneral.moveTo(d.x, d.y)
+    scene.clientGeneral.setTarget(d.x, d.y, scene)
   } else if (d.t === 'speed') {
     scene.setSpeed(d.v)
   }
@@ -57,6 +58,7 @@ export function buildSnapshot(scene) {
       mining: scene.structures
         .filter((s) => s.role === 'collector' && s.powered && s.target && !s.target.depleted)
         .map((s) => [Math.round(s.x), Math.round(s.y), Math.round(s.target.x), Math.round(s.target.y)]),
+      gmining: scene.general?.gmining || null,
       expl,
     },
     gen: scene.cgActive
@@ -95,9 +97,7 @@ export function createRemote(scene) {
   scene.placementKey = null
   setupRemoteInput(scene)
 
-  scene.scale.on('resize', scene.handleResize, scene)
   scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-    scene.scale.off('resize', scene.handleResize, scene)
     net.onData = () => {}
     for (const spr of scene.eById.values()) spr.destroy()
     for (const s of scene.sById.values()) s.container.destroy()
@@ -162,7 +162,7 @@ export function applySnapshot(scene, snap) {
     if (!spr) {
       spr = scene.add.image(x, y, REGISTRY[type].textureKey).setDepth(15)
       spr.glow = scene.add.image(x, y, REGISTRY[type].textureKey)
-        .setScale(1.3).setAlpha(0.35).setBlendMode(Phaser.BlendModes.ADD).setDepth(14)
+        .setScale(1.3).setAlpha(0.35).setBlendMode(glowBlend()).setDepth(14)
       spr.tx = x; spr.ty = y
       scene.eById.set(id, spr)
     }
@@ -232,7 +232,10 @@ export function setupRemoteInput(scene) {
 
   scene.input.on('pointerdown', (p) => {
     scene._downX = p.x; scene._downY = p.y; scene._dragging = false
-    if (p.rightButtonDown()) { scene.placementKey = null; scene.ghost.setVisible(false) }
+    if (p.rightButtonDown()) {
+      if (gameState.generalMode === 'selected') gameState.generalMode = null
+      else { scene.placementKey = null; gameState.activeBuild = null; scene.ghost.setVisible(false) }
+    }
   })
 
   scene.input.on('pointermove', (p) => {
@@ -244,14 +247,14 @@ export function setupRemoteInput(scene) {
         scene.cam.scrollY -= (p.y - p.prevPosition.y) / scene.cam.zoom
       }
     }
-    if (scene.placementKey) drawRemoteGhost(scene, p.worldX, p.worldY)
+    if (scene.placementKey && gameState.generalMode !== 'selected') drawRemoteGhost(scene, p.worldX, p.worldY)
   })
 
   scene.input.on('pointerup', (p) => {
     if (!scene._dragging) {
-      if (scene.placementKey) {
+      if (scene.placementKey && gameState.generalMode !== 'selected') {
         net.send({ t: 'build', key: scene.placementKey, x: p.worldX, y: p.worldY })
-      } else {
+      } else if (gameState.generalMode === 'selected') {
         net.send({ t: 'general', x: p.worldX, y: p.worldY })
       }
     }
@@ -264,8 +267,17 @@ export function setupRemoteInput(scene) {
   })
 
   scene.busOff = [
-    bus.on('build', (key) => { scene.placementKey = key; gameState.activeBuild = key }),
-    bus.on('cancel', () => { scene.placementKey = null; gameState.activeBuild = null; scene.ghost.setVisible(false) }),
+    bus.on('build', (key) => { scene.placementKey = key; gameState.activeBuild = key; gameState.generalMode = null }),
+    bus.on('selectGeneral', () => {
+      scene.placementKey = null
+      gameState.activeBuild = null
+      gameState.generalMode = 'selected'
+      scene.ghost.setVisible(false)
+    }),
+    bus.on('cancel', () => {
+      if (gameState.generalMode === 'selected') gameState.generalMode = null
+      else { scene.placementKey = null; gameState.activeBuild = null; scene.ghost.setVisible(false) }
+    }),
     bus.on('speed', (v) => net.send({ t: 'speed', v })),
   ]
 }
@@ -325,13 +337,18 @@ export function renderRemote(scene, time, delta) {
     s.setPosition(s.x, s.y)
   }
 
-  // Minería desde _fx (con pulso)
+  // Minería desde _fx (con pulso): recolectores + General.
   const bg = scene.beamGraphics; bg.clear()
   const fx = scene._fx
   if (fx) {
     const pulse = 0.45 + 0.3 * Math.sin((time || 0) * 0.012)
     for (const [sx, sy, mx, my] of fx.mining || []) {
       bg.lineStyle(3, 0x49e07a, pulse); bg.lineBetween(sx, sy, mx, my)
+      bg.fillStyle(0x49e07a, pulse); bg.fillCircle(mx, my, 4)
+    }
+    if (fx.gmining) {
+      const [gx, gy, mx, my] = fx.gmining
+      bg.lineStyle(3, 0x49e07a, pulse); bg.lineBetween(gx, gy, mx, my)
       bg.fillStyle(0x49e07a, pulse); bg.fillCircle(mx, my, 4)
     }
   }

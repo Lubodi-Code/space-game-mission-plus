@@ -19,7 +19,8 @@ export const COMBAT = {
 // La producen los recolectores al minar; la almacenan núcleo + baterías; la
 // consumen las torretas al disparar. Sin energía, los consumidores se apagan.
 export const ENERGY = {
-  batterySelfChargeRate: 4, // energía/s que regenera una batería con auto-recarga
+  batteryPassiveRate: 2,      // energía/s que genera una batería siempre que esté encendida
+  batterySelfChargeRate: 4, // energía/s que regenera una batería con auto-recarga (mejora)
 }
 
 export const STEERING = {
@@ -60,8 +61,8 @@ export const METEOR = {
   count: 80,
   minDist: 400,
   maxDist: 3000,
-  amountMin: 300,
-  amountMax: 600
+  amountMin: 1500,
+  amountMax: 3000
 }
 
 export const ENEMY = {
@@ -86,8 +87,27 @@ export const CORE = {
   color: 0x8be9fd,
   role: 'core',
   hp: 250,
-  maxPorts: 8, // el núcleo es el relay raíz: hasta 8 conexiones
+  maxPorts: 12, // el núcleo es el relay raíz
   energyCap: 100, // almacén base de energía del sistema
+}
+
+export const GENERAL = {
+  hp: 120,
+  speed: 280,
+  radius: 16,
+  contactDps: 25,
+  respawnMs: 8000,
+  color: 0x8be9fd,
+  // Arma
+  atkRange: 160,
+  damage: 8,
+  cooldown: 450, // ms
+  // Recolección
+  collectRange: 50,
+  collectRate: 18, // minerales/s
+  // Buff por proximidad a estructuras
+  buffRadius: 220,
+  buffMultiplier: 1.6, // × cadencia y recolección
 }
 
 export const STARTING_MINERALS = 300
@@ -105,9 +125,9 @@ export const STRUCTURES = [
     size: 9,
     role: 'relay',
     hp: 40,
-    maxPorts: 5,
+    maxPorts: 8,
     buildTime: 1500,
-    desc: 'Conecta estructuras a la red. Único nexo de conexión (5 puertos).'
+    desc: 'Conecta estructuras a la red. Nexo de conexión (8 puertos).'
   },
   { 
     key: 'collector', 

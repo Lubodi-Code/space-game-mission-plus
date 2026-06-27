@@ -6,6 +6,7 @@ import { EVASION } from './behaviors/evasion.js'
 import { RISK } from './behaviors/risk.js'
 import { separate, avoidObstacles, wander } from './behaviors/steering.js'
 import { STEERING } from '../balance.js'
+import { glowBlend } from '../render/blend.js'
 import Phaser from 'phaser'
 
 export class Enemy {
@@ -38,7 +39,7 @@ export class Enemy {
     this.glow = scene.add.image(x, y, key)
       .setScale(1.3)
       .setAlpha(0.35)
-      .setBlendMode(Phaser.BlendModes.ADD)
+      .setBlendMode(glowBlend())
       .setDepth(14)
 
     this.movement = MOVEMENT[this.def.movement]

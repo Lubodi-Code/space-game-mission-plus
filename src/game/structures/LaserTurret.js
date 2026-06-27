@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { gameState } from '../gameState.js'
 import { COMBAT } from '../balance.js'
 import { Structure } from './Structure.js'
+import { sfxLaser, sfxLock } from '../sound.js'
 
 export class LaserTurret extends Structure {
   constructor(def, x, y, scene) {
@@ -39,13 +40,15 @@ export class LaserTurret extends Structure {
     } else {
       target = this.nearestEnemy(world)
     }
-    if (!target) return
+    if (!target) { this._engaged = false; return }
 
     // 2) Energía.
     if (this.energyDrain > 0 && gameState.energy < this.energyDrain) return
     if (this.energyDrain > 0) gameState.energy = Math.max(0, gameState.energy - this.energyDrain)
 
-    // 3) Disparo.
+    // 3) Disparo. Blip de "lock" al enganchar un objetivo tras estar ocioso.
+    if (!this._engaged) { sfxLock(this.x, this.y); this._engaged = true }
+    sfxLaser(this.x, this.y)
     this.fireLaser(target, world)
 
     // 4) Recarga: el rayo progresivo es continuo; el resto respeta su cooldown.
