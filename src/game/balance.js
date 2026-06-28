@@ -198,10 +198,10 @@ export const STRUCTURES = [
     hp: 60, 
     atkRange: 140,
     damage: 28,
-    cooldown: 20000,
+    cooldown: 4000,
     energyDrain: 1,
     buildTime: 5000,
-    desc: 'Dispara ráfagas rápidas de láser de un solo objetivo.'
+    desc: 'Torreta láser de disparo rápido. Mejorable: Rama A (ráfaga múltiple) o Rama B (rayo de largo alcance).'
   },
   { 
     key: 'missile', 
