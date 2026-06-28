@@ -47,6 +47,31 @@ export function explosion(scene, x, y, color, radius) {
   if (net.isHost && scene._explQueue) scene._explQueue.push([Math.round(x), Math.round(y), color, Math.round(radius)])
   sfxImpact(x, y, radius / 14)
   if (scene.three) scene.three.explode(x, y, color, radius)
+
+  // Camera shake on zoom or proximity to action (noticeable intensity)
+  const cam = scene.cameras?.main
+  if (cam) {
+    const zoom = cam.zoom
+    const camCenterX = cam.worldView.x + cam.worldView.width / 2
+    const camCenterY = cam.worldView.y + cam.worldView.height / 2
+    const dist = Phaser.Math.Distance.Between(x, y, camCenterX, camCenterY)
+    const maxDist = Math.max(cam.worldView.width, cam.worldView.height) * 0.85
+
+    if (dist < maxDist) {
+      const proximityFactor = Math.max(0, 1 - dist / maxDist)
+      const zoomFactor = Phaser.Math.Percent(zoom, 0.25, 1.0)
+      
+      // Increased base intensity drastically so it is highly visible (0.006 is standard visible shake)
+      const baseIntensity = 0.007 * (radius / 12)
+      const intensity = baseIntensity * (0.4 + 0.6 * zoomFactor) * proximityFactor
+
+      if (intensity > 0.0005) {
+        const duration = Math.min(250, 100 + radius * 2)
+        cam.shake(duration, intensity, true) // Force shake
+      }
+    }
+  }
+
   const ring = scene.add.graphics().setDepth(28).setBlendMode(Phaser.BlendModes.ADD)
   ring.fillStyle(color, 0.5).fillCircle(x, y, radius * 0.6)
   ring.lineStyle(2, color, 0.9).strokeCircle(x, y, radius * 0.6)

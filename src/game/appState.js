@@ -14,9 +14,9 @@ export const appState = reactive({
 
 // Multipliers applied to enemy stats per difficulty.
 export const DIFFICULTY = {
-  easy:   { label: 'Fácil',   hpMult: 0.8, dmgMult: 0.8, countMult: 0.85, gapMult: 1.15, startMinerals: 250 },
-  normal: { label: 'Normal',  hpMult: 1.0, dmgMult: 1.0, countMult: 1.0,  gapMult: 1.0,  startMinerals: 200 },
-  hard:   { label: 'Difícil', hpMult: 1.5, dmgMult: 1.35, countMult: 1.25, gapMult: 0.85, startMinerals: 150 },
+  easy:   { label: 'Fácil',   hpMult: 0.8, dmgMult: 0.8, countMult: 2.2, gapMult: 0.6, startMinerals: 400 },
+  normal: { label: 'Normal',  hpMult: 1.0, dmgMult: 1.0, countMult: 3.5,  gapMult: 0.4,  startMinerals: 300 },
+  hard:   { label: 'Difícil', hpMult: 1.5, dmgMult: 1.35, countMult: 5.5, gapMult: 0.25, startMinerals: 200 },
 }
 
 export function startGame(difficulty, mode = appState.mode) {
