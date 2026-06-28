@@ -228,13 +228,19 @@ export class ThreeLayer {
   // --------------------------------------------------------------- sincronizar
   syncCamera(cam) {
     const wv = cam.worldView
+    // El shake de Phaser solo desplaza su propia matriz (no worldView), así que la capa Three
+    // se quedaba quieta y las estructuras 2D parecían vibrar sobre un fondo fijo. Aplicamos el
+    // mismo offset (_offsetX/Y ya incluye *zoom) para que ambas capas tiemblen juntas.
+    const sk = cam.shakeEffect
+    const ox = sk && sk.isRunning ? sk._offsetX : 0
+    const oy = sk && sk.isRunning ? sk._offsetY : 0
     // Frustum en coords de MUNDO con la cámara en el origen: left/right/top/bottom
     // son relativos a la posición de la cámara, así que NO la movemos (si la moviéramos
     // al centro se duplicaría el offset y todo quedaría fuera de vista). top<bottom invierte Y.
-    this.camera.left = wv.x
-    this.camera.right = wv.x + wv.width
-    this.camera.top = wv.y
-    this.camera.bottom = wv.y + wv.height
+    this.camera.left = wv.x - ox
+    this.camera.right = wv.x + wv.width - ox
+    this.camera.top = wv.y - oy
+    this.camera.bottom = wv.y + wv.height - oy
     this.camera.position.set(0, 0, 600)
     this.camera.updateProjectionMatrix()
     this.viewCenter.x = wv.x + wv.width / 2

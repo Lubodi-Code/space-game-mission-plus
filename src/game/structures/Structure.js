@@ -182,7 +182,7 @@ export class Structure {
     if (this.isCore) {
       gameState.coreHp = Math.max(0, Math.ceil(this.hp))
       this.drawHpBar()
-      this.scene.cameras.main.shake(100, 0.0015)
+      this.scene.cameras.main.shake(100, 0.0008)
       if (this.hp <= 0) this.scene.gameOver()
       return
     }
