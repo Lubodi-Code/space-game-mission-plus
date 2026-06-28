@@ -11,8 +11,8 @@ export const COMBAT = {
   missileTurnRate: 1.2,
   missileMaxLifeMs: 5000,
   bigbeamCooldown: 150,   // ms: el rayo "anti-grande" dispara casi en continuo
-  bigbeamRampStep: 0.12,  // incremento de daño por tick sobre el mismo blanco
-  bigbeamRampMax: 3,      // tope de la rampa → daño máx = base × (1 + 3) = ×4
+  bigbeamRampStep: 0.12,  // incremento por tick para el exponente
+  bigbeamRampMax: 3,      // tope del exponente → daño máx = base × 1.08^(ramp*10)
 }
 
 // Economía de energía. La energía es un pool global (gameState.energy / energyMax).
@@ -197,11 +197,11 @@ export const STRUCTURES = [
     role: 'turret', 
     hp: 60, 
     atkRange: 140,
-    damage: 28,
-    cooldown: 20000,
+    damage: 20,
+    cooldown: 4000,
     energyDrain: 1,
     buildTime: 5000,
-    desc: 'Dispara ráfagas rápidas de láser de un solo objetivo.'
+    desc: 'Torreta láser de disparo rápido. Mejorable: Rama A (ráfaga múltiple) o Rama B (rayo de largo alcance).'
   },
   { 
     key: 'missile', 

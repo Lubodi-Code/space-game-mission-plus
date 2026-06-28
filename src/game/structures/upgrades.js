@@ -4,50 +4,57 @@
  */
 
 export const UPGRADES = [
-  // ---- Torreta Láser: Rama A (Rápida/corta) ----
+  // ---- Torreta Láser: Rama A (Ráfaga múltiple / saturación) ----
   {
     id: 'laser_a',
-    label: 'Rápida/corta',
+    label: 'Ráfaga rápida',
     cost: 60,
     forRole: 'turret',
-    atkRange: 0.6,
-    cooldown: 0.15,
-    damage: 0.6,
+    excludes: 'laser_b',
+    atkRange: 0.7,
+    cooldown: 0.12,
+    damage: 0.5,
     tint: 0xffae5b,
     decor: 'fast',
   },
   {
     id: 'laser_a2',
-    label: 'Ráfaga triple',
+    label: 'Ráfaga triple (3 objetivos)',
     cost: 100,
     forRole: 'turret',
     style: 'spread',
     requires: 'laser_a',
-    damage: 0.4,
+    excludes: 'laser_b',
+    atkRange: 2.2,
+    damage: 0.55,
     cooldown: 0.1,
     tint: 0xffd24a,
     decor: 'triple',
   },
 
-  // ---- Torreta Láser: Rama B (Radio amplio) ----
+  // ---- Torreta Láser: Rama B (Rayo pesado / largo alcance) ----
   {
     id: 'laser_b',
-    label: 'Radio amplio',
+    label: 'Cañón de largo alcance',
     cost: 80,
     forRole: 'turret',
-    atkRange: 1.6,
-    cooldown: 1.4,
+    excludes: 'laser_a',
+    atkRange: 2.0,
+    cooldown: 1.8,
+    damage: 1.6,
     tint: 0x5bd0ff,
     decor: 'wide',
   },
   {
     id: 'laser_b2',
-    label: 'Anti-grande (rayo progresivo)',
+    label: 'Rayo progresivo anti-blindaje',
     cost: 140,
     forRole: 'turret',
     style: 'bigbeam',
-    atkRange: 1.2,
+    atkRange: 1.5,
+    damage: 0.04,
     requires: 'laser_b',
+    excludes: 'laser_a',
     tint: 0x3a8bff,
     decor: 'heavy',
   },
@@ -220,6 +227,8 @@ export function getUpgradesFor(role, currentUpgrades) {
     if (u.forRole !== role) return false
     if (have.has(u.id)) return false
     if (u.requires && !have.has(u.requires)) return false
+    // Exclusión mutua: si esta mejora está en una rama excluida por otra ya adquirida
+    if (u.excludes && have.has(u.excludes)) return false
     return true
   })
 }
