@@ -197,7 +197,7 @@ export const STRUCTURES = [
     role: 'turret', 
     hp: 60, 
     atkRange: 140,
-    damage: 28,
+    damage: 20,
     cooldown: 4000,
     energyDrain: 1,
     buildTime: 5000,

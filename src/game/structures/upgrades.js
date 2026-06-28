@@ -52,7 +52,7 @@ export const UPGRADES = [
     forRole: 'turret',
     style: 'bigbeam',
     atkRange: 1.5,
-    damage: 0.3,
+    damage: 0.04,
     requires: 'laser_b',
     excludes: 'laser_a',
     tint: 0x3a8bff,
