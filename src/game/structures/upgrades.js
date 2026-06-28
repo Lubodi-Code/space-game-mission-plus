@@ -4,55 +4,50 @@
  */
 
 export const UPGRADES = [
-  // ---- Torreta Láser: Rama A (Ráfaga múltiple / saturación) ----
+  // ---- Torreta Láser: Rama A (Rápida/corta) ----
   {
     id: 'laser_a',
-    label: 'Ráfaga rápida',
+    label: 'Rápida/corta',
     cost: 60,
     forRole: 'turret',
-    excludes: 'laser_b',
-    atkRange: 0.5,
-    cooldown: 0.12,
-    damage: 0.5,
+    atkRange: 0.6,
+    cooldown: 0.15,
+    damage: 0.6,
     tint: 0xffae5b,
     decor: 'fast',
   },
   {
     id: 'laser_a2',
-    label: 'Ráfaga triple (3 objetivos)',
+    label: 'Ráfaga triple',
     cost: 100,
     forRole: 'turret',
     style: 'spread',
     requires: 'laser_a',
-    excludes: 'laser_b',
-    damage: 0.35,
-    cooldown: 0.06,
+    damage: 0.4,
+    cooldown: 0.1,
     tint: 0xffd24a,
     decor: 'triple',
   },
 
-  // ---- Torreta Láser: Rama B (Rayo pesado / largo alcance) ----
+  // ---- Torreta Láser: Rama B (Radio amplio) ----
   {
     id: 'laser_b',
-    label: 'Cañón de largo alcance',
+    label: 'Radio amplio',
     cost: 80,
     forRole: 'turret',
-    excludes: 'laser_a',
-    atkRange: 2.0,
-    cooldown: 1.8,
-    damage: 1.6,
+    atkRange: 1.6,
+    cooldown: 1.4,
     tint: 0x5bd0ff,
     decor: 'wide',
   },
   {
     id: 'laser_b2',
-    label: 'Rayo progresivo anti-blindaje',
+    label: 'Anti-grande (rayo progresivo)',
     cost: 140,
     forRole: 'turret',
     style: 'bigbeam',
-    atkRange: 1.5,
+    atkRange: 1.2,
     requires: 'laser_b',
-    excludes: 'laser_a',
     tint: 0x3a8bff,
     decor: 'heavy',
   },
@@ -225,15 +220,6 @@ export function getUpgradesFor(role, currentUpgrades) {
     if (u.forRole !== role) return false
     if (have.has(u.id)) return false
     if (u.requires && !have.has(u.requires)) return false
-    // Mutual exclusion: si esta mejora excluye una rama ya adquirida, se oculta
-    if (u.excludes && have.has(u.excludes)) return false
-    // También ocultar si alguna mejora ya adquirida excluye esta
-    if (u.excludes) {
-      for (const h of have) {
-        const owned = UPGRADES.find((x) => x.id === h)
-        if (owned && owned.excludes === u.id) return false
-      }
-    }
     return true
   })
 }
