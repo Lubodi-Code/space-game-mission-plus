@@ -49,6 +49,8 @@ export function applyUpgrade(scene, structureId, upgradeId) {
   if (!s || s.dead || !s.applyUpgrade) return
   const upg = UPGRADES.find((u) => u.id === upgradeId)
   if (!upg) return
+  // Safety: verificar prerequisito aunque la UI ya lo filtre
+  if (upg.requires && !(s.upgrades || []).includes(upg.requires)) return
   const cost = upg.cost || 0
   if (gameState.minerals < cost) return
   gameState.minerals -= cost

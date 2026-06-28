@@ -227,15 +227,8 @@ export function getUpgradesFor(role, currentUpgrades) {
     if (u.forRole !== role) return false
     if (have.has(u.id)) return false
     if (u.requires && !have.has(u.requires)) return false
-    // Mutual exclusion: si esta mejora excluye una rama ya adquirida, se oculta
+    // Exclusión mutua: si esta mejora está en una rama excluida por otra ya adquirida
     if (u.excludes && have.has(u.excludes)) return false
-    // También ocultar si alguna mejora ya adquirida excluye esta
-    if (u.excludes) {
-      for (const h of have) {
-        const owned = UPGRADES.find((x) => x.id === h)
-        if (owned && owned.excludes === u.id) return false
-      }
-    }
     return true
   })
 }
