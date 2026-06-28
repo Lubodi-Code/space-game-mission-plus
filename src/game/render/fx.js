@@ -61,8 +61,7 @@ export function explosion(scene, x, y, color, radius) {
       const proximityFactor = Math.max(0, 1 - dist / maxDist)
       const zoomFactor = Phaser.Math.Percent(zoom, 0.25, 1.0)
       
-      // Increased base intensity drastically so it is highly visible
-      const baseIntensity = 0.025 * (radius / 12)
+      const baseIntensity = 0.006 * (radius / 12)
       const intensity = baseIntensity * (0.5 + 0.5 * zoomFactor) * proximityFactor
 
       if (intensity > 0.001) {

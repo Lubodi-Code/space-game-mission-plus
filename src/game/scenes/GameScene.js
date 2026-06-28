@@ -477,7 +477,7 @@ export class GameScene extends Phaser.Scene {
     if (gameState.status !== 'playing') return
     gameState.status = 'gameover'
     if (this.core) this.explosion(this.core.x, this.core.y, 0xff5566, FX.coreExplosionRadius)
-    this.cameras.main.shake(400, 0.012)
+    this.cameras.main.shake(300, 0.004)
     cancelPlacement(this)
   }
 

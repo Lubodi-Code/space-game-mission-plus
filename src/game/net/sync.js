@@ -125,7 +125,7 @@ export function applySnapshot(scene, snap) {
     if (isNew) { s = createStructure(key, x, y, scene); scene.sById.set(id, s) }
     if (!isNew && hp < s.hp) {
       hitFlash(scene, x, y)
-      if (key === 'core') scene.cameras.main.shake(120, 0.004)
+      if (key === 'core') scene.cameras.main.shake(100, 0.0015)
     }
     s.hp = hp; s.maxHp = maxHp
     s.setPowered(!!powered)
