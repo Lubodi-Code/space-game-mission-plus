@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { gameState } from '../game/gameState.js'
 import { bus } from '../game/bus.js'
 import { STRUCTURES, SPEED } from '../game/constants.js'
@@ -151,6 +151,59 @@ function restart() {
   bus.emit('restart')
 }
 
+// ---- Teclas rápidas: espejo de los botones del GUI (emiten los mismos intents).
+// Teclas ya usadas por Phaser (no tocar): Esc=cancelar, Espacio=centrar cámara, WASD/flechas=mover.
+let lastSpeed = SPEED.steps[2] // velocidad previa, para que P (pausa) la restaure
+function stepSpeed(dir) {
+  const i = SPEED.steps.indexOf(gameState.speed)
+  const clamped = Math.max(0, Math.min(SPEED.steps.length - 1, (i < 0 ? 2 : i) + dir))
+  setSpeed(SPEED.steps[clamped])
+}
+function togglePause() {
+  if (gameState.speed === 0) setSpeed(lastSpeed || SPEED.steps[2])
+  else { lastSpeed = gameState.speed; setSpeed(0) }
+}
+
+// Mejoras: Q/E/R aplican la 1ª/2ª/3ª mejora del panel abierto (estructura o general).
+const upgradeKeys = ['Q', 'E', 'R']
+function applyUpgradeHotkey(i) {
+  if (selectedStructure.value) {
+    const u = availableUpgrades.value[i]
+    if (u && gameState.minerals >= u.cost) applyUpgrade(u.id)
+  } else if (gameState.generalMode === 'selected') {
+    const u = generalAvailableUpgrades.value[i]
+    if (u && gameState.minerals >= u.cost) applyGeneralUpgrade(u.id)
+  }
+}
+
+function onKey(e) {
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  const t = e.target
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+
+  // Fin de partida: solo reinicio / menú.
+  if (gameState.status === 'gameover' || gameState.status === 'victory') {
+    if (e.key === 'r' || e.key === 'R' || e.key === 'Enter') restart()
+    else if (e.key === 'm' || e.key === 'M') mainMenu()
+    return
+  }
+
+  if (e.key >= '1' && e.key <= '6') { const s = STRUCTURES[+e.key - 1]; if (s) pick(s); return }
+  switch (e.key) {
+    case 'g': case 'G': pickGeneral(); break
+    case 'p': case 'P': togglePause(); break
+    case ',': case '<': stepSpeed(-1); break
+    case '.': case '>': stepSpeed(1); break
+    case 'f': case 'F': toggleFireMode(); break       // no-op si no hay torreta seleccionada
+    case 'x': case 'X': case 'Delete': demolish(); break // no-op si no hay estructura seleccionada
+    case 'q': case 'Q': applyUpgradeHotkey(0); break
+    case 'e': case 'E': applyUpgradeHotkey(1); break
+    case 'r': case 'R': applyUpgradeHotkey(2); break
+  }
+}
+onMounted(() => window.addEventListener('keydown', onKey))
+onUnmounted(() => window.removeEventListener('keydown', onKey))
+
 // Puntos de un polígono regular para el icono SVG de cada estructura.
 function polyPoints(sides, radius) {
   const pts = []
@@ -175,6 +228,7 @@ function polyPoints(sides, radius) {
           :key="sp.label"
           class="hud-btn"
           :class="{ 'hud-btn--active': gameState.speed === sp.value }"
+          title="P pausa/reanuda · , más lenta · . más rápida"
           @click="setSpeed(sp.value)"
         >
           {{ sp.label }}
@@ -277,14 +331,14 @@ function polyPoints(sides, radius) {
                    hover:bg-cyan-400/30 transition-colors"
             @click="restart"
           >
-            Jugar de nuevo
+            Jugar de nuevo <span class="opacity-50">(R)</span>
           </button>
           <button
             class="px-6 py-2 rounded-lg bg-white/5 ring-1 ring-cyan-400/20 text-cyan-200/80
                    hover:bg-cyan-400/10 hover:text-white transition-colors"
             @click="mainMenu"
           >
-            Menú principal
+            Menú principal <span class="opacity-50">(M)</span>
           </button>
         </div>
       </div>
@@ -391,7 +445,7 @@ function polyPoints(sides, radius) {
 
       <!-- Fire mode toggle (solo torretas) -->
       <div v-if="selectedStructure.role === 'turret' || selectedStructure.role === 'missile'" class="pt-1 border-t border-cyan-400/10">
-        <div class="flex gap-2 items-center">
+        <div class="flex gap-2 items-center" title="F alterna modo de fuego">
           <button
             class="px-2 py-1 rounded text-[11px] ring-1 transition-colors"
             :class="selectedStructure.fireMode === 'auto'
@@ -399,7 +453,7 @@ function polyPoints(sides, radius) {
               : 'bg-white/5 text-cyan-200/60 ring-cyan-400/20'"
             @click="toggleFireMode"
           >
-            Automático
+            Automático <span class="opacity-50">F</span>
           </button>
           <button
             class="px-2 py-1 rounded text-[11px] ring-1 transition-colors"
@@ -408,7 +462,7 @@ function polyPoints(sides, radius) {
               : 'bg-white/5 text-cyan-200/60 ring-cyan-400/20'"
             @click="toggleFireMode"
           >
-            Fijar blanco
+            Fijar blanco <span class="opacity-50">F</span>
           </button>
         </div>
         <div v-if="selectedStructure.fireMode === 'focus'" class="mt-1 text-cyan-400/60 text-[10px]">
@@ -420,7 +474,7 @@ function polyPoints(sides, radius) {
       <div v-if="availableUpgrades.length" class="pt-1 border-t border-cyan-400/10 space-y-1">
         <div class="text-cyan-300/80 text-[11px] font-semibold">Mejoras</div>
         <div
-          v-for="u in availableUpgrades"
+          v-for="(u, i) in availableUpgrades"
           :key="u.id"
           class="flex items-center justify-between px-2 py-1 rounded bg-white/5 ring-1 ring-cyan-400/10"
         >
@@ -434,7 +488,7 @@ function polyPoints(sides, radius) {
               :class="{ 'opacity-40 cursor-not-allowed': gameState.minerals < u.cost }"
               @click="applyUpgrade(u.id)"
             >
-              +Añadir
+              +Añadir <span v-if="upgradeKeys[i]" class="opacity-50">{{ upgradeKeys[i] }}</span>
             </button>
           </span>
         </div>
@@ -445,9 +499,10 @@ function polyPoints(sides, radius) {
         <button
           class="w-full px-2 py-1 rounded text-[11px] ring-1 ring-red-400/30 bg-red-500/15
                  text-red-200 hover:bg-red-500/25 transition-colors"
+          title="Tecla X o Supr"
           @click="demolish"
         >
-          Demoler · recuperás 50%
+          Demoler · recuperás 50% <span class="opacity-50">(X)</span>
         </button>
       </div>
     </div>
@@ -469,7 +524,7 @@ function polyPoints(sides, radius) {
       <div v-if="generalAvailableUpgrades.length" class="pt-1 border-t border-cyan-400/10 space-y-1">
         <div class="text-cyan-300/80 text-[11px] font-semibold">Mejoras</div>
         <div
-          v-for="u in generalAvailableUpgrades"
+          v-for="(u, i) in generalAvailableUpgrades"
           :key="u.id"
           class="flex items-center justify-between px-2 py-1 rounded bg-white/5 ring-1 ring-cyan-400/10"
         >
@@ -483,7 +538,7 @@ function polyPoints(sides, radius) {
               :class="{ 'opacity-40 cursor-not-allowed': gameState.minerals < u.cost }"
               @click="applyGeneralUpgrade(u.id)"
             >
-              +Añadir
+              +Añadir <span v-if="upgradeKeys[i]" class="opacity-50">{{ upgradeKeys[i] }}</span>
             </button>
           </span>
         </div>
@@ -498,7 +553,7 @@ function polyPoints(sides, radius) {
              ring-1 ring-cyan-400/20 pointer-events-auto"
     >
       <button
-        v-for="s in structures"
+        v-for="(s, i) in structures"
         :key="s.key"
         class="build-btn group"
         :class="{
@@ -510,6 +565,7 @@ function polyPoints(sides, radius) {
         @mouseleave="hideTooltip"
         @click="pick(s)"
       >
+        <span class="key-badge">{{ i + 1 }}</span>
         <svg class="w-6 h-6" viewBox="0 0 24 24">
           <polygon
             :points="polyPoints(s.sides, s.size)"
@@ -535,6 +591,7 @@ function polyPoints(sides, radius) {
         @mouseleave="hideTooltip"
         @click="pickGeneral"
       >
+        <span class="key-badge">G</span>
         <span class="text-2xl leading-none" style="color: #8be9fd">✦</span>
         <span class="text-[10px] text-cyan-200/70 group-hover:text-cyan-100">General</span>
         <span class="text-[10px] tabular-nums text-emerald-300/80">Comandante</span>
@@ -595,9 +652,12 @@ function polyPoints(sides, radius) {
   @apply bg-cyan-400/20 text-white ring-cyan-300/50;
 }
 .build-btn {
-  @apply flex flex-col items-center justify-center gap-0.5 w-16 h-16 rounded-lg
+  @apply relative flex flex-col items-center justify-center gap-0.5 w-16 h-16 rounded-lg
          bg-white/5 ring-1 ring-cyan-400/20 text-cyan-100
          hover:bg-cyan-400/10 hover:ring-cyan-300/50 active:scale-95 transition-all;
+}
+.key-badge {
+  @apply absolute top-0.5 left-1 text-[9px] font-mono text-cyan-400/50 leading-none;
 }
 .build-btn--active {
   @apply bg-cyan-400/25 ring-cyan-300/70 shadow-[0_0_12px_rgba(108,200,255,0.4)];
