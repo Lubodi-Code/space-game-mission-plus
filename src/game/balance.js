@@ -11,7 +11,7 @@ export const COMBAT = {
   missileTurnRate: 1.2,
   missileMaxLifeMs: 5000,
   bigbeamCooldown: 150,   // ms: el rayo "anti-grande" dispara casi en continuo
-  bigbeamRampStep: 0.12,  // incremento por tick para el exponente
+  bigbeamRampStep: 0.16,  // incremento por tick para el exponente
   bigbeamRampMax: 3,      // tope del exponente → daño máx = base × 1.08^(ramp*10)
 }
 
@@ -46,7 +46,7 @@ export const FX = {
   floatRise: 28
 }
 
-export const WORLD = { width: 7200, height: 4800 }
+export const WORLD = { width: 10800, height: 7200 }
 
 export const CAMERA = {
   minZoom: 0.25,
@@ -58,9 +58,9 @@ export const CAMERA = {
 }
 
 export const METEOR = {
-  count: 80,
+  count: 140,
   minDist: 400,
-  maxDist: 3000,
+  maxDist: 4500,
   amountMin: 1500,
   amountMax: 3000
 }
@@ -71,9 +71,9 @@ export const ENEMY = {
 
 export const STARFIELD = {
   layers: [
-    { count: 260, scale: [0.15, 0.35], alpha: 0.3, depth: -30 },
-    { count: 180, scale: [0.25, 0.5], alpha: 0.5, depth: -20 },
-    { count: 100, scale: [0.4, 0.8], alpha: 0.8, depth: -10 }
+    { count: 416, scale: [0.15, 0.35], alpha: 0.3, depth: -30 },
+    { count: 288, scale: [0.25, 0.5], alpha: 0.5, depth: -20 },
+    { count: 160, scale: [0.4, 0.8], alpha: 0.8, depth: -10 }
   ]
 }
 
@@ -101,10 +101,10 @@ export const GENERAL = {
   // Arma
   atkRange: 160,
   damage: 8,
-  cooldown: 450, // ms
+  cooldown: 380, // ms
   // Recolección
   collectRange: 50,
-  collectRate: 18, // minerales/s
+  collectRate: 22, // minerales/s
   // Buff por proximidad a estructuras
   buffRadius: 220,
   buffMultiplier: 1.6, // × cadencia y recolección
@@ -184,21 +184,21 @@ export const STRUCTURES = [
     buildTime: 4000,
     desc: 'Genera esferas de reparación autónomas para curar estructuras dañadas.' 
   },
-  { 
-    key: 'laser', 
-    label: 'Torreta Láser', 
-    glyph: '▲', 
-    cost: 80, 
-    color: 0xff5566, 
-    css: '#ff5566', 
-    range: 110, 
-    sides: 3, 
-    size: 11, 
-    role: 'turret', 
-    hp: 60, 
-    atkRange: 140,
-    damage: 20,
-    cooldown: 4000,
+  {
+    key: 'laser',
+    label: 'Torreta Láser',
+    glyph: '▲',
+    cost: 80,
+    color: 0xff5566,
+    css: '#ff5566',
+    range: 110,
+    sides: 3,
+    size: 11,
+    role: 'turret',
+    hp: 60,
+    atkRange: 150,
+    damage: 11,
+    cooldown: 1400,
     energyDrain: 1,
     buildTime: 5000,
     desc: 'Torreta láser de disparo rápido. Mejorable: Rama A (ráfaga múltiple) o Rama B (rayo de largo alcance).'
@@ -238,8 +238,6 @@ export const ENEMY_TYPES = {
   purple: { key: 'purple', hp: 440, speed: 18, damage: 30, atkCooldown: 900, color: 0xc08bff, scale: 2.7, reward: 160, boss: true },
 }
 
-const DIRECTIONS = [-Math.PI, Math.PI / 2, 0, -Math.PI / 2, Math.PI * 0.75, Math.PI * 0.25, -Math.PI * 0.25, -Math.PI * 0.75, Math.PI, Math.PI / 2]
-
 export function buildWaves(difficultyKey = 'normal', waveCount = WAVE_TOTAL) {
   const diff = DIFFICULTY[difficultyKey] || DIFFICULTY.normal
   const countMult = diff.countMult ?? 1
@@ -261,18 +259,23 @@ export function buildWaves(difficultyKey = 'normal', waveCount = WAVE_TOTAL) {
     // Saboteadores desde la oleada 1 para presionar temprano.
     push(EnemyType.SABOTEUR, 2 + i * 2)
     if (i >= 3) {
-      // Skirmishers más numerosos y desde la oleada 3.
-      push(EnemyType.SKIRMISHER, 4 + (i - 2) * 6)
+      // Skirmishers menos cantidad, foco en infraestructura.
+      push(EnemyType.SKIRMISHER, 2 + (i - 2) * 2)
       push(EnemyType.BRUTE, 2 + (i - 3) * 2)
     }
     if (i >= 5) push(EnemyType.ARTILLERY, 2 + (i - 4) * 2)
-    if (i >= 7) push(EnemyType.MOTHERSHIP, 1 + (i - 6))
+    if (i >= 7) push(EnemyType.MOTHERSHIP, 1 + Math.floor((i - 7) / 2))
 
     shuffle(list)
 
     const hasBoss = (i >= 7)
-    const dir = DIRECTIONS[(i - 1) % DIRECTIONS.length]
-    waves.push({ list, gap: Math.max(50, 300 - i * 25) * gapMult, hasBoss, dir })
+    // Direcciones aleatorias: oleadas 4+ tienen 2 sectores, oleadas 8+ tienen 3 sectores
+    const numDirs = i >= 8 ? 3 : (i >= 4 ? 2 : 1)
+    const dirs = []
+    for (let d = 0; d < numDirs; d++) {
+      dirs.push(Math.random() * Math.PI * 2)
+    }
+    waves.push({ list, gap: Math.max(50, 300 - i * 25) * gapMult, hasBoss, dirs })
   }
   return waves
 }

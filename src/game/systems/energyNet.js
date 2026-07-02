@@ -4,6 +4,10 @@ import { CORE } from '../balance.js'
 
 const LINK_ON = 0x6cc8ff
 const LINK_OFF = 0x37506a
+const LINK_DEAD = 0x2a3a4a
+
+// Estado para pulso de flujo (por enlace)
+const flowPulses = new Map() // enlace -> { progress, speed, parent, child }
 
 // Helpers puros (solo necesitan la estructura). Los comparte la colocación (findAttachRelay).
 export function isRelay(s) {
@@ -83,15 +87,104 @@ export function recomputeEnergyCap(scene) {
 export function drawLinks(scene) {
   const g = scene.linkGraphics
   g.clear()
+
+  // Determinar el padre de cada estructura para el pulso de flujo (BFS desde core)
+  const parentMap = new Map()
+  const core = scene.structures.find((s) => s.isCore)
+  if (core && core.powered) {
+    const queue = [core]
+    const visited = new Set([core])
+    while (queue.length) {
+      const cur = queue.shift()
+      for (const [a, b] of scene.links) {
+        if (a === cur && !visited.has(b) && b.powered) {
+          parentMap.set(b, a)
+          visited.add(b)
+          queue.push(b)
+        } else if (b === cur && !visited.has(a) && a.powered) {
+          parentMap.set(a, b)
+          visited.add(a)
+          queue.push(a)
+        }
+      }
+    }
+  }
+
   for (const [a, b] of scene.links) {
     // No dibujar enlaces directos entre edificios que no son relays.
-    // Todo lo demás (relay↔relay y relay↔no-relay) sí se muestra.
     if (!isRelay(a) && !isRelay(b)) continue
+
     const on = a.powered && b.powered
-    g.lineStyle(on ? 2 : 1.5, on ? LINK_ON : LINK_OFF, on ? 0.5 : 0.18)
-    g.beginPath()
-    g.moveTo(a.x, a.y)
-    g.lineTo(b.x, b.y)
-    g.strokePath()
+    const isCoreRelay = a.isCore || b.isCore || a.role === 'relay' || b.role === 'relay'
+    const isBothRelay = (a.isCore || a.role === 'relay') && (b.isCore || b.role === 'relay')
+
+    // Jerarquía visual: core↔relay gruesos/brillantes, relay↔hoja finos
+    if (isBothRelay) {
+      g.lineStyle(on ? 3 : 2, on ? LINK_ON : LINK_OFF, on ? 0.7 : 0.25)
+    } else {
+      g.lineStyle(on ? 1.5 : 1, on ? LINK_ON : LINK_DEAD, on ? 0.4 : 0.15)
+    }
+
+    if (!on) {
+      // Sin energía: gris punteado
+      g.lineStyle(1, LINK_DEAD, 0.25)
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const dist = Math.hypot(dx, dy)
+      const segments = Math.max(5, Math.floor(dist / 30))
+      for (let i = 0; i < segments; i++) {
+        const t1 = i / segments
+        const t2 = (i + 0.5) / segments
+        if (i % 2 === 0) {
+          g.moveTo(a.x + dx * t1, a.y + dy * t1)
+          g.lineTo(a.x + dx * t2, a.y + dy * t2)
+        }
+      }
+      g.strokePath()
+    } else {
+      // Con energía: línea continua
+      g.beginPath()
+      g.moveTo(a.x, a.y)
+      g.lineTo(b.x, b.y)
+      g.strokePath()
+
+      // Pulso de flujo: punto que viaja del padre al hijo
+      const child = parentMap.get(a) === b ? a : (parentMap.get(b) === a ? b : null)
+      if (child) {
+        const parent = parentMap.get(child)
+        if (!flowPulses.has(`${parent.id}-${child.id}`)) {
+          flowPulses.set(`${parent.id}-${child.id}`, {
+            progress: Math.random(),
+            speed: 0.8 + Math.random() * 0.4,
+            parent,
+            child,
+          })
+        }
+      }
+    }
+  }
+
+  // Dibujar pulsos de flujo
+  const now = scene.time.now
+  for (const pulse of flowPulses.values()) {
+    if (!pulse.parent.powered || !pulse.child.powered) continue
+    pulse.progress += (1 / 60) * pulse.speed
+    if (pulse.progress > 1) pulse.progress = 0
+
+    const t = pulse.progress
+    const x = pulse.parent.x + (pulse.child.x - pulse.parent.x) * t
+    const y = pulse.parent.y + (pulse.child.y - pulse.parent.y) * t
+
+    g.fillStyle(0x8be9fd, 0.8)
+    g.fillCircle(x, y, 2.5)
+  }
+
+  // Limpiar pulsos de enlaces que ya no existen
+  const currentKeys = new Set(scene.links.map(([a, b]) => `${a.id}-${b.id}|${b.id}-${a.id}`))
+  for (const key of flowPulses.keys()) {
+    const [pid, cid] = key.split('-')
+    if (!currentKeys.has(`${pid}-${cid}|${cid}-${pid}`)) {
+      flowPulses.delete(key)
+    }
   }
 }

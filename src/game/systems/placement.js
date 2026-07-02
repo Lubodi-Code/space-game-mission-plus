@@ -42,16 +42,23 @@ export function canConnectAt(scene, x, y, def) {
   return !!findAttachRelay(scene, x, y, def)
 }
 
-export function tryPlace(scene, x, y) {
-  if (!scene.general.alive) { flashPlacementFeedback(scene, false); return }
+// `gen` = general del jugador que construye (host por defecto). `useSnap=false` para
+// intents remotos: el _snapPos del ghost es del HOST y desviaría la posición del cliente.
+export function tryPlace(scene, x, y, gen = scene.general, useSnap = true) {
+  if (!gen?.alive) { flashPlacementFeedback(scene, false); return }
   const def = structureByKey(scene.placementKey)
   if (!def) return
   if (gameState.minerals < def.cost) return
-  if (!canConnectAt(scene, x, y, def)) {
+
+  const snap = useSnap ? scene._snapPos : null
+  const placeX = snap ? snap.x : x
+  const placeY = snap ? snap.y : y
+
+  if (!canConnectAt(scene, placeX, placeY, def)) {
     flashPlacementFeedback(scene, false)
     return
   }
-  if (overlapsExisting(scene, x, y)) {
+  if (overlapsExisting(scene, placeX, placeY)) {
     flashPlacementFeedback(scene, false)
     return
   }
@@ -59,13 +66,13 @@ export function tryPlace(scene, x, y) {
   gameState.minerals -= def.cost
   if (def.role === 'battery') gameState.mineralsCap += def.capBonus
 
-  const s = createStructure(def.key, x, y, scene)
+  const s = createStructure(def.key, placeX, placeY, scene)
   scene.structures.push(s)
   recomputeNetwork(scene)
-  flashPlacementFeedback(scene, true, x, y, def)
+  flashPlacementFeedback(scene, true, placeX, placeY, def)
 
   if (gameState.minerals < def.cost) cancelPlacement(scene)
-  else updateGhost(scene, x, y)
+  else updateGhost(scene, placeX, placeY)
 }
 
 export function flashPlacementFeedback(scene, success, x, y, def) {
@@ -106,22 +113,111 @@ export function updateGhost(scene, x, y) {
   const affordable = gameState.minerals >= def.cost
   const relay = findAttachRelay(scene, x, y, def)
   const free = !overlapsExisting(scene, x, y)
+
+  // Snap a rejilla radial si estamos cerca de un relay
+  let snapX = x, snapY = y
+  if (relay) {
+    const d = Phaser.Math.Distance.Between(x, y, relay.x, relay.y)
+    if (d <= relay.range) {
+      const angle = Math.atan2(y - relay.y, x - relay.x)
+      const dist = d
+
+      // Rejilla radial: anillos a 60/110/160 px y 12 rayos
+      const rings = [60, 110, 160]
+      const rayCount = 12
+
+      let bestSnapDist = 14
+      let bestSnap = null
+
+      // Probar snap a anillos
+      for (const ringR of rings) {
+        if (Math.abs(dist - ringR) < bestSnapDist) {
+          const snapAngle = Math.round(angle / (Math.PI * 2) * rayCount) * (Math.PI * 2) / rayCount
+          const testX = relay.x + Math.cos(snapAngle) * ringR
+          const testY = relay.y + Math.sin(snapAngle) * ringR
+          if (!overlapsExisting(scene, testX, testY)) {
+            bestSnapDist = Math.abs(dist - ringR)
+            bestSnap = { x: testX, y: testY }
+          }
+        }
+      }
+
+      // Probar snap a rayos
+      const rayAngle = Math.round(angle / (Math.PI * 2) * rayCount) * (Math.PI * 2) / rayCount
+      const rayX = relay.x + Math.cos(rayAngle) * dist
+      const rayY = relay.y + Math.sin(rayAngle) * dist
+      const raySnapDist = Phaser.Math.Distance.Between(x, y, rayX, rayY)
+      if (raySnapDist < bestSnapDist && !overlapsExisting(scene, rayX, rayY)) {
+        bestSnap = { x: rayX, y: rayY }
+        bestSnapDist = raySnapDist
+      }
+
+      if (bestSnap) {
+        snapX = bestSnap.x
+        snapY = bestSnap.y
+      }
+    }
+  }
+
   const valid = affordable && !!relay && free
   const color = valid ? 0x49e07a : 0xff5566
 
   const g = scene.ghost
   g.clear()
-  // Línea al relay (núcleo/nodo) al que se engancharía: deja claro de dónde viene la señal.
+
+  // Dibujar rejilla radial del relay si está cerca
+  if (relay && !scene.remote) {
+    const d = Phaser.Math.Distance.Between(snapX, snapY, relay.x, relay.y)
+    if (d <= relay.range) {
+      // Anillos de snap
+      g.lineStyle(1, 0x6cc8ff, 0.15)
+      const rings = [60, 110, 160]
+      for (const ringR of rings) {
+        if (ringR > relay.range) continue
+        g.strokeCircle(relay.x, relay.y, ringR)
+      }
+
+      // Rayos de snap
+      const rayCount = 12
+      for (let i = 0; i < rayCount; i++) {
+        const a = (i / rayCount) * Math.PI * 2
+        g.beginPath()
+        g.moveTo(relay.x, relay.y)
+        g.lineTo(
+          relay.x + Math.cos(a) * relay.range,
+          relay.y + Math.sin(a) * relay.range
+        )
+        g.strokePath()
+      }
+
+      // Puntos de snap en las intersecciones del anillo más cercano
+      const currentRing = rings.find(r => r >= d - 20) || rings[0]
+      if (currentRing <= relay.range) {
+        for (let i = 0; i < rayCount; i++) {
+          const a = (i / rayCount) * Math.PI * 2
+          const px = relay.x + Math.cos(a) * currentRing
+          const py = relay.y + Math.sin(a) * currentRing
+          g.fillStyle(0x6cc8ff, 0.3)
+          g.fillCircle(px, py, 2)
+        }
+      }
+    }
+  }
+
+  // Línea al relay (núcleo/nodo) al que se engancharía
   if (relay) {
     g.lineStyle(1.5, color, 0.5)
     g.beginPath()
-    g.moveTo(x, y)
+    g.moveTo(snapX, snapY)
     g.lineTo(relay.x, relay.y)
     g.strokePath()
   }
   g.lineStyle(1, color, 0.4)
-  g.strokeCircle(x, y, def.range)
-  drawPolygon(g, x, y, def.size, def.sides, color, 2, 0.9, darken(color))
+  g.strokeCircle(snapX, snapY, def.range)
+  drawPolygon(g, snapX, snapY, def.size, def.sides, color, 2, 0.9, darken(color))
+
+  // Almacenar posición snappeada para uso en tryPlace
+  scene._snapPos = { x: snapX, y: snapY }
 }
 
 export function updateRangePreview(scene, x, y) {

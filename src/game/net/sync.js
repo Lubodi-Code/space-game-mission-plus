@@ -9,9 +9,10 @@ import { REGISTRY } from '../enemies/EnemyType.js'
 import { createMeteorite } from '../systems/worldgen.js'
 import { drawLinks } from '../systems/energyNet.js'
 import { tryPlace } from '../systems/placement.js'
-import { explosion, hitFlash, drawBeam } from '../render/fx.js'
+import { explosion, hitFlash, drawBeam, spawnMarker, auraBurst, drawPlayerCursor, HEAL_ORB_COLOR, orbScale } from '../render/fx.js'
 import { glowBlend } from '../render/blend.js'
 import { GEN_TINTS } from '../General.js'
+import { UPGRADES } from '../structures/upgrades.js'
 
 // Capa de sincronización multijugador (host-authoritative ~12 Hz).
 // Host: buildSnapshot/sendSnapshot/onIntent. Cliente: createRemote/applySnapshot/
@@ -23,8 +24,12 @@ export function onIntent(scene, d, nc) {
   if (d.t === 'build') {
     const k = scene.placementKey
     scene.placementKey = d.key
-    tryPlace(scene, d.x, d.y)
+    // General del CLIENTE + sin snap del host (su _snapPos apuntaba a la última posición
+    // del ghost del host y hacía fallar/desviar todas las construcciones remotas).
+    tryPlace(scene, d.x, d.y, scene.generals.get(nc.pid), false)
     scene.placementKey = k
+  } else if (d.t === 'cursor') {
+    scene.remoteCursors?.set(nc.pid, { x: d.x, y: d.y })
   } else if (d.t === 'general') {
     scene.generals.get(nc.pid)?.setTarget(d.x, d.y, scene)
   } else if (d.t === 'hello') {
@@ -40,6 +45,8 @@ export function buildSnapshot(scene) {
   scene._explQueue = []
   const beams = scene._beamQueue
   scene._beamQueue = []
+  const aura = scene._auraQueue
+  scene._auraQueue = []
   return {
     t: 'snap',
     eco: {
@@ -50,7 +57,7 @@ export function buildSnapshot(scene) {
       enemiesAlive: gameState.enemiesAlive, status: gameState.status, bossWave: gameState.bossWave,
     },
     enemies: scene.enemies.map((e) => [e.id, e.type, Math.round(e.x), Math.round(e.y), Math.round(e.hp), Math.round(e.maxHp), Math.round((e.heading || 0) * 100) / 100]),
-    structs: scene.structures.map((s) => [s.id, s.key, Math.round(s.x), Math.round(s.y), Math.round(s.hp), Math.round(s.maxHp), s.powered ? 1 : 0, s.building ? 1 : 0, s.building && s.buildTime ? Math.round((s.buildProgress / s.buildTime) * 100) / 100 : 1]),
+    structs: scene.structures.map((s) => [s.id, s.key, Math.round(s.x), Math.round(s.y), Math.round(s.hp), Math.round(s.maxHp), s.powered ? 1 : 0, s.building ? 1 : 0, s.building && s.buildTime ? Math.round((s.buildProgress / s.buildTime) * 100) / 100 : 1, (s.upgrades || []).join(',')]),
     // misiles del jugador: sprite 'missile_rod' orientado → mando rotación; enemigos: sprite 'star'
     missiles: scene.projectiles.map((p) => [p.id, Math.round(p.x), Math.round(p.y), p.color, Math.round(p.vx || 0), Math.round(p.vy || 0)]),
     emissiles: scene.epSystem.projectiles.map((p) => [p.id, Math.round(p.x), Math.round(p.y), p.color, Math.round(p.vx || 0), Math.round(p.vy || 0)]),
@@ -63,10 +70,18 @@ export function buildSnapshot(scene) {
         .map((s) => [Math.round(s.x), Math.round(s.y), Math.round(s.target.x), Math.round(s.target.y)]),
       gmining: scene.general?.gmining || null,
       expl,
+      aura,
     },
     // [pid, x, y, hp, alive, name]. El nombre va en cada snap (≤16 chars × ≤4 generales,
     // ~12 Hz). ponytail: trivial; separar a un mensaje aparte solo si el ancho de banda importa.
     gen: [...scene.generals.values()].map((g) => [g.pid, Math.round(g.x), Math.round(g.y), Math.round(g.hp), g.alive ? 1 : 0, g.labelName || '']),
+    // Esferas del Enjambre Sanador (solo posición + si está curando) para que el cliente las vea.
+    orbs: (scene.healers || []).map((h) => [Math.round(h.x), Math.round(h.y), h.target ? 1 : 0]),
+    // Cursores de todos los jugadores: host (pid 0, puntero local) + clientes (intents 'cursor').
+    cursors: [
+      [0, Math.round(scene.input.activePointer.worldX), Math.round(scene.input.activePointer.worldY)],
+      ...[...(scene.remoteCursors || new Map())].map(([pid, c]) => [pid, c.x, c.y]),
+    ],
   }
 }
 
@@ -93,7 +108,13 @@ export function createRemote(scene) {
   scene.eMissiles = new Map() // id -> sprite 'star' (misiles enemigos)
   scene._fx = null
   scene._snap = null
-  net.onData = (d) => { if (d.t === 'snap') applySnapshot(scene, d) }
+  scene.myPid = -1 // llega en 'welcome'; hasta entonces no se filtra ningún cursor
+  scene.orbSprites = [] // pool de sprites para las esferas sanadoras
+  scene.rCursors = new Map() // pid -> {x,y,tx,ty} interpolado
+  net.onData = (d) => {
+    if (d.t === 'snap') applySnapshot(scene, d)
+    else if (d.t === 'welcome') scene.myPid = d.pid
+  }
   gameState.status = 'playing'
   scene.speed = 1
   scene.placementKey = null
@@ -108,6 +129,7 @@ export function createRemote(scene) {
     for (const m of scene.mById.values()) m.container.destroy()
     for (const s of scene.pMissiles.values()) s.destroy()
     for (const s of scene.eMissiles.values()) s.destroy()
+    for (const s of scene.orbSprites) s.destroy()
   })
 }
 
@@ -118,7 +140,8 @@ export function applySnapshot(scene, snap) {
 
   // Estructuras: instancias REALES → mismo render que el host (núcleo animado incluido).
   const seenS = new Set()
-  for (const [id, key, x, y, hp, maxHp, powered, building, frac] of snap.structs) {
+  for (const row of snap.structs) {
+    const [id, key, x, y, hp, maxHp, powered, building, frac, upgStr] = row
     seenS.add(id)
     let s = scene.sById.get(id)
     const isNew = !s
@@ -137,6 +160,14 @@ export function applySnapshot(scene, snap) {
     } else {
       s.container.setAlpha(1)
       if (s.buildBar) s.buildBar.clear()
+    }
+    // Aplicar mejoras visuales (cliente no simula stats, solo aspecto)
+    const upIds = upgStr ? upgStr.split(',') : []
+    for (const id of upIds) {
+      if (!s.upgrades?.includes(id)) {
+        const u = UPGRADES.find((x) => x.id === id)
+        if (u) { s.applyUpgrade?.(u); s.applyUpgradeVisual(u); (s.upgrades ||= []).push(id) }
+      }
     }
     s.drawHpBar()
   }
@@ -157,7 +188,7 @@ export function applySnapshot(scene, snap) {
   }
   for (const [k, m] of scene.mById) if (!seenM.has(k)) { m.container.destroy(); scene.mById.delete(k) }
 
-  // Enemigos: sprites con glow + rumbo.
+  // Enemigos: sprites con glow + rumbo + marcador de spawn al aparecer.
   const seenE = new Set()
   for (const [id, type, x, y, hp, maxHp, h] of snap.enemies) {
     seenE.add(id)
@@ -168,6 +199,7 @@ export function applySnapshot(scene, snap) {
         .setScale(1.3).setAlpha(0.35).setBlendMode(glowBlend()).setDepth(14)
       spr.tx = x; spr.ty = y
       scene.eById.set(id, spr)
+      spawnMarker(scene, x, y)
     }
     spr.tx = x; spr.ty = y
     spr.heading = h || 0
@@ -181,7 +213,8 @@ export function applySnapshot(scene, snap) {
     seenG.add(pid)
     let g = scene.genSprites.get(pid)
     if (!g) {
-      g = scene.add.image(x, y, 'enemy_skirmisher').setTint(GEN_TINTS[pid % GEN_TINTS.length]).setScale(1.3).setDepth(17)
+      // Misma nave y escala que el host (General.js usa 'general_ship' 0.85).
+      g = scene.add.image(x, y, 'general_ship').setTint(GEN_TINTS[pid % GEN_TINTS.length]).setScale(0.85).setDepth(17)
       g.tx = x; g.ty = y
       g.label = scene.add.text(x, y - 30, name || '', { fontSize: '11px', color: '#cfe8ff', fontFamily: 'monospace' }).setOrigin(0.5).setDepth(19)
       scene.genSprites.set(pid, g)
@@ -194,6 +227,9 @@ export function applySnapshot(scene, snap) {
 
   // Rayos: encolar cada evento. b = [x1,y1,x2,y2,color,width,ttl,ttlBase]; índice 6 cuenta atrás.
   for (const b of (snap.fx?.beams || [])) scene.rbeams.push([...b])
+
+  // Explosiones de aura (ojiva de plasma).
+  for (const [x, y, color, r] of (snap.fx?.aura || [])) auraBurst(scene, x, y, color, r)
 
   // Misiles: Map por id + dead-reckoning (sin salto, con reconciliación suave).
   const seenP = new Set()
@@ -228,6 +264,16 @@ export function applySnapshot(scene, snap) {
 
   // Explosiones puntuales: reusa explosion().
   for (const [x, y, color, rr] of (snap.fx?.expl || [])) explosion(scene, x, y, color, rr)
+
+  // Cursores de otros jugadores (objetivos para interpolar en renderRemote).
+  const seenC = new Set()
+  for (const [pid, x, y] of (snap.cursors || [])) {
+    if (pid === scene.myPid) continue
+    seenC.add(pid)
+    const c = scene.rCursors.get(pid)
+    if (c) { c.tx = x; c.ty = y } else scene.rCursors.set(pid, { x, y, tx: x, ty: y })
+  }
+  for (const pid of scene.rCursors.keys()) if (!seenC.has(pid)) scene.rCursors.delete(pid)
 }
 
 export function setupRemoteInput(scene) {
@@ -254,6 +300,12 @@ export function setupRemoteInput(scene) {
       }
     }
     if (scene.placementKey && gameState.generalMode !== 'selected') drawRemoteGhost(scene, p.worldX, p.worldY)
+    // Cursor propio hacia el host (throttle ~80 ms, mismo ritmo que el snapshot).
+    const now = performance.now()
+    if (!scene._curSent || now - scene._curSent > 80) {
+      scene._curSent = now
+      net.send({ t: 'cursor', x: Math.round(p.worldX), y: Math.round(p.worldY) })
+    }
   })
 
   scene.input.on('pointerup', (p) => {
@@ -357,6 +409,35 @@ export function renderRemote(scene, time, delta) {
       const [gx, gy, mx, my] = fx.gmining
       bg.lineStyle(3, 0x49e07a, pulse); bg.lineBetween(gx, gy, mx, my)
       bg.fillStyle(0x49e07a, pulse); bg.fillCircle(mx, my, 4)
+    }
+  }
+
+  // Esferas sanadoras: pool de sprites con el mismo color/pulso que el host.
+  const orbs = scene._snap?.orbs || []
+  while (scene.orbSprites.length < orbs.length) {
+    scene.orbSprites.push(scene.add.image(0, 0, 'glow').setTint(HEAL_ORB_COLOR)
+      .setBlendMode(glowBlend()).setDepth(18))
+  }
+  for (let i = 0; i < scene.orbSprites.length; i++) {
+    const s = scene.orbSprites[i]
+    const o = orbs[i]
+    if (!o) { s.setVisible(false); continue }
+    s.setVisible(true)
+    // Interpolación suave hacia la posición del snapshot (12 Hz → 60 fps).
+    if (s.ox === undefined) { s.ox = o[0]; s.oy = o[1] }
+    s.ox += (o[0] - s.ox) * 0.3; s.oy += (o[1] - s.oy) * 0.3
+    s.setPosition(s.ox, s.oy)
+    s.setScale(orbScale(time, i, o[2]))
+    s.setAlpha(o[2] ? 1 : 0.75)
+  }
+
+  // Cursores de los demás jugadores, interpolados.
+  const cg = scene.cursorGfx
+  if (cg) {
+    cg.clear()
+    for (const [pid, c] of scene.rCursors) {
+      c.x += (c.tx - c.x) * 0.35; c.y += (c.ty - c.y) * 0.35
+      drawPlayerCursor(cg, c.x, c.y, GEN_TINTS[pid % GEN_TINTS.length], time)
     }
   }
 }
