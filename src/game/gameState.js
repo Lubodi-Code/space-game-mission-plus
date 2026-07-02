@@ -18,6 +18,8 @@ export const gameState = reactive({
   status: 'idle', // idle | playing | paused | gameover | victory
   activeBuild: null, // key of the structure currently being placed, or null
   nextWaveIn: 0, // seconds until the next wave (0 = wave in progress)
+  nextWave: null, // { counts, dirs, hasBoss } análisis de la siguiente oleada
+  waveDirs: [], // direcciones de spawn de la oleada actual (para el HUD)
   enemiesAlive: 0,
   speed: 1,
   bossWave: false,
@@ -48,6 +50,8 @@ export function resetGameState() {
     status: 'idle',
     activeBuild: null,
     nextWaveIn: 0,
+    nextWave: null,
+    waveDirs: [],
     enemiesAlive: 0,
     speed: 1,
     bossWave: false,

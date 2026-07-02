@@ -5,6 +5,18 @@ import { bus } from '../game/bus.js'
 import { STRUCTURES, SPEED } from '../game/constants.js'
 import { goToLobby } from '../game/appState.js'
 import { getUpgradesFor } from '../game/structures/upgrades.js'
+import { EnemyType, REGISTRY } from '../game/enemies/EnemyType.js'
+
+// Mapeo de tipos de enemigos a nombres legibles
+const ENEMY_LABELS = {
+  [EnemyType.GRUNT]: { label: 'Grunt', color: '#49e07a' },
+  [EnemyType.RUNNER]: { label: 'Runner', color: '#38e0d0' },
+  [EnemyType.SABOTEUR]: { label: 'Saboteador', color: '#d24aff' },
+  [EnemyType.SKIRMISHER]: { label: 'Skirmisher', color: '#a6e022' },
+  [EnemyType.BRUTE]: { label: 'Brute', color: '#ff6b3d' },
+  [EnemyType.ARTILLERY]: { label: 'Artillería', color: '#ffb02e' },
+  [EnemyType.MOTHERSHIP]: { label: 'Nave Nodriza', color: '#b06bff' },
+}
 
 const structures = STRUCTURES
 
@@ -50,6 +62,27 @@ const waveStatus = computed(() => {
     return { kind: 'countdown', text: `Oleada ${gameState.wave + 1} en ${gameState.nextWaveIn}s` }
   }
   return { kind: 'active', text: `Oleada ${gameState.wave} · enemigos: ${gameState.enemiesAlive}` }
+})
+
+// Análisis de la siguiente oleada (para el panel de intermisión)
+const nextWaveAnalysis = computed(() => {
+  const nw = gameState.nextWave
+  if (!nw) return null
+  const types = []
+  for (const [type, count] of Object.entries(nw.counts)) {
+    const info = ENEMY_LABELS[type]
+    if (info) {
+      types.push({ ...info, count })
+    }
+  }
+  // Ordenar por cantidad descendente
+  types.sort((a, b) => b.count - a.count)
+  return {
+    types,
+    dirs: nw.dirs,
+    hasBoss: nw.hasBoss,
+    waveNum: gameState.wave + 1,
+  }
 })
 
 // Core damage vignette flash.
@@ -305,6 +338,57 @@ function polyPoints(sides, radius) {
       </div>
       <div v-else class="mt-1 text-xs text-red-400/90 animate-pulse">
         ⚠ General caído — reaparece en {{ gameState.general.respawnIn }}s
+      </div>
+    </div>
+
+    <!-- Wave analysis panel (intermission) -->
+    <div
+      v-if="nextWaveAnalysis"
+      class="absolute top-14 left-64 ml-2 w-64 p-2.5 rounded-xl bg-[#0a0f1c]/60 backdrop-blur-sm ring-1 ring-fuchsia-400/20 pointer-events-auto"
+    >
+      <div class="text-[11px] font-semibold text-fuchsia-300/90 mb-1.5">
+        Oleada {{ nextWaveAnalysis.waveNum }} entrante
+      </div>
+      <div class="space-y-1 mb-2">
+        <div
+          v-for="t of nextWaveAnalysis.types"
+          :key="t.label"
+          class="flex items-center justify-between text-[10px]"
+        >
+          <span class="flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: t.color }"></span>
+            <span class="opacity-90">{{ t.label }}</span>
+          </span>
+          <span class="font-semibold tabular-nums opacity-80">×{{ t.count }}</span>
+        </div>
+      </div>
+      <div v-if="nextWaveAnalysis.hasBoss" class="text-[10px] text-red-400 font-semibold animate-pulse mb-1.5">
+        ⚠ NAVE NODRIZA
+      </div>
+      <!-- Compass minimal -->
+      <div class="relative w-20 h-20 mx-auto mt-1.5 rounded-full bg-fuchsia-500/5 ring-1 ring-fuchsia-400/20">
+        <div class="absolute inset-0 flex items-center justify-center text-[9px] text-fuchsia-300/60">
+          <svg viewBox="0 0 100 100" class="w-full h-full">
+            <!-- Marcas de dirección para cada sector de spawn -->
+            <line
+              v-for="(dir, i) in nextWaveAnalysis.dirs"
+              :key="i"
+              :x1="50"
+              :y1="50"
+              :x2="50 + 40 * Math.cos(dir)"
+              :y2="50 + 40 * Math.sin(dir)"
+              :stroke="nextWaveAnalysis.hasBoss ? '#ef4444' : '#d946ef'"
+              :stroke-width="nextWaveAnalysis.hasBoss ? '2.5' : '1.8'"
+              stroke-linecap="round"
+            />
+            <circle v-for="(dir, i) in nextWaveAnalysis.dirs" :key="'c'+i"
+              :cx="50 + 42 * Math.cos(dir)"
+              :cy="50 + 42 * Math.sin(dir)"
+              r="3"
+              :fill="nextWaveAnalysis.hasBoss ? '#ef4444' : '#d946ef'"
+            />
+          </svg>
+        </div>
       </div>
     </div>
 

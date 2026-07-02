@@ -19,7 +19,7 @@ import { populateMeteorites } from '../systems/worldgen.js'
 import { initWaves, updateWaves } from '../systems/waves.js'
 import { recomputeNetwork as recomputeNetworkSys } from '../systems/energyNet.js'
 import { ThreeLayer } from '../three/ThreeLayer.js'
-import { explosion as explosionFx, drawFx } from '../render/fx.js'
+import { explosion as explosionFx, drawFx, drawPlayerCursor } from '../render/fx.js'
 import { updateProjectiles } from '../systems/projectiles.js'
 import { updateHealers } from '../systems/healers.js'
 import { updateEnemies, nearestStructure, killEnemy } from '../systems/enemies.js'
@@ -57,6 +57,7 @@ export class GameScene extends Phaser.Scene {
     this._enemySeq = 0
     this._explQueue = [] // explosiones de este intervalo, para enviar a clientes
     this._beamQueue = [] // rayos disparados en este intervalo, para enviar a clientes
+    this._auraQueue = [] // auras de plasma para enviar a clientes
     this.netHost = net.isHost
 
     this.cam = this.cameras.main
@@ -70,6 +71,8 @@ export class GameScene extends Phaser.Scene {
     this.fxGraphics = this.add.graphics().setDepth(30).setBlendMode(Phaser.BlendModes.ADD)
     this.ghost = this.add.graphics().setDepth(40).setVisible(false)
     this.enemyBars = this.add.graphics().setDepth(16)
+    this.cursorGfx = this.add.graphics().setDepth(45) // cursores de otros jugadores
+    this.remoteCursors = new Map() // host: pid -> {x,y} (última posición recibida)
     this.enemyGrid = new SpatialGrid(48)
 
     this.remote = !net.isHost && net.conns.length > 0
@@ -147,12 +150,14 @@ export class GameScene extends Phaser.Scene {
     if (net.isHost) {
       net.onData = (d, nc) => onIntent(this, d, nc)
       net.onOpen = (nc) => this.addClientGeneral(nc)
+      net.onDisconnect = (nc) => this.remoteCursors.delete(nc.pid)
       for (const nc of net.conns) if (nc.open) this.addClientGeneral(nc)
     }
   }
 
   // Un general por cliente conectado (host-authoritative). Idempotente por pid.
   addClientGeneral(nc) {
+    net.sendTo(nc.pid, { t: 'welcome', pid: nc.pid }) // el cliente filtra su propio cursor
     if (this.generals.has(nc.pid)) return
     const g = new General(this, this.core.x - 60, this.core.y, GEN_TINTS[nc.pid % GEN_TINTS.length])
     g.pid = nc.pid
@@ -418,6 +423,12 @@ export class GameScene extends Phaser.Scene {
 
     // Host: emite snapshot ~12 Hz (incluso en game over para propagar el status al cliente).
     sendSnapshot(this, d)
+
+    // Cursores de los clientes en la pantalla del host (mismo estilo que en cliente).
+    this.cursorGfx.clear()
+    for (const [pid, c] of this.remoteCursors) {
+      drawPlayerCursor(this.cursorGfx, c.x, c.y, GEN_TINTS[pid % GEN_TINTS.length], time)
+    }
 
     if (gameState.status !== 'playing' || d === 0) return
 
