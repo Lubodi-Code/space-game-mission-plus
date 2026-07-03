@@ -12,7 +12,7 @@ export const UPGRADES = [
     forRole: 'turret',
     excludes: 'laser_b',
     atkRange: 0.7,
-    cooldown: 0.38,
+    cooldown: 0.25,  // ponytail: más rápido (antes 0.38)
     damage: 0.6,
     tint: 0xffae5b,
     decor: 'fast',
@@ -26,8 +26,8 @@ export const UPGRADES = [
     requires: 'laser_a',
     excludes: 'laser_b',
     atkRange: 1.6,
-    damage: 0.55,
-    cooldown: 0.1,
+    damage: 0.40,  // ponytail: menos daño (antes 0.55)
+    cooldown: 0.25,  // ponytail: más lento (antes 0.1)
     tint: 0xffd24a,
     decor: 'triple',
   },
@@ -39,8 +39,8 @@ export const UPGRADES = [
     cost: 80,
     forRole: 'turret',
     excludes: 'laser_a',
-    atkRange: 2.0,
-    cooldown: 2.2,
+    atkRange: 2.4,  // ponytail: más radio (antes 2.0)
+    cooldown: 1.5,  // ponytail: más rápido (antes 2.2)
     damage: 2.2,
     tint: 0x5bd0ff,
     decor: 'wide',

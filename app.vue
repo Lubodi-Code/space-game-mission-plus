@@ -1,8 +1,6 @@
 <script setup>
-import GameCanvas from './components/GameCanvas.vue'
-import Hud from './components/Hud.vue'
-import Lobby from './components/Lobby.vue'
-import { appState } from './game/appState.js'
+// Components are auto-imported in Nuxt 3
+import { appState } from '~/game/appState.js'
 </script>
 
 <template>

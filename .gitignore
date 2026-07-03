@@ -1,6 +1,9 @@
 node_modules
 dist
 dist-ssr
+# Nuxt build dirs
+.nuxt
+.output
 # fuentes full-res de assets 3D (originales para regenerar LODs; no se sirven, ~26MB)
 assets-src
 *.local

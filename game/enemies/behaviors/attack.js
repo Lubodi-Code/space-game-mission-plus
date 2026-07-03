@@ -84,4 +84,25 @@ export const ATTACK = {
     world.damageStructure(t, enemy.damage)
     enemy.atkTimer = enemy.def.atkCooldown
   },
+
+  SPAWN_SMALL_SHIPS: (enemy, world, dt) => {
+    enemy.atkTimer -= dt * 1000
+    if (enemy.atkTimer > 0) return
+
+    const spawnCount = enemy.def.spawnCount || 3
+    const spawnTypes = enemy.def.spawnTypes || ['grunt']
+    const spreadAngle = 0.3 // radianes de dispersión
+
+    for (let i = 0; i < spawnCount; i++) {
+      const typeKey = spawnTypes[Math.floor(Math.random() * spawnTypes.length)]
+      const angle = enemy.heading + (Math.random() - 0.5) * spreadAngle
+      const distance = 60 + Math.random() * 30
+      const spawnX = enemy.x + Math.cos(angle) * distance
+      const spawnY = enemy.y + Math.sin(angle) * distance
+
+      world.spawnSmallShip?.(typeKey, spawnX, spawnY)
+    }
+
+    enemy.atkTimer = enemy.def.spawnInterval || 8000
+  },
 }

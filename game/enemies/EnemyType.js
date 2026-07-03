@@ -6,6 +6,7 @@ export const EnemyType = Object.freeze({
   SKIRMISHER: 'skirmisher',
   ARTILLERY: 'artillery',
   MOTHERSHIP: 'mothership',
+  COMMANDSHIP: 'commandship',
 })
 
 export const ROLE_GROUPS = {
@@ -123,5 +124,23 @@ export const REGISTRY = {
     risk: 'BRAVE',
     evasion: 'JUKE',
     evasionChance: 0.05,
+  },
+  [EnemyType.COMMANDSHIP]: {
+    hp: 1200, speed: 25, scale: 4.2, reward: 500,
+    color: 0x808080, textureKey: 'enemy_commandship',
+    targetPriority: 'CORE',
+    targetSecondary: 'DEFENSE',
+    movement: 'STRAIGHT',
+    attack: 'SPAWN_SMALL_SHIPS',
+    attackRange: 0, atkCooldown: 8000, damage: 0,
+    spawnCount: 3,
+    spawnTypes: ['grunt', 'runner'],
+    spawnInterval: 8000,
+    boss: true,
+    maxForce: 120,
+    agility: 0.08,
+    risk: 'BRAVE',
+    evasion: 'JUKE',
+    evasionChance: 0.10,
   },
 }

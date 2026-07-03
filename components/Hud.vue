@@ -15,7 +15,8 @@ const ENEMY_LABELS = {
   [EnemyType.SKIRMISHER]: { label: 'Skirmisher', color: '#a6e022' },
   [EnemyType.BRUTE]: { label: 'Brute', color: '#ff6b3d' },
   [EnemyType.ARTILLERY]: { label: 'Artillería', color: '#ffb02e' },
-  [EnemyType.MOTHERSHIP]: { label: 'Nave Nodriza', color: '#b06bff' },
+  [EnemyType.MOTHERSHIP]: { label: 'Nave Madre', color: '#b06bff' },
+  [EnemyType.COMMANDSHIP]: { label: 'Nave Nodriza', color: '#808080' },
 }
 
 const structures = STRUCTURES

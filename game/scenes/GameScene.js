@@ -8,13 +8,14 @@ import {
 } from '../balance.js'
 // (la mayoría de los subsistemas viven en systems/ · render/ · net/)
 import { ROLE_GROUPS } from '../enemies/EnemyType.js'
+import { Enemy } from '../enemies/Enemy.js'
 import { EnemyProjectileSystem } from '../enemies/EnemyProjectiles.js'
 import { createStructure } from '../structures/StructureRegistry.js'
 import { UPGRADES } from '../structures/upgrades.js'
 import { SpatialGrid } from '../enemies/SpatialGrid.js'
 import { General, GEN_TINTS } from '../General.js'
 import { net } from '../net.js'
-import { appState } from '../appState.js'
+import { appState, DIFFICULTY } from '../appState.js'
 import { populateMeteorites } from '../systems/worldgen.js'
 import { initWaves, updateWaves } from '../systems/waves.js'
 import { recomputeNetwork as recomputeNetworkSys } from '../systems/energyNet.js'
@@ -130,6 +131,15 @@ export class GameScene extends Phaser.Scene {
       spawnEnemyMissile: (opts) => this.epSystem.spawnMissile(opts),
       fireEnemyBeam: (opts) => this.epSystem.fireBeam(opts),
       killEnemy: (enemy) => killEnemy(this, enemy),
+      spawnSmallShip: (typeKey, x, y) => {
+        const mult = DIFFICULTY[appState.difficulty] || DIFFICULTY.normal
+        const enemy = new Enemy(typeKey, x, y, this)
+        enemy.id = ++this._enemySeq
+        enemy.hp = Math.round(enemy.def.hp * mult.hpMult)
+        enemy.maxHp = enemy.hp
+        enemy.damage = enemy.def.damage * mult.dmgMult
+        this.enemies.push(enemy)
+      },
       enemyGrid: this.enemyGrid,
     }
 

@@ -18,6 +18,7 @@ export class BootScene extends Phaser.Scene {
       [EnemyType.SKIRMISHER]: 'ship_skirmisher',
       [EnemyType.ARTILLERY]: 'ship_artillery',
       [EnemyType.MOTHERSHIP]: 'ship_mothership',
+      [EnemyType.COMMANDSHIP]: 'ship_commandship',
     }
     for (const [typeKey, def] of Object.entries(REGISTRY)) {
       const file = map[typeKey]

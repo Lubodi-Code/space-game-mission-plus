@@ -254,6 +254,14 @@ export function buildWaves(difficultyKey = 'normal', waveCount = WAVE_TOTAL) {
       for (let k = 0; k < count; k++) list.push(type)
     }
 
+    // COMMANDSHIP: una sola nave nodriza al principio de oleadas altas (wave 6+)
+    if (i >= 6) push(EnemyType.COMMANDSHIP, 1)
+
+    // Orden secuencial: artillería y brutes primero después de la nodriza
+    if (i >= 3) push(EnemyType.BRUTE, 2 + (i - 3) * 2)
+    if (i >= 5) push(EnemyType.ARTILLERY, 2 + (i - 4) * 2)
+
+    // Luego el resto de naves en orden normal
     push(EnemyType.GRUNT, 12 + i * 4)
     if (i >= 2) push(EnemyType.RUNNER, 4 + (i - 1) * 4)
     // Saboteadores desde la oleada 1 para presionar temprano.
@@ -261,14 +269,13 @@ export function buildWaves(difficultyKey = 'normal', waveCount = WAVE_TOTAL) {
     if (i >= 3) {
       // Skirmishers menos cantidad, foco en infraestructura.
       push(EnemyType.SKIRMISHER, 2 + (i - 2) * 2)
-      push(EnemyType.BRUTE, 2 + (i - 3) * 2)
     }
-    if (i >= 5) push(EnemyType.ARTILLERY, 2 + (i - 4) * 2)
+    // MOTHERSHIP: varias naves madre moradas en oleadas muy altas
     if (i >= 7) push(EnemyType.MOTHERSHIP, 1 + Math.floor((i - 7) / 2))
 
     shuffle(list)
 
-    const hasBoss = (i >= 7)
+    const hasBoss = (i >= 6)
     // Direcciones aleatorias: oleadas 4+ tienen 2 sectores, oleadas 8+ tienen 3 sectores
     const numDirs = i >= 8 ? 3 : (i >= 4 ? 2 : 1)
     const dirs = []
