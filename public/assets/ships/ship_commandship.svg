@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-40 -40 80 80">
+  <defs>
+    <radialGradient id="g" cx="0" cy="0" r="38">
+      <stop offset="0%" stop-color="#808080" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#808080" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <circle cx="0" cy="0" r="38" fill="url(#g)"/>
+  <!-- Cuerpo principal - forma triangular gigante -->
+  <polygon points="38,0 16,-26 -26,-30 -36,-12 -36,12 -26,30 16,26" fill="#707070" opacity="0.95"/>
+  <!-- Detalles estructurales -->
+  <polygon points="38,0 16,-26 -26,-30 -36,-12 -36,12 -26,30 16,26" fill="none" stroke="#909090" stroke-width="1.5"/>
+  <!-- Centro de comando -->
+  <circle cx="-2" cy="0" r="13" fill="#505050" opacity="0.7" stroke="#909090" stroke-width="1.0"/>
+  <circle cx="-2" cy="0" r="5" fill="#c0c0c0" opacity="0.95"/>
+  <!-- Luces de posición -->
+  <circle cx="18" cy="-14" r="3.5" fill="#c0c0c0" opacity="0.7"/>
+  <circle cx="18" cy="14" r="3.5" fill="#c0c0c0" opacity="0.7"/>
+  <circle cx="-24" cy="-17" r="3.2" fill="#c0c0c0" opacity="0.6"/>
+  <circle cx="-24" cy="17" r="3.2" fill="#c0c0c0" opacity="0.6"/>
+  <!-- Líneas de hangar (indican donde salen las naves pequeñas) -->
+  <line x1="8" y1="-22" x2="8" y2="22" stroke="#909090" stroke-width="0.8" opacity="0.5"/>
+  <line x1="20" y1="-8" x2="20" y2="8" stroke="#909090" stroke-width="0.6" opacity="0.4"/>
+</svg>

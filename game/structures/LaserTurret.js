@@ -1,8 +1,8 @@
 import Phaser from 'phaser'
-import { gameState } from '../gameState.js'
-import { COMBAT } from '../balance.js'
+import { gameState } from '~/game/gameState.js'
+import { COMBAT } from '~/game/balance.js'
 import { Structure } from './Structure.js'
-import { sfxLaser, sfxLock } from '../sound.js'
+import { sfxLaser, sfxLock } from '~/game/sound.js'
 
 export class LaserTurret extends Structure {
   constructor(def, x, y, scene) {

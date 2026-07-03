@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
-import { gameState } from '../gameState.js'
+import { gameState } from '~/game/gameState.js'
 import { drawPolygon, darken } from './draw.js'
-import { glowBlend } from '../render/blend.js'
+import { glowBlend } from '~/game/render/blend.js'
 
 let _seq = 0
 

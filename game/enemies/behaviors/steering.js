@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { STEERING } from '../../balance.js'
+import { STEERING } from '~/game/balance.js'
 
 const ZERO = { fx: 0, fy: 0 }
 

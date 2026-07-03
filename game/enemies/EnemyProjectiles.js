@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { sfxEnemyBeam } from '../sound.js'
+import { sfxEnemyBeam } from '~/game/sound.js'
 
 export class EnemyProjectileSystem {
   constructor(scene) {

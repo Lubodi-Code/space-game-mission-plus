@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
-import { WORLD } from '../balance.js'
+import { WORLD } from '~/game/balance.js'
 
 // Capa de render 3D (Three.js) que vive DETRÁS del canvas de Phaser (canvas transparente al frente).
 // Modo actual: FONDO 3D + METEORITOS 3D + explosiones. Dibuja el fondo espacial (estrellas con

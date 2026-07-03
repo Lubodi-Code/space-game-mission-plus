@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { WORLD, METEOR } from '../balance.js'
+import { WORLD, METEOR } from '~/game/balance.js'
 
 // Crea un meteorito (sprite + datos) y lo registra en scene.meteorites. Devuelve el meteorito.
 export function createMeteorite(scene, x, y) {

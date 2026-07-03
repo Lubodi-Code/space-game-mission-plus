@@ -1,10 +1,10 @@
 import Phaser from 'phaser'
-import { appState, DIFFICULTY } from '../appState.js'
-import { gameState } from '../gameState.js'
-import { buildWaves, FIRST_WAVE_MS, WORLD } from '../balance.js'
+import { appState, DIFFICULTY } from '~/game/appState.js'
+import { gameState } from '~/game/gameState.js'
+import { buildWaves, FIRST_WAVE_MS, WORLD } from '~/game/balance.js'
 import { MODES, DEFAULT_MODE } from '../modes/index.js'
-import { Enemy } from '../enemies/Enemy.js'
-import { spawnMarker } from '../render/fx.js'
+import { Enemy } from '~/game/enemies/Enemy.js'
+import { spawnMarker } from '~/game/render/fx.js'
 
 // Estado en la escena: scene.mode (modo elegido), scene.waves (lista construida),
 // scene.wave (FSM), scene._enemySeq, scene.enemies.

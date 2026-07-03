@@ -1,10 +1,10 @@
 import Phaser from 'phaser'
-import { gameState } from '../gameState.js'
-import { BUILD, structureByKey } from '../balance.js'
-import { createStructure } from '../structures/StructureRegistry.js'
-import { drawPolygon, darken } from '../structures/draw.js'
+import { gameState } from '~/game/gameState.js'
+import { BUILD, structureByKey } from '~/game/balance.js'
+import { createStructure } from '~/game/structures/StructureRegistry.js'
+import { drawPolygon, darken } from '~/game/structures/draw.js'
 import { isRelay, portCap, recomputeNetwork } from './energyNet.js'
-import { spawnFloatingText } from '../render/fx.js'
+import { spawnFloatingText } from '~/game/render/fx.js'
 
 // Colocación de estructuras: ghost, validación (relay/rango/solapamiento) y construcción.
 // Funciones que reciben `scene`; el estado vive en la escena (placementKey, ghost, structures…).

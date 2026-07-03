@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
-import { gameState } from '../gameState.js'
-import { CORE } from '../balance.js'
+import { gameState } from '~/game/gameState.js'
+import { CORE } from '~/game/balance.js'
 
 const LINK_ON = 0x6cc8ff
 const LINK_OFF = 0x37506a

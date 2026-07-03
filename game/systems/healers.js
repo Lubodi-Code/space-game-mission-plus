@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
-import { gameState } from '../gameState.js'
-import { HEAL_ORB_COLOR, orbScale } from '../render/fx.js'
+import { gameState } from '~/game/gameState.js'
+import { HEAL_ORB_COLOR, orbScale } from '~/game/render/fx.js'
 
 // Esferas sanadoras (estructura Healer). delta en MS; dt en segundos.
 

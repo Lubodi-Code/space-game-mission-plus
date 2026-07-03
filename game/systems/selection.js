@@ -1,6 +1,6 @@
-import { bus } from '../bus.js'
-import { gameState } from '../gameState.js'
-import { UPGRADES } from '../structures/upgrades.js'
+import { bus } from '~/game/bus.js'
+import { gameState } from '~/game/gameState.js'
+import { UPGRADES } from '~/game/structures/upgrades.js'
 
 // Selección/inspección de estructuras: emite al bus para que el HUD muestre el panel.
 // Estado en la escena: scene.selectedStructure, scene._pendingFocusId.

@@ -1,14 +1,22 @@
 <script setup>
 import { ref } from 'vue'
-import { startGame, DIFFICULTY } from '../game/appState.js'
-import { appState } from '../game/appState.js'
-import { MODES } from '../game/modes/index.js'
-import { net } from '../game/net.js'
+import { startGame, DIFFICULTY } from '~/game/appState'
+import { appState } from '~/game/appState'
+import { MODES } from '~/game/modes/index'
+import { net } from '~/game/net'
 
 const difficulty = ref('normal')
 const mode = ref('campaign')
-const joinCode = ref('')
+const joinCode = ref(new URLSearchParams(location.search).get('join')?.toUpperCase() || '')
 const playerName = ref(localStorage.getItem('sgmp_name') || 'Comandante')
+const linkCopied = ref(false)
+
+function copyInviteLink() {
+  const url = `${location.origin}${location.pathname}?join=${appState.mp.code}`
+  navigator.clipboard.writeText(url)
+  linkCopied.value = true
+  setTimeout(() => { linkCopied.value = false }, 1500)
+}
 
 function play() {
   appState.playerName = playerName.value.slice(0, 16) || 'Comandante'
@@ -167,6 +175,9 @@ function joinGame() {
           <div v-if="appState.mp.connected" class="text-xs text-green-400/80">Conectado</div>
           <div v-else class="text-xs text-yellow-400/60 animate-pulse">Esperando...</div>
           <div v-if="appState.mp.ping" class="text-xs text-green-400/80">ping OK ✓</div>
+          <button v-if="appState.mp.role === 'host'" class="mp-btn mt-1" @click="copyInviteLink">
+            {{ linkCopied ? 'Enlace copiado ✓' : 'Copiar enlace de invitación' }}
+          </button>
         </div>
       </div>
 

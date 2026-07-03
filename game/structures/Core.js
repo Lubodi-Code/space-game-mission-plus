@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { CORE } from '../balance.js'
+import { CORE } from '~/game/balance.js'
 import { drawPolygon, darken } from './draw.js'
 import { Structure } from './Structure.js'
 

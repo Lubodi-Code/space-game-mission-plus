@@ -1,4 +1,4 @@
-import { STRUCTURES, CORE, structureByKey } from '../balance.js'
+import { STRUCTURES, CORE, structureByKey } from '~/game/balance.js'
 import { Core } from './Core.js'
 import { Node } from './Node.js'
 import { Collector } from './Collector.js'

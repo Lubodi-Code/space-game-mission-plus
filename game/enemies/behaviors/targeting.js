@@ -1,4 +1,4 @@
-import { ROLE_GROUPS } from '../EnemyType.js'
+import { ROLE_GROUPS } from '~/game/enemies/EnemyType.js'
 import Phaser from 'phaser'
 
 function nearestInGroup(enemy, world, groupFn) {

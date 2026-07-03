@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { WORLD, STARFIELD } from '../balance.js'
+import { WORLD, STARFIELD } from '~/game/balance.js'
 
 // Fondo decorativo (sin gameplay). Cada función guarda sus objetos en la escena.
 

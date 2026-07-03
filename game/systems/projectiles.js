@@ -1,5 +1,5 @@
-import { COMBAT } from '../balance.js'
-import { explosion, auraBurst } from '../render/fx.js'
+import { COMBAT } from '~/game/balance.js'
+import { explosion, auraBurst } from '~/game/render/fx.js'
 
 // Misiles del jugador (torreta de misiles). delta en MS; dt en segundos para el movimiento.
 

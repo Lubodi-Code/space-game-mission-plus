@@ -1,8 +1,8 @@
 import Phaser from 'phaser'
-import { COMBAT, FX } from '../balance.js'
-import { net } from '../net.js'
+import { COMBAT, FX } from '~/game/balance.js'
+import { net } from '~/game/net.js'
 import { glowBlend } from './blend.js'
-import { sfxImpact } from '../sound.js'
+import { sfxImpact } from '~/game/sound.js'
 
 // Efectos visuales transitorios. Funciones que reciben `scene`; sin estado propio.
 

@@ -1,4 +1,4 @@
-import { STEERING } from '../../balance.js'
+import { STEERING } from '~/game/balance.js'
 import { shipDrive } from './movement.js'
 
 const ZERO = { fx: 0, fy: 0 }

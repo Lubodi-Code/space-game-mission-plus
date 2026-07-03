@@ -1,7 +1,7 @@
-import { gameState } from '../gameState.js'
+import { gameState } from '~/game/gameState.js'
 import { Structure } from './Structure.js'
-import { glowBlend } from '../render/blend.js'
-import { HEAL_ORB_COLOR } from '../render/fx.js'
+import { glowBlend } from '~/game/render/blend.js'
+import { HEAL_ORB_COLOR } from '~/game/render/fx.js'
 
 export class Healer extends Structure {
   constructor(def, x, y, scene) {

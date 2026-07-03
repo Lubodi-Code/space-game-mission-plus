@@ -5,8 +5,8 @@ import { ATTACK } from './behaviors/attack.js'
 import { EVASION } from './behaviors/evasion.js'
 import { RISK } from './behaviors/risk.js'
 import { separate, avoidObstacles, wander } from './behaviors/steering.js'
-import { STEERING } from '../balance.js'
-import { glowBlend } from '../render/blend.js'
+import { STEERING } from '~/game/balance.js'
+import { glowBlend } from '~/game/render/blend.js'
 import Phaser from 'phaser'
 
 export class Enemy {

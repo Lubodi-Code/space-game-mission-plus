@@ -1,11 +1,11 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { gameState } from '../game/gameState.js'
-import { bus } from '../game/bus.js'
-import { STRUCTURES, SPEED } from '../game/constants.js'
-import { goToLobby } from '../game/appState.js'
-import { getUpgradesFor } from '../game/structures/upgrades.js'
-import { EnemyType, REGISTRY } from '../game/enemies/EnemyType.js'
+import { gameState } from '~/game/gameState'
+import { bus } from '~/game/bus'
+import { STRUCTURES, SPEED } from '~/game/constants'
+import { goToLobby } from '~/game/appState'
+import { getUpgradesFor } from '~/game/structures/upgrades'
+import { EnemyType, REGISTRY } from '~/game/enemies/EnemyType'
 
 // Mapeo de tipos de enemigos a nombres legibles
 const ENEMY_LABELS = {

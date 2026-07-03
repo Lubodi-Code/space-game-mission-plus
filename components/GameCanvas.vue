@@ -1,12 +1,17 @@
 <script setup>
 import { onMounted, onBeforeUnmount, ref } from 'vue'
-import { createGame } from '../game/createGame.js'
+import { createGame } from '~/game/createGame'
 
 const host = ref(null)
 let game = null
 
 onMounted(() => {
-  game = createGame(host.value)
+  // Ensure DOM is ready before creating Phaser game
+  setTimeout(() => {
+    if (host.value) {
+      game = createGame(host.value)
+    }
+  }, 100)
 })
 
 onBeforeUnmount(() => {

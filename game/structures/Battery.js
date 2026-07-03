@@ -1,5 +1,5 @@
-import { gameState } from '../gameState.js'
-import { ENERGY } from '../balance.js'
+import { gameState } from '~/game/gameState.js'
+import { ENERGY } from '~/game/balance.js'
 import { Structure } from './Structure.js'
 
 export class Battery extends Structure {

@@ -1,9 +1,9 @@
 import Phaser from 'phaser'
-import { gameState } from '../gameState.js'
-import { COMBAT } from '../balance.js'
+import { gameState } from '~/game/gameState.js'
+import { COMBAT } from '~/game/balance.js'
 import { Structure } from './Structure.js'
-import { glowBlend } from '../render/blend.js'
-import { sfxMissile, sfxLock } from '../sound.js'
+import { glowBlend } from '~/game/render/blend.js'
+import { sfxMissile, sfxLock } from '~/game/sound.js'
 
 export class MissileTurret extends Structure {
   constructor(def, x, y, scene) {

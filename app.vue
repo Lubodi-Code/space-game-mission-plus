@@ -1,6 +1,6 @@
 <script setup>
 // Components are auto-imported in Nuxt 3
-import { appState } from '~/game/appState.js'
+import { appState } from '~/game/appState'
 </script>
 
 <template>

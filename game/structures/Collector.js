@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
-import { gameState } from '../gameState.js'
+import { gameState } from '~/game/gameState.js'
 import { Structure } from './Structure.js'
-import { sfxMine } from '../sound.js'
+import { sfxMine } from '~/game/sound.js'
 
 const MINERAL_GREEN = 0x49e07a
 

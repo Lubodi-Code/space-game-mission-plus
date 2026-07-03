@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
-import { gameState } from '../gameState.js'
-import { spawnFloatingText, explosion } from '../render/fx.js'
+import { gameState } from '~/game/gameState.js'
+import { spawnFloatingText, explosion } from '~/game/render/fx.js'
 
 // Loop de enemigos: grid espacial + update por enemigo + barras de HP en lote. delta en MS.
 export function updateEnemies(scene, delta) {

@@ -1,8 +1,8 @@
 import Phaser from 'phaser'
-import { REGISTRY, EnemyType } from '../enemies/EnemyType.js'
-import { validateRegistry } from '../enemies/validateRegistry.js'
-import { STEERING } from '../balance.js'
-import { registerGlowBlend } from '../render/blend.js'
+import { REGISTRY, EnemyType } from '~/game/enemies/EnemyType.js'
+import { validateRegistry } from '~/game/enemies/validateRegistry.js'
+import { STEERING } from '~/game/balance.js'
+import { registerGlowBlend } from '~/game/render/blend.js'
 
 export class BootScene extends Phaser.Scene {
   constructor() {
