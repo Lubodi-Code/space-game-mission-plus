@@ -28,6 +28,7 @@ import { startPlacement, cancelPlacement, tryPlace, updateGhost, updateRangePrev
 import { selectStructure, deselectStructure, applyUpgrade, setFireMode } from '~/game/systems/selection.js'
 import { onIntent, createRemote, renderRemote, sendSnapshot } from '~/game/net/sync.js'
 import { initSound, updateSound, setMusicState, updateShipBeds, sfxSpeed } from '~/game/sound.js'
+import { saveSoloSnapshot, loadSoloSnapshot, restoreSoloSnapshot, clearSoloSnapshot } from '~/game/systems/persist.js'
 
 
 export class GameScene extends Phaser.Scene {
@@ -103,6 +104,9 @@ export class GameScene extends Phaser.Scene {
     this.structures.push(core)
     this.recomputeNetwork()
 
+    const resumeSnapshot = appState.mp.role === 'solo' ? loadSoloSnapshot() : null
+    const resumeWaveIndex = resumeSnapshot ? restoreSoloSnapshot(this, resumeSnapshot) : 0
+
     this.cam.centerOn(this.core.x, this.core.y)
 
     this.world = {
@@ -153,6 +157,10 @@ export class GameScene extends Phaser.Scene {
 
     this.setupInput()
     initWaves(this)
+    if (resumeWaveIndex > 0) {
+      this.wave.index = resumeWaveIndex
+      gameState.wave = resumeWaveIndex
+    }
     this.setSpeed(1)
 
     gameState.status = 'playing'
@@ -333,7 +341,7 @@ export class GameScene extends Phaser.Scene {
         else cancelPlacement(this)
       }),
       bus.on('selectGeneral', () => this.selectGeneral()),
-      bus.on('restart', () => this.scene.restart()),
+      bus.on('restart', () => { clearSoloSnapshot(); this.scene.restart() }),
       bus.on('speed', (v) => { this.setSpeed(v); sfxSpeed() }),
       bus.on('demolish', ({ structureId }) => this.demolishStructure(structureId)),
       bus.on('upgrade', ({ structureId, upgradeId }) => applyUpgrade(this, structureId, upgradeId)),
@@ -466,6 +474,12 @@ export class GameScene extends Phaser.Scene {
     this.epSystem.update(d / 1000) // espera segundos (rayos y misiles enemigos)
     updateHealers(this, d)
     drawFx(this, d)
+
+    this._saveAccum = (this._saveAccum || 0) + d
+    if (this._saveAccum >= 3000) {
+      this._saveAccum = 0
+      saveSoloSnapshot(this)
+    }
   }
 
   damageStructure(s, dmg) {
@@ -497,6 +511,7 @@ export class GameScene extends Phaser.Scene {
   gameOver() {
     if (gameState.status !== 'playing') return
     gameState.status = 'gameover'
+    clearSoloSnapshot()
     if (this.core) this.explosion(this.core.x, this.core.y, 0xff5566, FX.coreExplosionRadius)
     this.cameras.main.shake(300, 0.002)
     cancelPlacement(this)
@@ -505,6 +520,7 @@ export class GameScene extends Phaser.Scene {
   victory() {
     if (gameState.status !== 'playing') return
     gameState.status = 'victory'
+    clearSoloSnapshot()
     cancelPlacement(this)
   }
 

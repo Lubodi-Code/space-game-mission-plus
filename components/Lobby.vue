@@ -193,7 +193,7 @@ function joinGame() {
 @reference 'tailwindcss';
 
 .lobby {
-  @apply absolute inset-0 flex items-center justify-center overflow-hidden;
+  @apply absolute inset-0 flex items-center justify-center overflow-y-auto py-8;
   background: radial-gradient(ellipse at 50% 40%, #0e1b33 0%, #05070f 70%);
 }
 
