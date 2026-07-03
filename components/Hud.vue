@@ -154,12 +154,19 @@ watch(() => gameState.wave, (newVal, oldVal) => {
 // Tooltip state.
 const hoveredStructure = ref(null)
 const tooltipPos = ref({ x: 0, y: 0 })
+const tooltipsDisabled = ref(localStorage.getItem('sgmp_hide_tooltips') === '1')
 function showTooltip(s, event) {
+  if (tooltipsDisabled.value) return
   hoveredStructure.value = s
   const rect = event.target.closest('button').getBoundingClientRect()
   tooltipPos.value = { x: rect.left + rect.width / 2, y: rect.top - 8 }
 }
 function hideTooltip() {
+  hoveredStructure.value = null
+}
+function dontShowTooltipsAgain() {
+  tooltipsDisabled.value = true
+  localStorage.setItem('sgmp_hide_tooltips', '1')
   hoveredStructure.value = null
 }
 const tooltipStyle = computed(() => {
@@ -671,7 +678,7 @@ function polyPoints(sides, radius) {
       <button
         class="build-btn group"
         :class="{ 'build-btn--active': gameState.generalMode === 'selected' }"
-        @mouseenter="hoveredStructure = generalTooltip"
+        @mouseenter="showTooltip(generalTooltip, $event)"
         @mousemove="(e) => { tooltipPos.x = e.clientX; tooltipPos.y = e.clientY - 8 }"
         @mouseleave="hideTooltip"
         @click="pickGeneral"
@@ -686,12 +693,13 @@ function polyPoints(sides, radius) {
     <!-- Tooltip -->
     <div
       v-if="hoveredStructure"
-      class="fixed z-50 pointer-events-none px-3 py-2 rounded-lg bg-[#0a0f1c]/95 ring-1 ring-cyan-400/30 text-xs
-             text-cyan-100 shadow-lg"
+      class="fixed z-50 pointer-events-auto px-2 py-1.5 rounded-lg bg-[#0a0f1c]/95 ring-1 ring-cyan-400/30 text-[10px]
+             text-cyan-100 shadow-lg max-w-[180px]"
       :style="{ left: tooltipPos.x + 'px', top: tooltipPos.y + 'px', transform: 'translate(-50%, -100%)' }"
+      @mouseleave="hideTooltip"
     >
-      <div class="font-bold text-sm mb-1" :style="{ color: hoveredStructure.css }">{{ hoveredStructure.label }}</div>
-      <div class="text-cyan-200/70 mb-1">{{ hoveredStructure.desc }}</div>
+      <div class="font-bold text-[11px] mb-0.5" :style="{ color: hoveredStructure.css }">{{ hoveredStructure.label }}</div>
+      <div class="text-cyan-200/70 mb-0.5 leading-snug">{{ hoveredStructure.desc }}</div>
       <div class="text-cyan-300/50 space-y-0.5">
         <div v-if="hoveredStructure.role === 'turret' || hoveredStructure.role === 'missile'">
           Daño: {{ hoveredStructure.damage }} · Alcance: {{ hoveredStructure.atkRange }}
@@ -715,6 +723,12 @@ function polyPoints(sides, radius) {
           Alcance red: {{ hoveredStructure.range }}
         </div>
       </div>
+      <button
+        class="mt-1 text-[9px] text-cyan-400/50 hover:text-cyan-200 underline decoration-dotted"
+        @click="dontShowTooltipsAgain"
+      >
+        No mostrar más
+      </button>
     </div>
   </div>
 </template>
