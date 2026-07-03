@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { WORLD } from '~/game/balance.js'
+import { LOW_GFX } from '~/game/quality.js'
 
 // Capa de render 3D (Three.js) que vive DETRÁS del canvas de Phaser (canvas transparente al frente).
 // Modo actual: FONDO 3D + METEORITOS 3D + explosiones. Dibuja el fondo espacial (estrellas con
@@ -92,8 +93,9 @@ export class ThreeLayer {
     this.tickPrev = performance.now()
     this.viewCenter = { x: WORLD.width / 2, y: WORLD.height / 2 }
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+    const renderer = new THREE.WebGLRenderer({ antialias: !LOW_GFX, alpha: false, powerPreference: 'high-performance' })
+    // En móvil renderizar a 1x: el DPR 2-3x de los celulares multiplica los píxeles x4-9 y hunde los FPS.
+    renderer.setPixelRatio(LOW_GFX ? 1 : Math.min(window.devicePixelRatio || 1, 2))
     renderer.autoClear = false
     renderer.setClearColor(0x010104, 1)
     const cv = renderer.domElement
@@ -200,7 +202,10 @@ export class ThreeLayer {
     this.bgGroups.push(galaxy)
 
     // Nebulosas de color a distintas profundidades — mucho más oscuras/tenues que antes.
-    const nebulaConfigs = [
+    // En móvil una sola nebulosa de color: cada plano es un fullscreen quad con blending (caro en fill-rate).
+    const nebulaConfigs = LOW_GFX ? [
+      { z: -1200, color: 0x342050, opacity: 0.10, factor: 0.07, scale: 1.2, drift: 0.00012 },
+    ] : [
       { z: -1200, color: 0x342050, opacity: 0.10, factor: 0.07, scale: 1.2, drift: 0.00012 },
       { z: -1500, color: 0x102838, opacity: 0.09, factor: 0.09, scale: 1.5, drift: 0.00006 },
       { z: -1350, color: 0x3a2018, opacity: 0.05, factor: 0.06, scale: 0.9, drift: -0.00009 },
@@ -222,7 +227,7 @@ export class ThreeLayer {
     }
 
     // Estrellas titilantes (Points con shader de twinkle).
-    const N = 2400
+    const N = LOW_GFX ? 800 : 2400
     const pos = new Float32Array(N * 3)
     const phase = new Float32Array(N)
     const size = new Float32Array(N)
@@ -274,7 +279,7 @@ export class ThreeLayer {
 
     // Galaxias lejanas (sprites pequeños eliptales)
     this.galaxies = []
-    const galCount = 6
+    const galCount = LOW_GFX ? 3 : 6
     for (let i = 0; i < galCount; i++) {
       const gMat = new THREE.SpriteMaterial({
         map: this.glowTex, color: 0x6a7690, transparent: true, opacity: 0.22,
@@ -293,7 +298,7 @@ export class ThreeLayer {
     }
 
     // Polvo cercano (puntos grandes tenues para sensación de velocidad)
-    const dustN = 300
+    const dustN = LOW_GFX ? 100 : 300
     const dustPos = new Float32Array(dustN * 3)
     const dustSize = new Float32Array(dustN)
     for (let i = 0; i < dustN; i++) {
@@ -559,7 +564,7 @@ export class ThreeLayer {
     const tx = (url, srgb) => {
       const t = this._loader.load(url)
       t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace
-      t.anisotropy = 4
+      t.anisotropy = LOW_GFX ? 1 : 4
       return t
     }
     // ponytail: roca = no metálica; omito metalnessMap (~1.4MB) — imperceptible a 40px. metalness=0.
@@ -662,7 +667,7 @@ export class ThreeLayer {
 
   // ----------------------------------------------------------------- explosión
   explode(x, y, color, radius) {
-    const n = Math.min(90, 30 + Math.round(radius * 1.6))
+    const n = Math.min(LOW_GFX ? 40 : 90, (LOW_GFX ? 15 : 30) + Math.round(radius * 1.6))
     const pos = new Float32Array(n * 3)
     const vel = []
     const c = new THREE.Color(color)
