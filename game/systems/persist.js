@@ -2,16 +2,19 @@ import { gameState } from '~/game/gameState.js'
 import { appState } from '~/game/appState.js'
 import { createStructure } from '~/game/structures/StructureRegistry.js'
 import { UPGRADES } from '~/game/structures/upgrades.js'
+import { Enemy } from '~/game/enemies/Enemy.js'
 
 // Guarda/restaura una partida en solitario a través de un reload de página
 // (sessionStorage: sobrevive al F5, se pierde al cerrar la pestaña). Multijugador
 // no se persiste — la conexión PeerJS muere en el reload de todos modos.
-// ponytail: no restaura enemigos/proyectiles en vuelo (la oleada actual se
-// reinicia desde cero); restaura economía + estructuras + mejoras + progreso de oleada.
+// ponytail: no restaura proyectiles/rayos en vuelo ni el objetivo/cooldown exacto
+// de cada enemigo (recalculan en el primer frame); sí restaura sus posiciones/hp
+// y la cola de spawns pendiente de la oleada, que es lo que se nota si falta.
 const SAVE_KEY = 'sgmp_solo_run'
 
 export function saveSoloSnapshot(scene) {
   if (scene.remote || appState.mp.role !== 'solo' || gameState.status !== 'playing') return
+  const w = scene.wave
   sessionStorage.setItem(SAVE_KEY, JSON.stringify({
     difficulty: appState.difficulty,
     mode: appState.mode,
@@ -22,11 +25,19 @@ export function saveSoloSnapshot(scene) {
     coreHp: gameState.coreHp,
     coreHpMax: gameState.coreHpMax,
     timeElapsed: gameState.timeElapsed,
-    waveIndex: scene.wave?.index || 0,
     generalUpgrades: gameState.generalUpgrades,
+    enemySeq: scene._enemySeq,
+    wave: w && {
+      index: w.index, queue: w.queue, gap: w.gap, spawnTimer: w.spawnTimer,
+      dirs: w.dirs, spawnDirIndex: w.spawnDirIndex, state: w.state, timer: w.timer,
+    },
+    bossWave: gameState.bossWave,
     structs: scene.structures
       .filter((s) => !s.dead && !s.isCore)
       .map((s) => ({ key: s.key, x: Math.round(s.x), y: Math.round(s.y), hp: Math.round(s.hp), maxHp: Math.round(s.maxHp), upgrades: s.upgrades || [] })),
+    enemies: scene.enemies
+      .filter((e) => !e.dead)
+      .map((e) => ({ type: e.type, x: Math.round(e.x), y: Math.round(e.y), hp: Math.round(e.hp), maxHp: Math.round(e.maxHp), damage: e.damage, heading: e.heading })),
   }))
 }
 
@@ -46,8 +57,9 @@ export function clearSoloSnapshot() {
   sessionStorage.removeItem(SAVE_KEY)
 }
 
-// Reconstruye estructuras/economía/oleada guardadas sobre una escena recién creada
-// (ya tiene el Core en pie). Llamar después de recomputeNetwork() del Core y antes de initWaves().
+// Reconstruye estructuras/economía/oleada/enemigos guardados sobre una escena recién
+// creada. Llamar después de initWaves(scene) (que ya deja scene.wave/scene.waves listos
+// con la forma correcta; aquí se sobreescriben con el progreso real guardado).
 export function restoreSoloSnapshot(scene, snap) {
   Object.assign(gameState, {
     minerals: snap.minerals,
@@ -58,10 +70,12 @@ export function restoreSoloSnapshot(scene, snap) {
     coreHpMax: snap.coreHpMax,
     timeElapsed: snap.timeElapsed,
     generalUpgrades: snap.generalUpgrades || [],
+    bossWave: snap.bossWave || false,
   })
   scene.elapsedMs = snap.timeElapsed * 1000
   scene.core.hp = snap.coreHp
   scene.core.maxHp = snap.coreHpMax
+  scene._enemySeq = snap.enemySeq || 0
 
   for (const row of snap.structs) {
     const s = createStructure(row.key, row.x, row.y, scene)
@@ -75,5 +89,19 @@ export function restoreSoloSnapshot(scene, snap) {
   }
   scene.recomputeNetwork()
 
-  return snap.waveIndex || 0
+  if (snap.wave) {
+    Object.assign(scene.wave, snap.wave)
+    gameState.wave = snap.wave.index
+    gameState.nextWaveIn = snap.wave.state === 'intermission' ? Math.max(0, Math.ceil(snap.wave.timer / 1000)) : 0
+  }
+
+  for (const row of snap.enemies || []) {
+    const enemy = new Enemy(row.type, row.x, row.y, scene)
+    enemy.id = ++scene._enemySeq
+    enemy.hp = row.hp
+    enemy.maxHp = row.maxHp
+    enemy.damage = row.damage
+    enemy.heading = row.heading || 0
+    scene.enemies.push(enemy)
+  }
 }

@@ -105,7 +105,6 @@ export class GameScene extends Phaser.Scene {
     this.recomputeNetwork()
 
     const resumeSnapshot = appState.mp.role === 'solo' ? loadSoloSnapshot() : null
-    const resumeWaveIndex = resumeSnapshot ? restoreSoloSnapshot(this, resumeSnapshot) : 0
 
     this.cam.centerOn(this.core.x, this.core.y)
 
@@ -157,10 +156,7 @@ export class GameScene extends Phaser.Scene {
 
     this.setupInput()
     initWaves(this)
-    if (resumeWaveIndex > 0) {
-      this.wave.index = resumeWaveIndex
-      gameState.wave = resumeWaveIndex
-    }
+    if (resumeSnapshot) restoreSoloSnapshot(this, resumeSnapshot)
     this.setSpeed(1)
 
     gameState.status = 'playing'
