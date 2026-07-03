@@ -3,6 +3,7 @@ import { COMBAT, FX } from '~/game/balance.js'
 import { net } from '~/game/net.js'
 import { glowBlend } from './blend.js'
 import { sfxImpact } from '~/game/sound.js'
+import { LOW_GFX } from '~/game/quality.js'
 
 // Efectos visuales transitorios. Funciones que reciben `scene`; sin estado propio.
 
@@ -91,7 +92,7 @@ export function explosion(scene, x, y, color, radius) {
     alpha: { start: 1, end: 0 },
     blendMode: 'ADD',
     tint: color,
-    quantity: Math.min(24, 8 + Math.round(radius / 3)),
+    quantity: Math.min(LOW_GFX ? 10 : 24, 8 + Math.round(radius / 3)),
     emitting: false,
   }).setDepth(29)
   burst.explode()

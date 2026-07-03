@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { BootScene } from './scenes/BootScene.js'
 import { GameScene } from './scenes/GameScene.js'
+import { LOW_GFX } from './quality.js'
 
 /**
  * Build and mount the Phaser game inside the given DOM container.
@@ -28,7 +29,7 @@ export function createGame(parent) {
       activePointers: 3, // multi-touch support
     },
     render: {
-      antialias: true,
+      antialias: !LOW_GFX,
       roundPixels: false,
     },
     scene: [BootScene, GameScene],

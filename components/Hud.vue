@@ -260,7 +260,7 @@ function polyPoints(sides, radius) {
   <div class="absolute inset-0 z-20 pointer-events-none text-cyan-100 font-sans">
     <!-- Top bar -->
     <div
-      class="absolute top-0 left-0 right-0 flex items-center gap-4 px-3 py-2
+      class="hud-topbar absolute top-0 left-0 right-0 flex items-center gap-4 px-3 py-2
              bg-gradient-to-b from-black/70 to-transparent pointer-events-auto"
     >
       <div class="flex gap-1">
@@ -292,7 +292,7 @@ function polyPoints(sides, radius) {
     </div>
 
     <!-- Resources panel (top-right under bar) -->
-    <div class="absolute top-14 right-3 text-right text-xs space-y-0.5">
+    <div class="hud-resources absolute top-14 right-3 text-right text-xs space-y-0.5">
       <div class="text-emerald-300/90 tabular-nums">
         {{ gameState.minerals }} / {{ gameState.mineralsCap }} minerales
       </div>
@@ -305,7 +305,7 @@ function polyPoints(sides, radius) {
     </div>
 
     <!-- Core integrity + wave status (top-left) -->
-    <div class="absolute top-14 left-3 w-56 space-y-1.5 p-2.5 rounded-xl bg-[#0a0f1c]/60 backdrop-blur-sm ring-1 ring-cyan-400/20">
+    <div class="hud-core absolute top-14 left-3 w-56 space-y-1.5 p-2.5 rounded-xl bg-[#0a0f1c]/60 backdrop-blur-sm ring-1 ring-cyan-400/20">
       <div class="flex items-center gap-2">
         <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24">
           <polygon
@@ -352,7 +352,7 @@ function polyPoints(sides, radius) {
     <!-- Wave analysis panel (intermission) -->
     <div
       v-if="nextWaveAnalysis"
-      class="absolute top-14 left-64 ml-2 w-64 p-2.5 rounded-xl bg-[#0a0f1c]/60 backdrop-blur-sm ring-1 ring-fuchsia-400/20 pointer-events-auto"
+      class="hud-wave-analysis absolute top-14 left-64 ml-2 w-64 p-2.5 rounded-xl bg-[#0a0f1c]/60 backdrop-blur-sm ring-1 ring-fuchsia-400/20 pointer-events-auto"
     >
       <div class="text-[11px] font-semibold text-fuchsia-300/90 mb-1.5">
         Oleada {{ nextWaveAnalysis.waveNum }} entrante
@@ -485,7 +485,7 @@ function polyPoints(sides, radius) {
     <!-- Inspection panel (right side) -->
     <div
       v-if="selectedStructure"
-      class="absolute top-28 right-3 w-56 p-3 rounded-xl bg-[#0a0f1c]/90 backdrop-blur-sm
+      class="hud-inspection absolute top-28 right-3 w-56 p-3 rounded-xl bg-[#0a0f1c]/90 backdrop-blur-sm
              ring-1 ring-cyan-400/20 pointer-events-auto text-xs space-y-2"
     >
       <div class="font-bold text-sm" style="color: #6cc8ff">{{ selectedStructure.label }}</div>
@@ -602,7 +602,7 @@ function polyPoints(sides, radius) {
     <!-- General upgrades panel (right side) -->
     <div
       v-if="gameState.generalMode === 'selected'"
-      class="absolute top-28 right-3 w-56 p-3 rounded-xl bg-[#0a0f1c]/90 backdrop-blur-sm
+      class="hud-inspection absolute top-28 right-3 w-56 p-3 rounded-xl bg-[#0a0f1c]/90 backdrop-blur-sm
              ring-1 ring-cyan-400/20 pointer-events-auto text-xs space-y-2"
     >
       <div class="font-bold text-sm" style="color: #8be9fd">General</div>
@@ -640,9 +640,9 @@ function polyPoints(sides, radius) {
 
     <!-- Bottom build bar -->
     <div
-      class="absolute bottom-0 left-1/2 -translate-x-1/2 mb-3 flex gap-2
+      class="hud-buildbar absolute bottom-0 left-1/2 -translate-x-1/2 mb-3 flex gap-2
              px-3 py-2 rounded-xl bg-black/55 backdrop-blur-sm
-             ring-1 ring-cyan-400/20 pointer-events-auto"
+             ring-1 ring-cyan-400/20 pointer-events-auto max-w-[98vw] overflow-x-auto"
     >
       <button
         v-for="(s, i) in structures"
@@ -667,7 +667,7 @@ function polyPoints(sides, radius) {
             opacity="0.95"
           />
         </svg>
-        <span class="text-[10px] text-cyan-200/70 group-hover:text-cyan-100">{{ s.label }}</span>
+        <span class="build-btn-label text-[10px] text-cyan-200/70 group-hover:text-cyan-100">{{ s.label }}</span>
         <span class="text-[10px] tabular-nums" :class="gameState.minerals < s.cost ? 'text-red-400/80' : 'text-emerald-300/80'">
           {{ s.cost }}
         </span>
@@ -685,7 +685,7 @@ function polyPoints(sides, radius) {
       >
         <span class="key-badge">G</span>
         <span class="text-2xl leading-none" style="color: #8be9fd">✦</span>
-        <span class="text-[10px] text-cyan-200/70 group-hover:text-cyan-100">General</span>
+        <span class="build-btn-label text-[10px] text-cyan-200/70 group-hover:text-cyan-100">General</span>
         <span class="text-[10px] tabular-nums text-emerald-300/80">Comandante</span>
       </button>
     </div>
@@ -763,5 +763,18 @@ function polyPoints(sides, radius) {
 }
 .build-btn--disabled {
   @apply opacity-40 cursor-not-allowed hover:bg-white/5 hover:ring-cyan-400/20;
+}
+
+/* Móvil horizontal: poco alto de viewport, comprimir el HUD para dejar sitio al juego. */
+@media (max-height: 520px) {
+  .hud-topbar { padding-top: 0.25rem; padding-bottom: 0.25rem; font-size: 0.75rem; }
+  .hud-topbar .hud-btn { padding: 0.15rem 0.5rem; }
+  .hud-resources, .hud-core { top: 2.25rem; }
+  .hud-core { width: 11rem; padding: 0.4rem; }
+  .hud-wave-analysis { top: 2.25rem; left: 12rem; width: 9rem; padding: 0.4rem; }
+  .hud-inspection { top: 2.25rem; width: 11rem; max-height: 70vh; overflow-y: auto; }
+  .hud-buildbar { margin-bottom: 0.25rem; padding: 0.25rem; gap: 0.25rem; }
+  .build-btn { width: 2.6rem; height: 2.6rem; }
+  .build-btn-label { display: none; }
 }
 </style>
