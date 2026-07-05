@@ -39,7 +39,7 @@ export const UPGRADES = [
     cost: 80,
     forRole: 'turret',
     excludes: 'laser_a',
-    atkRange: 2.4,  // ponytail: más radio (antes 2.0)
+    atkRange: 3.0,  // ponytail: más radio (antes 2.0, luego 2.4)
     cooldown: 1.5,  // ponytail: más rápido (antes 2.2)
     damage: 2.2,
     tint: 0x5bd0ff,

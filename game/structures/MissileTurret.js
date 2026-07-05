@@ -45,10 +45,14 @@ export class MissileTurret extends Structure {
     if (!this._engaged) { sfxLock(this.x, this.y); this._engaged = true }
 
     const scene = this.scene
+    const targetsInVolley = []
     for (let i = 0; i < this.volleySize; i++) {
       scene.time.delayedCall(i * 1000, () => {
-        const t = this.nearestEnemy(world)
-        if (t) this.fireMissile(t)
+        const t = this.nearestEnemyExcluding(world, targetsInVolley)
+        if (t) {
+          targetsInVolley.push(t)
+          this.fireMissile(t)
+        }
       })
     }
     this.fireTimer = this.cooldown
@@ -59,6 +63,22 @@ export class MissileTurret extends Structure {
     let bestD = this.atkRange
     for (const e of world.enemies) {
       if (e.dead) continue
+      const d = Phaser.Math.Distance.Between(this.x, this.y, e.x, e.y)
+      if (d <= bestD) {
+        bestD = d
+        best = e
+      }
+    }
+    return best
+  }
+
+  nearestEnemyExcluding(world, excluded) {
+    let best = null
+    let bestD = this.atkRange
+    const excludedSet = new Set(excluded)
+    for (const e of world.enemies) {
+      if (e.dead) continue
+      if (excludedSet.has(e)) continue
       const d = Phaser.Math.Distance.Between(this.x, this.y, e.x, e.y)
       if (d <= bestD) {
         bestD = d
