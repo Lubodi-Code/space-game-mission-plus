@@ -85,6 +85,44 @@ export const ATTACK = {
     enemy.atkTimer = enemy.def.atkCooldown
   },
 
+  // Jefe nodriza: varios láseres, cada uno dispara por independiente a la estructura
+  // más cercana (sin repetir objetivo), + misil EMP periódico que paraliza en área.
+  BOSS_MULTI_LASER: (enemy, world, dt) => {
+    enemy.empTimer = (enemy.empTimer ?? enemy.def.empInterval) - dt * 1000
+    if (enemy.empTimer <= 0) {
+      enemy.empTimer = enemy.def.empInterval
+      world.spawnEnemyMissile({
+        x: enemy.x, y: enemy.y, target: world.core,
+        speed: enemy.def.empSpeed || 120, damage: 0,
+        splash: enemy.def.empRadius || 300,
+        stunMs: enemy.def.empStunMs || 8000,
+        color: 0x66e0ff,
+      })
+    }
+
+    enemy.atkTimer -= dt * 1000
+    if (enemy.atkTimer > 0) return
+    const range = enemy.def.attackRange || 400
+    const inRange = []
+    for (const s of world.structures) {
+      if (s.dead) continue
+      const d = Phaser.Math.Distance.Between(enemy.x, enemy.y, s.x, s.y)
+      if (d <= range) inRange.push({ s, d })
+    }
+    if (!inRange.length) return
+    inRange.sort((a, b) => a.d - b.d)
+    for (const { s } of inRange.slice(0, enemy.def.laserCount || 3)) {
+      world.fireEnemyBeam({
+        from: enemy, to: s,
+        damage: enemy.damage,
+        color: enemy.def.beamColor || enemy.def.color,
+        width: enemy.def.beamWidth || 4,
+      })
+      world.damageStructure(s, enemy.damage)
+    }
+    enemy.atkTimer = enemy.def.atkCooldown
+  },
+
   SPAWN_SMALL_SHIPS: (enemy, world, dt) => {
     enemy.atkTimer -= dt * 1000
     if (enemy.atkTimer > 0) return

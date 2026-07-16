@@ -4,7 +4,7 @@ import { gameState } from '~/game/gameState'
 import { bus } from '~/game/bus'
 import { STRUCTURES, SPEED } from '~/game/constants'
 import { goToLobby } from '~/game/appState'
-import { getUpgradesFor } from '~/game/structures/upgrades'
+import { getUpgradesFor, UPGRADES } from '~/game/structures/upgrades'
 import { EnemyType, REGISTRY } from '~/game/enemies/EnemyType'
 
 // Mapeo de tipos de enemigos a nombres legibles
@@ -15,8 +15,8 @@ const ENEMY_LABELS = {
   [EnemyType.SKIRMISHER]: { label: 'Skirmisher', color: '#a6e022' },
   [EnemyType.BRUTE]: { label: 'Brute', color: '#ff6b3d' },
   [EnemyType.ARTILLERY]: { label: 'Artillería', color: '#ffb02e' },
-  [EnemyType.MOTHERSHIP]: { label: 'Nave Madre', color: '#b06bff' },
-  [EnemyType.COMMANDSHIP]: { label: 'Nave Nodriza', color: '#808080' },
+  [EnemyType.MOTHERSHIP]: { label: 'Nave Madre', color: '#ff8a3d' },
+  [EnemyType.COMMANDSHIP]: { label: 'Nave Nodriza', color: '#b06bff' },
 }
 
 const structures = STRUCTURES
@@ -112,6 +112,23 @@ const availableUpgrades = computed(() => {
 
 const generalAvailableUpgrades = computed(() =>
   getUpgradesFor('general', gameState.generalUpgrades)
+)
+
+// Árbol de habilidades del General: dos ramas con niveles encadenados por `requires`.
+const GENERAL_BRANCH_IDS = [
+  { name: 'Asalto', ids: ['gen_a', 'gen_a2', 'gen_a3'] },
+  { name: 'Comandante', ids: ['gen_b', 'gen_b2', 'gen_b3'] },
+]
+const generalTree = computed(() =>
+  GENERAL_BRANCH_IDS.map((b) => ({
+    name: b.name,
+    nodes: b.ids.map((id) => {
+      const u = UPGRADES.find((x) => x.id === id)
+      const owned = gameState.generalUpgrades.includes(id)
+      const unlocked = !u.requires || gameState.generalUpgrades.includes(u.requires)
+      return { ...u, owned, unlocked }
+    }),
+  }))
 )
 
 function applyGeneralUpgrade(id) {
@@ -481,6 +498,13 @@ function polyPoints(sides, radius) {
     >
       General seleccionado — clic para mover / clic en meteorito para recolectar · derecho / Esc para cancelar
     </div>
+    <div
+      v-if="gameState.multiSelCount > 0 && !activeLabel && gameState.generalMode !== 'selected'"
+      class="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full
+             bg-cyan-400/15 ring-1 ring-cyan-300/40 text-xs text-cyan-100"
+    >
+      {{ gameState.multiSelCount }} torretas seleccionadas — clic en un enemigo para fijar blanco común · shift+clic añade/quita · clic vacío suelta
+    </div>
 
     <!-- Inspection panel (right side) -->
     <div
@@ -613,29 +637,51 @@ function polyPoints(sides, radius) {
         <div>Recolección: {{ Math.round((gameState.general.collectRate || 18) * 10) / 10 }}/s</div>
       </div>
 
-      <div v-if="generalAvailableUpgrades.length" class="pt-1 border-t border-cyan-400/10 space-y-1">
-        <div class="text-cyan-300/80 text-[11px] font-semibold">Mejoras</div>
-        <div
-          v-for="(u, i) in generalAvailableUpgrades"
-          :key="u.id"
-          class="flex items-center justify-between px-2 py-1 rounded bg-white/5 ring-1 ring-cyan-400/10"
-        >
-          <span class="text-cyan-100/80 text-[10px]">{{ u.label }}</span>
-          <span class="flex items-center gap-1">
-            <span class="text-amber-300/70 text-[10px] tabular-nums">{{ u.cost }}</span>
-            <button
-              class="px-1.5 py-0.5 rounded text-[10px] bg-emerald-400/15 text-emerald-200
-                     hover:bg-emerald-400/25 transition-colors"
-              :disabled="gameState.minerals < u.cost"
-              :class="{ 'opacity-40 cursor-not-allowed': gameState.minerals < u.cost }"
-              @click="applyGeneralUpgrade(u.id)"
+      <!-- Árbol de habilidades: dos ramas con niveles encadenados -->
+      <div class="pt-1 border-t border-cyan-400/10 space-y-2">
+        <div class="text-cyan-300/80 text-[11px] font-semibold">Árbol de habilidades</div>
+        <div v-for="branch in generalTree" :key="branch.name">
+          <div class="text-[10px] text-cyan-400/70 font-semibold mb-1">{{ branch.name }}</div>
+          <div class="space-y-0.5">
+            <div
+              v-for="(u, i) in branch.nodes"
+              :key="u.id"
+              class="relative pl-3"
             >
-              +Añadir <span v-if="upgradeKeys[i]" class="opacity-50">{{ upgradeKeys[i] }}</span>
-            </button>
-          </span>
+              <!-- conector vertical -->
+              <span
+                v-if="i > 0"
+                class="absolute left-1 -top-1 h-2 w-px"
+                :class="u.owned || u.unlocked ? 'bg-cyan-400/50' : 'bg-cyan-400/15'"
+              ></span>
+              <div
+                class="flex items-center justify-between px-2 py-1 rounded ring-1"
+                :class="u.owned
+                  ? 'bg-emerald-400/15 ring-emerald-400/30'
+                  : u.unlocked
+                    ? 'bg-white/5 ring-cyan-400/10'
+                    : 'bg-white/[0.02] ring-cyan-400/5 opacity-45'"
+              >
+                <span class="text-[10px]" :class="u.owned ? 'text-emerald-200' : 'text-cyan-100/80'">
+                  {{ u.owned ? '✓ ' : !u.unlocked ? '🔒 ' : '' }}{{ u.label }}
+                </span>
+                <span v-if="!u.owned && u.unlocked" class="flex items-center gap-1">
+                  <span class="text-amber-300/70 text-[10px] tabular-nums">{{ u.cost }}</span>
+                  <button
+                    class="px-1.5 py-0.5 rounded text-[10px] bg-emerald-400/15 text-emerald-200
+                           hover:bg-emerald-400/25 transition-colors"
+                    :disabled="gameState.minerals < u.cost"
+                    :class="{ 'opacity-40 cursor-not-allowed': gameState.minerals < u.cost }"
+                    @click="applyGeneralUpgrade(u.id)"
+                  >
+                    +Añadir
+                  </button>
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      <div v-else class="text-cyan-400/50 text-[10px]">No hay más mejoras disponibles.</div>
     </div>
 
     <!-- Bottom build bar -->

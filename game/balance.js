@@ -254,8 +254,9 @@ export function buildWaves(difficultyKey = 'normal', waveCount = WAVE_TOTAL) {
       for (let k = 0; k < count; k++) list.push(type)
     }
 
-    // COMMANDSHIP: una sola nave nodriza al principio de oleadas altas (wave 6+)
-    if (i >= 6) push(EnemyType.COMMANDSHIP, 1)
+    // COMMANDSHIP: la nave nodriza aparece UNA sola vez por partida (oleada 6).
+    // push() directo para que countMult de dificultad no la duplique.
+    if (i === 6) list.push(EnemyType.COMMANDSHIP)
 
     // Orden secuencial: artillería y brutes primero después de la nodriza
     if (i >= 3) push(EnemyType.BRUTE, 2 + (i - 3) * 2)
@@ -270,7 +271,7 @@ export function buildWaves(difficultyKey = 'normal', waveCount = WAVE_TOTAL) {
       // Skirmishers menos cantidad, foco en infraestructura.
       push(EnemyType.SKIRMISHER, 2 + (i - 2) * 2)
     }
-    // MOTHERSHIP: varias naves madre moradas en oleadas muy altas
+    // MOTHERSHIP: naves madre (portanaves) en oleadas muy altas
     if (i >= 7) push(EnemyType.MOTHERSHIP, 1 + Math.floor((i - 7) / 2))
 
     shuffle(list)

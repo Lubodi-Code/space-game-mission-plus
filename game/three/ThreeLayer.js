@@ -203,12 +203,18 @@ export class ThreeLayer {
 
     // Nebulosas de color a distintas profundidades — mucho más oscuras/tenues que antes.
     // En móvil una sola nebulosa de color: cada plano es un fullscreen quad con blending (caro en fill-rate).
+    // Más capas a distintas profundidades con factores de parallax escalonados (sensación 3D)
+    // + capas de niebla cercanas (factor alto = se mueven más rápido que el fondo).
     const nebulaConfigs = LOW_GFX ? [
       { z: -1200, color: 0x342050, opacity: 0.10, factor: 0.07, scale: 1.2, drift: 0.00012 },
+      { z: -520, color: 0x223652, opacity: 0.07, factor: 0.20, scale: 2.2, drift: -0.00003 },
     ] : [
       { z: -1200, color: 0x342050, opacity: 0.10, factor: 0.07, scale: 1.2, drift: 0.00012 },
       { z: -1500, color: 0x102838, opacity: 0.09, factor: 0.09, scale: 1.5, drift: 0.00006 },
       { z: -1350, color: 0x3a2018, opacity: 0.05, factor: 0.06, scale: 0.9, drift: -0.00009 },
+      { z: -1800, color: 0x241a3a, opacity: 0.08, factor: 0.03, scale: 1.6, drift: 0.00005 },  // capa profunda
+      { z: -700, color: 0x1a2a4a, opacity: 0.10, factor: 0.14, scale: 1.8, drift: 0.00004 },   // niebla media
+      { z: -520, color: 0x223652, opacity: 0.08, factor: 0.20, scale: 2.2, drift: -0.00003 },  // niebla frontal
     ]
     for (const cfg of nebulaConfigs) {
       const nMat = new THREE.MeshBasicMaterial({

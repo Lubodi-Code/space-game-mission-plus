@@ -1,18 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-40 -40 80 80">
   <defs>
     <radialGradient id="g" cx="0" cy="0" r="36">
-      <stop offset="0%" stop-color="#808080" stop-opacity="0.35"/>
-      <stop offset="100%" stop-color="#808080" stop-opacity="0"/>
+      <stop offset="0%" stop-color="#ff8a3d" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#ff8a3d" stop-opacity="0"/>
     </radialGradient>
   </defs>
   <circle cx="0" cy="0" r="36" fill="url(#g)"/>
-  <polygon points="36,0 14,-23 -24,-27 -34,-11 -34,11 -24,27 14,23" fill="#808080" opacity="0.9"/>
-  <polygon points="36,0 14,-23 -24,-27 -34,-11 -34,11 -24,27 14,23" fill="none" stroke="#a0a0a0" stroke-width="1.3"/>
-  <circle cx="-2" cy="0" r="11" fill="#505050" opacity="0.55" stroke="#a0a0a0" stroke-width="0.9"/>
-  <circle cx="-2" cy="0" r="4.5" fill="#d0d0d0" opacity="0.95"/>
-  <circle cx="16" cy="-13" r="3.2" fill="#d0d0d0" opacity="0.6"/>
-  <circle cx="16" cy="13" r="3.2" fill="#d0d0d0" opacity="0.6"/>
-  <circle cx="-22" cy="-15" r="3" fill="#d0d0d0" opacity="0.5"/>
-  <circle cx="-22" cy="15" r="3" fill="#d0d0d0" opacity="0.5"/>
-  <line x1="-12" y1="-20" x2="-12" y2="20" stroke="#a0a0a0" stroke-width="0.7" opacity="0.4"/>
+  <!-- Casco de portanaves: bloque ancho y achatado -->
+  <polygon points="30,-6 30,6 18,14 -26,18 -34,8 -34,-8 -26,-18 18,-14"
+           fill="#5a3216" opacity="0.95" stroke="#ff8a3d" stroke-width="1.4"/>
+  <!-- Cubierta de vuelo central -->
+  <rect x="-26" y="-5" width="48" height="10" fill="#2e1808" stroke="#ffb02e" stroke-width="0.9" opacity="0.95"/>
+  <!-- Bahías de hangar (de donde salen las naves pequeñas) -->
+  <rect x="-20" y="-3.5" width="9" height="7" fill="#ffb02e" opacity="0.55"/>
+  <rect x="-7" y="-3.5" width="9" height="7" fill="#ffb02e" opacity="0.7"/>
+  <rect x="6" y="-3.5" width="9" height="7" fill="#ffb02e" opacity="0.85"/>
+  <!-- Torres de control -->
+  <circle cx="-28" cy="-11" r="3" fill="#ffd24a" opacity="0.8"/>
+  <circle cx="-28" cy="11" r="3" fill="#ffd24a" opacity="0.8"/>
+  <!-- Luces de pista -->
+  <circle cx="22" cy="-9" r="2" fill="#ffd24a" opacity="0.7"/>
+  <circle cx="22" cy="9" r="2" fill="#ffd24a" opacity="0.7"/>
+  <!-- Motores traseros -->
+  <rect x="-38" y="-7" width="5" height="5" fill="#ff8a3d" opacity="0.85"/>
+  <rect x="-38" y="2" width="5" height="5" fill="#ff8a3d" opacity="0.85"/>
 </svg>

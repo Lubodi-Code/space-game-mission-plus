@@ -9,7 +9,7 @@ export class EnemyProjectileSystem {
   }
 
   spawnMissile(opts) {
-    const { x, y, target, speed, damage, splash, color } = opts
+    const { x, y, target, speed, damage, splash, color, stunMs } = opts
     const sprite = this.scene.add.image(x, y, 'star')
       .setTint(color).setScale(0.8).setBlendMode(Phaser.BlendModes.ADD).setDepth(20)
     const dx = target.x - x
@@ -21,7 +21,7 @@ export class EnemyProjectileSystem {
     this.projectiles.push({
       x, y, tx: predX, ty: predY,
       target, speed: speed || 160,
-      damage, splash: splash || 0, color,
+      damage, splash: splash || 0, color, stunMs: stunMs || 0,
       sprite, alive: true,
       _dir: { x: dx / d, y: dy / d },
       id: (this.scene._missileSeq = (this.scene._missileSeq || 0) + 1),
@@ -65,7 +65,9 @@ export class EnemyProjectileSystem {
           for (const s of [...this.scene.structures]) {
             if (s.dead) continue
             if (Phaser.Math.Distance.Between(p.tx, p.ty, s.x, s.y) <= p.splash) {
-              this.scene.damageStructure(s, p.damage)
+              if (p.damage) this.scene.damageStructure(s, p.damage)
+              // Misil EMP: paraliza la estructura (GameScene salta su update mientras dure).
+              if (p.stunMs) s.stunMs = Math.max(s.stunMs || 0, p.stunMs)
             }
           }
         } else {

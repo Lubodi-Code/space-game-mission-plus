@@ -198,6 +198,7 @@ export function sfxImpact(x, y, size = 1) {                                     
 }
 export function sfxMine(x, y) { playSample('mine', x, y, { gain: 0.5, throttleMs: 500 }) }                      // recolector
 export function sfxEnemyBeam(x, y) { playSample('enemybeam', x, y, { gain: 0.6, throttleMs: 40 }) }             // rayo enemigo
+export function sfxGeneralShot(x, y) { playSample('laser', x, y, { gain: 0.55, rate: 1.5, throttleMs: 60 }) }   // disparo del General (láser agudo)
 export function sfxSpeed() { playSample('speed', null, null, { gain: 0.7, throttleMs: 120 }) }                  // cambio de velocidad
 
 // SFX sintetizado (sin sample): blip de fijado de objetivo.

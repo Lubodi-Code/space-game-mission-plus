@@ -153,6 +153,8 @@ export class GameScene extends Phaser.Scene {
 
     this.selectedStructure = null
     this._pendingFocusId = null
+    this.multiSel = new Set() // torretas multi-seleccionadas (shift+clic)
+    this.multiSelGfx = this.add.graphics().setDepth(44)
 
     this.setupInput()
     initWaves(this)
@@ -258,7 +260,14 @@ export class GameScene extends Phaser.Scene {
           return Phaser.Math.Distance.Between(wx, wy, s.x, s.y) <= Math.max(s.radius, 12)
         })
         if (hit) {
-          selectStructure(this, hit)
+          // Shift+clic sobre una torreta: alterna en la multi-selección.
+          if (p.event?.shiftKey && (hit.role === 'turret' || hit.role === 'missile')) {
+            if (this.multiSel.has(hit)) this.multiSel.delete(hit)
+            else this.multiSel.add(hit)
+            gameState.multiSelCount = this.multiSel.size
+          } else {
+            selectStructure(this, hit)
+          }
         } else if (this._pendingFocusId) {
           // Focus-target mode: click on enemy
           const enemy = this.enemies.find((e) => {
@@ -271,6 +280,23 @@ export class GameScene extends Phaser.Scene {
             selectStructure(this, this.selectedStructure)
           }
           this._pendingFocusId = null
+        } else if (this.multiSel.size) {
+          // Multi-selección activa: clic en un enemigo fija objetivo común a todas;
+          // clic en vacío suelta la selección.
+          const enemy = this.enemies.find((e) => {
+            if (e.dead) return false
+            return Phaser.Math.Distance.Between(wx, wy, e.x, e.y) <= (e.radius || 14)
+          })
+          if (enemy) {
+            for (const t of this.multiSel) {
+              if (t.dead) continue
+              t.focusTarget = enemy
+              t.fireMode = 'focus'
+            }
+          } else {
+            this.multiSel.clear()
+            gameState.multiSelCount = 0
+          }
         } else {
           deselectStructure(this)
         }
@@ -444,6 +470,19 @@ export class GameScene extends Phaser.Scene {
       drawPlayerCursor(this.cursorGfx, c.x, c.y, GEN_TINTS[pid % GEN_TINTS.length], time)
     }
 
+    // Anillos de la multi-selección de torretas + línea al objetivo común.
+    this.multiSelGfx.clear()
+    if (this.multiSel.size) {
+      for (const t of this.multiSel) {
+        if (t.dead) { this.multiSel.delete(t); continue }
+        this.multiSelGfx.lineStyle(2, 0x8be9fd, 0.9).strokeCircle(t.x, t.y, t.radius + 8)
+        if (t.focusTarget && !t.focusTarget.dead) {
+          this.multiSelGfx.lineStyle(1, 0xff5566, 0.35).lineBetween(t.x, t.y, t.focusTarget.x, t.focusTarget.y)
+        }
+      }
+      gameState.multiSelCount = this.multiSel.size
+    }
+
     if (gameState.status !== 'playing' || d === 0) return
 
     this.elapsedMs += d
@@ -454,7 +493,14 @@ export class GameScene extends Phaser.Scene {
 
     // Update all structures (building progress, mining, combat, healing spheres)
     for (const s of this.structures) {
-      if (!s.dead) s.update(d, this.world, time)
+      if (s.dead) continue
+      // Parálisis EMP: la estructura no hace nada mientras dure el aturdimiento.
+      if (s.stunMs > 0) {
+        s.stunMs -= d
+        s.container.setAlpha(s.stunMs > 0 ? 0.45 : (s.powered ? 1 : 0.35))
+        if (s.stunMs > 0) continue
+      }
+      s.update(d, this.world, time)
     }
 
     updateWaves(this, d)

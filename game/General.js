@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { GENERAL } from './balance.js'
 import { gameState } from './gameState.js'
 import { spawnFloatingText } from './render/fx.js'
+import { sfxGeneralShot } from './sound.js'
 
 // Tinte por jugador (pid): 0 = host, 1..3 = clientes. Mismo orden en host y cliente
 // para que cada general se vea igual en ambas pantallas.
@@ -178,6 +179,7 @@ export class General {
         if (ed < bestD) { bestD = ed; best = e }
       }
       if (best) {
+        sfxGeneralShot(this.x, this.y)
         best.hp -= this.damage
         if (best.hp <= 0) world.killEnemy(best)
         this.atkTimer = this.cooldown / mult

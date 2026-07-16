@@ -59,6 +59,32 @@ export const UPGRADES = [
     decor: 'heavy',
   },
 
+  // ---- Torreta Láser: nivel 3 de cada rama ----
+  {
+    id: 'laser_a3',
+    label: 'Sobrecarga de ráfaga',
+    cost: 160,
+    forRole: 'turret',
+    requires: 'laser_a2',
+    excludes: 'laser_b',
+    cooldown: 0.7,
+    damage: 1.5,
+    tint: 0xffe066,
+    decor: 'heavy',
+  },
+  {
+    id: 'laser_b3',
+    label: 'Foco prismático',
+    cost: 200,
+    forRole: 'turret',
+    requires: 'laser_b2',
+    excludes: 'laser_a',
+    atkRange: 1.25,
+    damage: 1.5,
+    tint: 0x2a6bff,
+    decor: 'pierce',
+  },
+
   // ---- Torreta de Misiles: Rama A (Saturación → Plasma) ----
   {
     id: 'missile_a',

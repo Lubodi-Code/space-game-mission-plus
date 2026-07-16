@@ -1,24 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-40 -40 80 80">
   <defs>
     <radialGradient id="g" cx="0" cy="0" r="38">
-      <stop offset="0%" stop-color="#808080" stop-opacity="0.4"/>
-      <stop offset="100%" stop-color="#808080" stop-opacity="0"/>
+      <stop offset="0%" stop-color="#b06bff" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#b06bff" stop-opacity="0"/>
     </radialGradient>
   </defs>
   <circle cx="0" cy="0" r="38" fill="url(#g)"/>
-  <!-- Cuerpo principal - forma triangular gigante -->
-  <polygon points="38,0 16,-26 -26,-30 -36,-12 -36,12 -26,30 16,26" fill="#707070" opacity="0.95"/>
-  <!-- Detalles estructurales -->
-  <polygon points="38,0 16,-26 -26,-30 -36,-12 -36,12 -26,30 16,26" fill="none" stroke="#909090" stroke-width="1.5"/>
-  <!-- Centro de comando -->
-  <circle cx="-2" cy="0" r="13" fill="#505050" opacity="0.7" stroke="#909090" stroke-width="1.0"/>
-  <circle cx="-2" cy="0" r="5" fill="#c0c0c0" opacity="0.95"/>
-  <!-- Luces de posición -->
-  <circle cx="18" cy="-14" r="3.5" fill="#c0c0c0" opacity="0.7"/>
-  <circle cx="18" cy="14" r="3.5" fill="#c0c0c0" opacity="0.7"/>
-  <circle cx="-24" cy="-17" r="3.2" fill="#c0c0c0" opacity="0.6"/>
-  <circle cx="-24" cy="17" r="3.2" fill="#c0c0c0" opacity="0.6"/>
-  <!-- Líneas de hangar (indican donde salen las naves pequeñas) -->
-  <line x1="8" y1="-22" x2="8" y2="22" stroke="#909090" stroke-width="0.8" opacity="0.5"/>
-  <line x1="20" y1="-8" x2="20" y2="8" stroke="#909090" stroke-width="0.6" opacity="0.4"/>
+  <!-- Casco principal: acorazado alargado con proa afilada -->
+  <polygon points="38,0 24,-8 6,-14 -18,-16 -32,-10 -36,0 -32,10 -18,16 6,14 24,8"
+           fill="#3a2456" opacity="0.95" stroke="#b06bff" stroke-width="1.4"/>
+  <!-- Espina dorsal luminosa -->
+  <line x1="-30" y1="0" x2="30" y2="0" stroke="#d24aff" stroke-width="1.6" opacity="0.8"/>
+  <!-- Alas laterales blindadas -->
+  <polygon points="-4,-14 10,-24 -14,-28 -24,-16" fill="#4c2f70" stroke="#b06bff" stroke-width="1"/>
+  <polygon points="-4,14 10,24 -14,28 -24,16" fill="#4c2f70" stroke="#b06bff" stroke-width="1"/>
+  <!-- Torretas láser (los múltiples cañones del jefe) -->
+  <circle cx="14" cy="-9" r="3.4" fill="#d24aff" opacity="0.95"/>
+  <circle cx="14" cy="9" r="3.4" fill="#d24aff" opacity="0.95"/>
+  <circle cx="-6" cy="-20" r="3" fill="#d24aff" opacity="0.9"/>
+  <circle cx="-6" cy="20" r="3" fill="#d24aff" opacity="0.9"/>
+  <!-- Núcleo/reactor central -->
+  <circle cx="-8" cy="0" r="8" fill="#241238" stroke="#d24aff" stroke-width="1.2"/>
+  <circle cx="-8" cy="0" r="3.6" fill="#f0c4ff" opacity="0.95"/>
+  <!-- Lanzador EMP en proa -->
+  <polygon points="30,0 22,-4 22,4" fill="#66e0ff" opacity="0.9"/>
+  <!-- Motores -->
+  <rect x="-38" y="-6" width="5" height="4" fill="#d24aff" opacity="0.8"/>
+  <rect x="-38" y="2" width="5" height="4" fill="#d24aff" opacity="0.8"/>
 </svg>
