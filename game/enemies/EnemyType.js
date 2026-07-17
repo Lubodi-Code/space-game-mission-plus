@@ -133,8 +133,11 @@ export const REGISTRY = {
   },
   // Nave Nodriza: jefe único de la partida. Vida masiva, múltiples láseres que
   // atacan objetivos independientes, misil EMP periódico que paraliza estructuras.
+  // Velocidad y maxForce subidos: a 22px/s tardaba 4+ min en cruzar el mapa desde el
+  // borde de spawn hasta el núcleo y quedaba "perdida" entre los ~300 enemigos de la
+  // oleada — parecía que nunca aparecía.
   [EnemyType.COMMANDSHIP]: {
-    hp: 7000, speed: 22, scale: 4.2, reward: 1200,
+    hp: 12000, speed: 60, scale: 5.5, reward: 1200,
     color: 0xb06bff, textureKey: 'enemy_commandship',
     targetPriority: 'CORE',
     targetSecondary: 'DEFENSE',
@@ -148,7 +151,7 @@ export const REGISTRY = {
     empRadius: 300,
     empSpeed: 120,
     boss: true,
-    maxForce: 120,
+    maxForce: 240,
     agility: 0.08,
     risk: 'BRAVE',
     evasion: 'JUKE',
