@@ -20,8 +20,14 @@ export function mostDamagedStructure(scene) {
 
 // Asignación por reclamo (claim): cada esfera cura "su" edificio; dos esferas
 // no comparten objetivo mientras haya otros edificios dañados.
+// IMPORTANTE: el reclamo excluye a la PROPIA esfera. Si se incluyera su objetivo
+// actual en `claimed`, al re-evaluar lo vería "ocupado" y abandonaría un edificio
+// válido y cercano para irse a otro sin reclamar → esferas divagando sin curar.
 function claimTarget(scene, sphere) {
-  const claimed = new Set(scene.healers.map((h) => h.target).filter(Boolean))
+  const claimed = new Set()
+  for (const h of scene.healers) {
+    if (h !== sphere && h.target) claimed.add(h.target)
+  }
   let best = null, bestFrac = 1
   let bestShared = null, bestSharedFrac = 1
   for (const s of scene.structures) {
@@ -43,11 +49,19 @@ export function updateHealers(scene, delta) {
       scene.healers.splice(i, 1)
       continue
     }
-    // Re-evaluar claim solo cada 500 ms (histéresis)
+    // Mantener el objetivo mientras siga siendo válido (vivo y dañado). Solo
+    // re-evaluar si es inválido, o cada 500 ms para migrar a un edificio MÁS
+    // dañado. En la re-evaluación periódica nunca se suelta un objetivo válido:
+    // si no hay mejor candidato se conserva el actual → sin thrashing ni divagar.
     if (h.retarget === undefined) h.retarget = 0
     h.retarget -= delta
-    if (!h.target || h.target.dead || h.target.hp >= h.target.maxHp || h.retarget <= 0) {
+    const invalid = !h.target || h.target.dead || h.target.hp >= h.target.maxHp
+    if (invalid) {
       h.target = claimTarget(scene, h)
+      h.retarget = 500
+    } else if (h.retarget <= 0) {
+      const better = claimTarget(scene, h)
+      if (better) h.target = better
       h.retarget = 500
     }
     const speed = h.owner.def.sphereSpeed
