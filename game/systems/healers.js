@@ -4,11 +4,15 @@ import { HEAL_ORB_COLOR, orbScale } from '~/game/render/fx.js'
 
 // Esferas sanadoras (estructura Healer). delta en MS; dt en segundos.
 
+// Los edificios Enjambre no se curan a sí mismos ni entre ellos: no son objetivo
+// válido de esferas sanadoras.
+const isHealable = (s) => !s.dead && s.role !== 'healer'
+
 export function mostDamagedStructure(scene) {
   let best = null
   let worst = 1
   for (const s of scene.structures) {
-    if (s.dead) continue
+    if (!isHealable(s)) continue
     const frac = s.hp / s.maxHp
     if (frac < worst) {
       worst = frac
@@ -31,7 +35,7 @@ function claimTarget(scene, sphere) {
   let best = null, bestFrac = 1
   let bestShared = null, bestSharedFrac = 1
   for (const s of scene.structures) {
-    if (s.dead || s.hp >= s.maxHp) continue
+    if (!isHealable(s) || s.hp >= s.maxHp) continue
     const frac = s.hp / s.maxHp
     if (!claimed.has(s)) { if (frac < bestFrac) { bestFrac = frac; best = s } }
     else if (frac < bestSharedFrac) { bestSharedFrac = frac; bestShared = s }
