@@ -178,7 +178,8 @@ export const STRUCTURES = [
     hp: 70,
     healInterval: 1600,
     maxSpheres: 4,
-    healRate: 14,
+    healRate: 8,
+    healDamageCooldown: 1500, // ms tras recibir daño en los que la estructura no se cura
     sphereSpeed: 135,
     energyDrain: 2,
     buildTime: 4000,

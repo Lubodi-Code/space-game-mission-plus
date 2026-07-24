@@ -83,14 +83,19 @@ export function updateHealers(scene, delta) {
         const orbitR = 18 + 4 * Math.sin(scene.time.now * 0.006 + i)
         h.x = t.x + Math.cos(orbitAngle) * orbitR
         h.y = t.y + Math.sin(orbitAngle) * orbitR
-        t.hp = Math.min(t.maxHp, t.hp + h.owner.def.healRate * dt)
-        if (t.isCore) gameState.coreHp = Math.min(t.maxHp, Math.ceil(t.hp))
-        t.drawHpBar()
-        // Hilo de curación esfera→edificio
-        const a = 0.35 + 0.25 * Math.sin(scene.time.now * 0.012 + i)
-        scene.beamGraphics.lineStyle(1.5, HEAL_ORB_COLOR, a)
-        scene.beamGraphics.lineBetween(h.x, h.y, t.x, t.y)
-        healing = true
+        // Cooldown: si la estructura recibió daño hace poco, la esfera orbita pero no cura.
+        const cd = h.owner.def.healDamageCooldown || 0
+        const onCooldown = cd > 0 && scene.time.now - (t.lastDamaged ?? -Infinity) < cd
+        if (!onCooldown) {
+          t.hp = Math.min(t.maxHp, t.hp + h.owner.def.healRate * dt)
+          if (t.isCore) gameState.coreHp = Math.min(t.maxHp, Math.ceil(t.hp))
+          t.drawHpBar()
+          // Hilo de curación esfera→edificio
+          const a = 0.35 + 0.25 * Math.sin(scene.time.now * 0.012 + i)
+          scene.beamGraphics.lineStyle(1.5, HEAL_ORB_COLOR, a)
+          scene.beamGraphics.lineBetween(h.x, h.y, t.x, t.y)
+          healing = true
+        }
       }
     } else {
       const a = (scene.time.now * 0.002 + i) % (Math.PI * 2)

@@ -171,6 +171,7 @@ export class Structure {
   damage(dmg) {
     if (this.dead) return
     this.hp -= dmg
+    this.lastDamaged = this.scene.time.now // el Enjambre no cura hasta pasado healDamageCooldown
 
     const fl = this.scene.add.image(this.x, this.y, 'glow')
       .setTint(0xffffff).setBlendMode(glowBlend())
