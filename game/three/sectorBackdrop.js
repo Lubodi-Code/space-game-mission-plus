@@ -27,6 +27,8 @@ uniform vec3 uA, uB, uC;
 uniform vec2 uOff;
 uniform float uGain;
 uniform float uAspect;
+uniform sampler2D uTex;
+uniform float uHasTex;
 varying vec2 vUv;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -64,6 +66,20 @@ void main() {
   float breathe = 0.9 + 0.1 * sin(t * 0.3);
   vec3 outc = col * n * n * (0.3 + 1.1 * edge) * breathe;
 
+  // Fondo pintado del sector (Codex): cover-fit al aspect, paneo/zoom lento y brillo que respira.
+  // Encima siguen las capas animadas procedurales (partículas, filamentos, auroras...).
+  bool tex = uHasTex > 0.5;
+  if (tex) {
+    float ia = 1.7768;
+    vec2 tuv = vUv - 0.5;
+    if (uAspect < ia) tuv.x *= uAspect / ia; else tuv.y *= ia / uAspect;
+    tuv *= 0.94 - 0.02 * sin(t * 0.05);
+    tuv += vec2(sin(t * 0.021), cos(t * 0.017)) * 0.012 + uOff * 0.4;
+    vec3 painted = texture2D(uTex, tuv + 0.5).rgb;
+    float shimmer = 0.9 + 0.1 * sin(t * 0.4 + fbm(p * 3.0 + t * 0.03) * 6.0);
+    outc = painted * shimmer + col * n * n * 0.25 * edge;
+  }
+
   if (uMode == 0) {
     // Cinturón de asteroides diagonal que se desliza.
     float d = abs(p.y + p.x * 0.35 - 0.12);
@@ -88,7 +104,7 @@ void main() {
   } else if (uMode == 4) {
     // Brasas subiendo entre humo cálido.
     outc += uC * dots(p * vec2(34.0, 24.0) + vec2(0.0, -t * 0.9), 0.18, 0.1, vec2(0.25)) * (0.3 + edge);
-  } else if (uMode == 5) {
+  } else if (uMode == 5 && !tex) {
     // Planeta con anillo partido en un borde.
     vec2 d = p - vec2(hx - 0.22, 0.28);
     float r = length(d);
@@ -107,9 +123,9 @@ void main() {
     outc += uC * dots((p - vec2(hx - 0.22, 0.28)) * 70.0 + vec2(t * 0.3, 0.0), 0.06, 0.15, vec2(0.1)) * smoothstep(0.45, 0.2, r) * 0.6;
   } else if (uMode == 6) {
     // Vacío: casi nada, un parpadeo lejano ocasional.
-    outc *= 0.45;
+    if (!tex) outc *= 0.45;
     outc += vec3(0.6, 0.7, 0.9) * dots(p * 60.0, 0.015, 0.1, vec2(0.0)) * (0.5 + 0.5 * sin(t * 0.8 + p.y * 30.0));
-  } else if (uMode == 7) {
+  } else if (uMode == 7 && !tex) {
     // Estrella gigante en una esquina con corona y rayos.
     vec2 d = p - vec2(-hx + 0.1, 0.38);
     float r = length(d);
@@ -119,7 +135,7 @@ void main() {
     float flare = pow(max(0.0, fbm(vec2(ang * 3.0 + t * 0.05, r * 6.0 - t * 0.3))), 3.0) * smoothstep(0.32, 0.11, r);
     outc += vec3(1.0, 0.78, 0.45) * (glow * 0.6 + rays * 0.35 + flare * 1.4);
     outc = mix(outc, vec3(1.0, 0.97, 0.88), smoothstep(0.11, 0.1, r));
-  } else if (uMode == 8) {
+  } else if (uMode == 8 && !tex) {
     // Agujero negro con disco de acreción girando y anillo de lente.
     vec2 d = p - vec2(hx - 0.26, -0.24);
     vec2 e = vec2(d.x, d.y * 2.4);
@@ -155,6 +171,8 @@ export function createSectorBackdrop(sectorN = 1, lowGfx = false) {
     uOff: { value: new THREE.Vector2() },
     uGain: { value: 0.85 },
     uAspect: { value: 1.6 },
+    uTex: { value: null },
+    uHasTex: { value: 0 },
   }
   const mat = new THREE.ShaderMaterial({
     uniforms,
@@ -166,6 +184,15 @@ export function createSectorBackdrop(sectorN = 1, lowGfx = false) {
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat)
   mesh.position.z = -2400
   mesh.renderOrder = -100
+
+  // Pintura del sector (public/assets/bg/sector-NN.webp). Si no carga, queda el procedural.
+  const n = String(((Math.max(1, sectorN) - 1) % SECTOR_LOOKS.length) + 1).padStart(2, '0')
+  const texture = new THREE.TextureLoader().load(`/assets/bg/sector-${n}.webp`, (tx) => {
+    tx.colorSpace = THREE.SRGBColorSpace
+    tx.needsUpdate = true
+    uniforms.uTex.value = tx
+    uniforms.uHasTex.value = 1
+  })
   return {
     mesh,
     mode: look.mode,
@@ -181,6 +208,6 @@ export function createSectorBackdrop(sectorN = 1, lowGfx = false) {
       mesh.scale.set(h * camera.aspect, h, 1)
       uniforms.uAspect.value = camera.aspect
     },
-    dispose() { mesh.geometry.dispose(); mat.dispose() },
+    dispose() { mesh.geometry.dispose(); mat.dispose(); texture.dispose() },
   }
 }

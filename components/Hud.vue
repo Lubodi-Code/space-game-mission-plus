@@ -213,6 +213,26 @@ function callWave() {
   bus.emit('callWave')
 }
 
+// Táctil: no hay clic derecho ni Esc → botón flotante que cancela lo que esté activo.
+const cancelable = computed(() => !!(activeLabel.value || gameState.generalMode === 'selected' || gameState.abilityTargeting))
+function cancelAll() {
+  bus.emit('cancel')
+}
+function closeInspection() {
+  selectedStructure.value = null
+  bus.emit('deselect')
+}
+const sheetOpen = computed(() => !!selectedStructure.value || gameState.generalMode === 'selected')
+
+// Aviso de orientación: en vertical el mapa se ve muy chico. Descartable.
+const portrait = ref(false)
+const portraitDismissed = ref(false)
+function checkOrientation() {
+  portrait.value = window.innerHeight > window.innerWidth && window.innerWidth < 700
+}
+onMounted(() => { checkOrientation(); window.addEventListener('resize', checkOrientation) })
+onUnmounted(() => window.removeEventListener('resize', checkOrientation))
+
 const sectorInfo = computed(() => sectorByN(appState.sector))
 const levelInfo = computed(() => levelFromXp(profile.xp))
 
@@ -524,21 +544,21 @@ function polyPoints(sides, radius) {
     <!-- Placement hint -->
     <div
       v-if="activeLabel"
-      class="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full
+      class="hud-hint absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full
              bg-cyan-400/15 ring-1 ring-cyan-300/40 text-xs text-cyan-100"
     >
       Colocando <b>{{ activeLabel }}</b> — clic para construir · clic derecho / Esc para cancelar
     </div>
     <div
       v-if="gameState.generalMode === 'selected'"
-      class="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full
+      class="hud-hint absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full
              bg-cyan-400/15 ring-1 ring-cyan-300/40 text-xs text-cyan-100"
     >
       General seleccionado — clic para mover / clic en meteorito para recolectar · derecho / Esc para cancelar
     </div>
     <div
       v-if="gameState.multiSelCount > 0 && !activeLabel && gameState.generalMode !== 'selected'"
-      class="absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full
+      class="hud-hint absolute top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full
              bg-cyan-400/15 ring-1 ring-cyan-300/40 text-xs text-cyan-100"
     >
       {{ gameState.multiSelCount }} torretas seleccionadas — clic en un enemigo para fijar blanco común · shift+clic añade/quita · clic vacío suelta
@@ -547,10 +567,13 @@ function polyPoints(sides, radius) {
     <!-- Inspection panel (right side) -->
     <div
       v-if="selectedStructure"
-      class="hud-inspection absolute top-28 right-3 w-72 max-h-[calc(100vh-15rem)] overflow-y-auto p-3 rounded-xl bg-[#0a0f1c]/90 backdrop-blur-sm
+      class="hud-inspection hud-sheet absolute top-28 right-3 w-72 max-h-[calc(100vh-15rem)] overflow-y-auto p-3 rounded-xl bg-[#0a0f1c]/90 backdrop-blur-sm
              ring-1 ring-cyan-400/20 pointer-events-auto text-xs space-y-2"
     >
-      <div class="font-bold text-sm" style="color: #6cc8ff">{{ selectedStructure.label }}</div>
+      <div class="flex items-center justify-between">
+        <div class="font-bold text-sm" style="color: #6cc8ff">{{ selectedStructure.label }}</div>
+        <button class="sheet-close" aria-label="Cerrar" @click="closeInspection">✕</button>
+      </div>
 
       <!-- Estado: building / powered -->
       <div v-if="selectedStructure.building" class="text-cyan-400/70">Construyendo...</div>
@@ -646,10 +669,13 @@ function polyPoints(sides, radius) {
     <!-- General upgrades panel (right side) -->
     <div
       v-if="gameState.generalMode === 'selected'"
-      class="hud-inspection absolute top-28 right-3 w-72 max-h-[calc(100vh-15rem)] overflow-y-auto p-3 rounded-xl bg-[#0a0f1c]/90 backdrop-blur-sm
+      class="hud-inspection hud-sheet absolute top-28 right-3 w-72 max-h-[calc(100vh-15rem)] overflow-y-auto p-3 rounded-xl bg-[#0a0f1c]/90 backdrop-blur-sm
              ring-1 ring-cyan-400/20 pointer-events-auto text-xs space-y-2"
     >
-      <div class="font-bold text-sm" style="color: #8be9fd">General</div>
+      <div class="flex items-center justify-between">
+        <div class="font-bold text-sm" style="color: #8be9fd">General</div>
+        <button class="sheet-close" aria-label="Cerrar" @click="cancelAll">✕</button>
+      </div>
       <div class="text-cyan-200/70 space-y-0.5">
         <div>HP: {{ gameState.general.hp }}/{{ gameState.general.hpMax }}</div>
         <div>Daño: {{ gameState.general.damage || 8 }}</div>
@@ -663,10 +689,21 @@ function polyPoints(sides, radius) {
       </div>
     </div>
 
-    <AbilityBar v-if="gameState.status === 'playing'" />
+    <AbilityBar v-if="gameState.status === 'playing'" :class="{ 'ability-under-sheet': sheetOpen }" />
+
+    <!-- Cancelar (táctil y también útil con mouse) -->
+    <button v-if="cancelable" class="cancel-fab pointer-events-auto" @click="cancelAll">✕ Cancelar</button>
+
+    <!-- Aviso de orientación vertical -->
+    <div v-if="portrait && !portraitDismissed" class="portrait-hint pointer-events-auto">
+      <span class="text-2xl">⟳</span>
+      <span>Girá el celular para ver más mapa</span>
+      <button class="underline opacity-70" @click="portraitDismissed = true">Seguir así</button>
+    </div>
 
     <!-- Bottom build bar -->
     <div
+      :class="{ 'hud-buildbar--sheet': sheetOpen }"
       class="hud-buildbar absolute bottom-0 left-1/2 -translate-x-1/2 mb-3 flex gap-2
              px-3 py-2 rounded-xl bg-black/55 backdrop-blur-sm
              ring-1 ring-cyan-400/20 pointer-events-auto max-w-[98vw] overflow-x-auto"
@@ -803,5 +840,54 @@ function polyPoints(sides, radius) {
   .hud-buildbar { margin-bottom: 0.25rem; padding: 0.25rem; gap: 0.25rem; }
   .build-btn { width: 2.6rem; height: 2.6rem; }
   .build-btn-label { display: none; }
+}
+
+.sheet-close {
+  @apply w-7 h-7 -mr-1 flex items-center justify-center rounded-full bg-white/5 text-cyan-100/70 hover:bg-white/15;
+}
+.cancel-fab {
+  @apply absolute left-1/2 -translate-x-1/2 px-5 py-2 rounded-full text-sm font-bold
+         bg-red-500/80 text-white ring-1 ring-red-300/60 active:scale-95;
+  bottom: calc(6.25rem + env(safe-area-inset-bottom));
+  box-shadow: 0 0 18px rgba(255, 85, 102, 0.45);
+}
+.portrait-hint {
+  @apply absolute left-3 right-3 top-1/3 flex flex-col items-center gap-1 p-4 rounded-2xl text-center text-sm
+         bg-[#0a0f1c]/90 ring-1 ring-cyan-300/30;
+}
+.hud-topbar { padding-top: max(0.5rem, env(safe-area-inset-top)); }
+.hud-buildbar { margin-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
+
+/* Celular (vertical u horizontal angosto): paneles como hoja inferior, HUD compacto. */
+@media (max-width: 700px), (pointer: coarse) and (max-height: 520px) {
+  .hud-topbar { gap: 0.5rem; padding-left: 0.5rem; padding-right: 0.5rem; font-size: 0.7rem; }
+  .hud-topbar .hud-btn { padding: 0.35rem 0.55rem; font-size: 0.7rem; }
+  .hud-topbar .ml-auto { gap: 0.6rem; }
+  .hud-resources { display: none; }
+  .hud-core { width: 10.5rem; padding: 0.4rem; left: 0.5rem; top: 2.75rem; }
+  .hud-wave-analysis { display: none; }
+  .hud-sheet {
+    top: auto !important; left: 0 !important; right: 0 !important; bottom: 0;
+    width: auto !important; max-height: 58vh !important;
+    border-radius: 1.25rem 1.25rem 0 0;
+    padding-bottom: max(0.9rem, env(safe-area-inset-bottom));
+    animation: sheetUp 0.18s ease-out;
+  }
+  .hud-buildbar { max-width: calc(100vw - 1rem); }
+  .hud-buildbar--sheet { display: none; }
+  .build-btn { width: 3.3rem; height: 3.3rem; }
+  .cancel-fab { bottom: calc(5.25rem + env(safe-area-inset-bottom)); }
+  .hud-hint {
+    top: auto; bottom: calc(8.25rem + env(safe-area-inset-bottom));
+    width: max-content; max-width: 92vw; text-align: center; font-size: 10px; border-radius: 0.75rem;
+  }
+  :deep(.ability-under-sheet) { display: none; }
+}
+@media (max-width: 700px) {
+  .hud-topbar .ml-auto > span:first-child { display: none; } /* tiempo: poco espacio */
+}
+@keyframes sheetUp {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 </style>

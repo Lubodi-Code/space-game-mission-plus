@@ -387,9 +387,11 @@ export class GameScene extends Phaser.Scene {
     this.busOff = [
       bus.on('build', (key) => { this.deselectGeneral(); startPlacement(this, key) }),
       bus.on('cancel', () => {
-        if (gameState.generalMode === 'selected') this.deselectGeneral()
+        if (gameState.abilityTargeting) cancelTargeting()
+        else if (gameState.generalMode === 'selected') this.deselectGeneral()
         else cancelPlacement(this)
       }),
+      bus.on('deselect', () => deselectStructure(this)),
       bus.on('selectGeneral', () => this.selectGeneral()),
       bus.on('restart', () => { clearSoloSnapshot(); this.scene.restart() }),
       bus.on('speed', (v) => { this.setSpeed(v); sfxSpeed() }),

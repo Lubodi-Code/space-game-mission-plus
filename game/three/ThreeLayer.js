@@ -401,7 +401,7 @@ export class ThreeLayer {
     this.bgScene.add(atmo)
     this.bgGroups.push(atmo)
     // El planeta azul es del sector 1; los demás traen su propio elemento en el backdrop.
-    planet.visible = atmo.visible = this.backdrop.mode === 0
+    planet.visible = atmo.visible = false // cada sector trae su pintura (sectorBackdrop.js)
 
     // Sistema de estrellas fugaces (timer en render)
     this.shootingStars = []
