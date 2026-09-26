@@ -27,6 +27,11 @@ export const gameState = reactive({
   generalMode: null, // null | 'selected'
   generalUpgrades: [], // ids de mejoras compradas para el General
   multiSelCount: 0, // torretas en multi-selección (shift+clic)
+  waveTimeLeft: 0, // s hasta que entra la siguiente oleada aunque queden enemigos (modo con presupuesto)
+  kills: 0,
+  abilities: {}, // id → { ready, cdLeft, cdMax } (lo publica systems/abilities.js)
+  abilityTargeting: null, // id de la habilidad esperando un clic de objetivo
+  runRewards: null, // resumen de XP/Chatarra al terminar (profile.grantRunRewards)
 })
 
 if (import.meta.env.DEV && typeof window !== 'undefined') {
@@ -60,5 +65,10 @@ export function resetGameState() {
     generalMode: null,
     generalUpgrades: [],
     multiSelCount: 0,
+    waveTimeLeft: 0,
+    kills: 0,
+    abilities: {},
+    abilityTargeting: null,
+    runRewards: null,
   })
 }

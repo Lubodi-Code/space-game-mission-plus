@@ -17,7 +17,7 @@ export function isRelay(s) {
 // Puertos máximos de un relay; los no-relays no limitan (solo se cuelgan de relays).
 export function portCap(s) {
   if (s.isCore) return s.def.maxPorts || 8
-  if (s.role === 'relay') return s.def.maxPorts || 5
+  if (s.role === 'relay') return s.maxPorts || s.def.maxPorts || 5
   return Infinity
 }
 

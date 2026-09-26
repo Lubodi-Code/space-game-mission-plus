@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { gameState } from '~/game/gameState.js'
 import { drawPolygon, darken } from './draw.js'
 import { glowBlend } from '~/game/render/blend.js'
+import { currentMode } from '~/game/modes/index.js'
 
 let _seq = 0
 
@@ -78,7 +79,7 @@ export class Structure {
 
     this.buildProgress = 0
     this.building = !isCore && (def.buildTime || 0) > 0
-    this.buildTime = def.buildTime || 0
+    this.buildTime = Math.round((def.buildTime || 0) * currentMode().buildTimeMult * (scene.buildTimeMult || 1))
 
     this.container = scene.add.container(x, y).setDepth(isCore ? 12 : 10)
 

@@ -4,7 +4,12 @@ import { gameState } from '~/game/gameState'
 import { bus } from '~/game/bus'
 import { STRUCTURES, SPEED } from '~/game/constants'
 import { goToLobby } from '~/game/appState'
-import { getUpgradesFor, UPGRADES } from '~/game/structures/upgrades'
+import { buildUpgradeTree } from '~/game/structures/upgrades'
+import '~/game/meta/research'
+import { ABILITIES } from '~/game/systems/abilities'
+import { sectorByN } from '~/game/meta/sectors'
+import { levelFromXp, profile } from '~/game/meta/profile'
+import { appState } from '~/game/appState'
 import { EnemyType, REGISTRY } from '~/game/enemies/EnemyType'
 
 // Mapeo de tipos de enemigos a nombres legibles
@@ -17,6 +22,10 @@ const ENEMY_LABELS = {
   [EnemyType.ARTILLERY]: { label: 'Artillería', color: '#ffb02e' },
   [EnemyType.MOTHERSHIP]: { label: 'Nave Madre', color: '#ff8a3d' },
   [EnemyType.COMMANDSHIP]: { label: 'Nave Nodriza', color: '#b06bff' },
+  [EnemyType.KAMIKAZE]: { label: 'Kamikaze', color: '#ff4d2e' },
+  [EnemyType.WARDEN]: { label: 'Guardián', color: '#7fb2ff' },
+  [EnemyType.LEECH]: { label: 'Sanguijuela', color: '#ff3dbd' },
+  [EnemyType.BOMBER]: { label: 'Bombardero', color: '#ffb02e' },
 }
 
 const structures = STRUCTURES
@@ -62,7 +71,8 @@ const waveStatus = computed(() => {
   if (gameState.nextWaveIn > 0) {
     return { kind: 'countdown', text: `Oleada ${gameState.wave + 1} en ${gameState.nextWaveIn}s` }
   }
-  return { kind: 'active', text: `Oleada ${gameState.wave} · enemigos: ${gameState.enemiesAlive}` }
+  const next = gameState.waveTimeLeft > 0 && gameState.wave < gameState.waveTotal ? ` · próxima en ${gameState.waveTimeLeft}s` : ''
+  return { kind: 'active', text: `Oleada ${gameState.wave} · enemigos: ${gameState.enemiesAlive}${next}` }
 })
 
 // Análisis de la siguiente oleada (para el panel de intermisión)
@@ -104,32 +114,22 @@ const offSelect = bus.on('select', (payload) => {
 })
 onUnmounted(() => offSelect())
 
+// Orden de Q/E/R = orden de nodos disponibles en el árbol (rama A primero).
+function availableFromTree(role, owned) {
+  return buildUpgradeTree(role, owned).flatMap((b) => b.nodes).filter((n) => n.state === 'available')
+}
 const availableUpgrades = computed(() => {
   const s = selectedStructure.value
   if (!s) return []
-  return getUpgradesFor(s.role, s.upgrades || [])
+  return availableFromTree(s.role, s.upgrades || [])
 })
 
-const generalAvailableUpgrades = computed(() =>
-  getUpgradesFor('general', gameState.generalUpgrades)
-)
+const generalAvailableUpgrades = computed(() => availableFromTree('general', gameState.generalUpgrades))
 
-// Árbol de habilidades del General: dos ramas con niveles encadenados por `requires`.
-const GENERAL_BRANCH_IDS = [
-  { name: 'Asalto', ids: ['gen_a', 'gen_a2', 'gen_a3'] },
-  { name: 'Comandante', ids: ['gen_b', 'gen_b2', 'gen_b3'] },
-]
-const generalTree = computed(() =>
-  GENERAL_BRANCH_IDS.map((b) => ({
-    name: b.name,
-    nodes: b.ids.map((id) => {
-      const u = UPGRADES.find((x) => x.id === id)
-      const owned = gameState.generalUpgrades.includes(id)
-      const unlocked = !u.requires || gameState.generalUpgrades.includes(u.requires)
-      return { ...u, owned, unlocked }
-    }),
-  }))
-)
+const hasTree = computed(() => {
+  const s = selectedStructure.value
+  return !!s && buildUpgradeTree(s.role, []).length > 0
+})
 
 function applyGeneralUpgrade(id) {
   bus.emit('upgradeGeneral', id)
@@ -209,6 +209,16 @@ function restart() {
   bus.emit('restart')
 }
 
+function callWave() {
+  bus.emit('callWave')
+}
+
+const sectorInfo = computed(() => sectorByN(appState.sector))
+const levelInfo = computed(() => levelFromXp(profile.xp))
+
+// Teclas de habilidades (Z/C/V/B), definidas en systems/abilities.js.
+const ABILITY_KEYS = Object.fromEntries(Object.values(ABILITIES).map((a) => [a.key.toLowerCase(), a.id]))
+
 // ---- Teclas rápidas: espejo de los botones del GUI (emiten los mismos intents).
 // Teclas ya usadas por Phaser (no tocar): Esc=cancelar, Espacio=centrar cámara, WASD/flechas=mover.
 let lastSpeed = SPEED.steps[2] // velocidad previa, para que P (pausa) la restaure
@@ -247,6 +257,9 @@ function onKey(e) {
   }
 
   if (e.key >= '1' && e.key <= '6') { const s = STRUCTURES[+e.key - 1]; if (s) pick(s); return }
+  const ab = ABILITY_KEYS[e.key.toLowerCase()]
+  if (ab) { bus.emit('ability', ab); return }
+  if (e.key === 'n' || e.key === 'N') { callWave(); return }
   switch (e.key) {
     case 'g': case 'G': pickGeneral(); break
     case 'p': case 'P': togglePause(); break
@@ -353,6 +366,15 @@ function polyPoints(sides, radius) {
       >
         {{ waveStatus.text }}
       </div>
+      <button
+        v-if="waveStatus.kind === 'countdown' && gameState.status === 'playing' && appState.mp.role !== 'client'"
+        class="mt-1 ml-1 inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-400/20 text-amber-100 ring-1 ring-amber-300/40 hover:bg-amber-400/30 pointer-events-auto"
+        title="N — salta la espera y gana minerales por el tiempo ahorrado"
+        @click="callWave"
+      >
+        ¡Oleada ya! +{{ gameState.nextWaveIn * 4 }} <span class="opacity-50">N</span>
+      </button>
+      <div class="text-[10px] text-cyan-400/50">Sector {{ sectorInfo.n }} · {{ sectorInfo.name }}</div>
 
       <!-- General status (below wave) -->
       <div v-if="gameState.general.alive" class="mt-1 text-xs flex items-center gap-1 text-cyan-300/80">
@@ -434,6 +456,22 @@ function polyPoints(sides, radius) {
             ? `Sobreviviste las ${gameState.waveTotal} oleadas en ${timeLabel}.`
             : `Caíste en la oleada ${gameState.wave} de ${gameState.waveTotal}.` }}
         </p>
+        <div v-if="gameState.runRewards" class="mb-6 space-y-2">
+          <div class="flex justify-center gap-3 text-sm">
+            <span class="px-3 py-1 rounded-lg bg-cyan-400/10 ring-1 ring-cyan-300/30 text-cyan-100">+{{ gameState.runRewards.xp }} XP</span>
+            <span class="px-3 py-1 rounded-lg bg-amber-400/10 ring-1 ring-amber-300/30 text-amber-100">+{{ gameState.runRewards.scrap }} Chatarra</span>
+          </div>
+          <div class="mx-auto w-64">
+            <div class="flex justify-between text-[10px] text-cyan-300/70">
+              <span>Nivel {{ levelInfo.level }}</span><span>{{ levelInfo.into }}/{{ levelInfo.need }} XP</span>
+            </div>
+            <div class="h-2 rounded-full bg-white/10 overflow-hidden mt-0.5">
+              <div class="h-full bg-cyan-300 transition-[width] duration-700" :style="{ width: (100 * levelInfo.into / levelInfo.need) + '%' }"></div>
+            </div>
+          </div>
+          <div v-if="gameState.runRewards.levelUp" class="text-amber-300 font-bold animate-pulse">¡Subiste a nivel {{ gameState.runRewards.levelUp }}!</div>
+          <div v-if="gameState.runRewards.sectorUnlocked" class="text-fuchsia-300 font-semibold">Sector {{ gameState.runRewards.sectorUnlocked }} desbloqueado</div>
+        </div>
         <div class="flex gap-3 justify-center">
           <button
             class="px-6 py-2 rounded-lg bg-cyan-400/20 ring-1 ring-cyan-300/50 text-white
@@ -509,7 +547,7 @@ function polyPoints(sides, radius) {
     <!-- Inspection panel (right side) -->
     <div
       v-if="selectedStructure"
-      class="hud-inspection absolute top-28 right-3 w-56 p-3 rounded-xl bg-[#0a0f1c]/90 backdrop-blur-sm
+      class="hud-inspection absolute top-28 right-3 w-72 max-h-[calc(100vh-15rem)] overflow-y-auto p-3 rounded-xl bg-[#0a0f1c]/90 backdrop-blur-sm
              ring-1 ring-cyan-400/20 pointer-events-auto text-xs space-y-2"
     >
       <div class="font-bold text-sm" style="color: #6cc8ff">{{ selectedStructure.label }}</div>
@@ -586,28 +624,10 @@ function polyPoints(sides, radius) {
         </div>
       </div>
 
-      <!-- Mejoras disponibles (solo torretas) -->
-      <div v-if="availableUpgrades.length" class="pt-1 border-t border-cyan-400/10 space-y-1">
-        <div class="text-cyan-300/80 text-[11px] font-semibold">Mejoras</div>
-        <div
-          v-for="(u, i) in availableUpgrades"
-          :key="u.id"
-          class="flex items-center justify-between px-2 py-1 rounded bg-white/5 ring-1 ring-cyan-400/10"
-        >
-          <span class="text-cyan-100/80 text-[10px]">{{ u.label }}</span>
-          <span class="flex items-center gap-1">
-            <span class="text-amber-300/70 text-[10px] tabular-nums">{{ u.cost }}</span>
-            <button
-              class="px-1.5 py-0.5 rounded text-[10px] bg-emerald-400/15 text-emerald-200
-                     hover:bg-emerald-400/25 transition-colors"
-              :disabled="gameState.minerals < u.cost"
-              :class="{ 'opacity-40 cursor-not-allowed': gameState.minerals < u.cost }"
-              @click="applyUpgrade(u.id)"
-            >
-              +Añadir <span v-if="upgradeKeys[i]" class="opacity-50">{{ upgradeKeys[i] }}</span>
-            </button>
-          </span>
-        </div>
+      <!-- Árbol de mejoras propio del edificio -->
+      <div v-if="hasTree" class="pt-1 border-t border-cyan-400/10 space-y-1">
+        <div class="text-cyan-300/80 text-[11px] font-semibold">Árbol de mejoras</div>
+        <UpgradeTree :role="selectedStructure.role" :owned="selectedStructure.upgrades || []" hotkeys @buy="applyUpgrade" />
       </div>
 
       <!-- Demoler (cualquier estructura menos el núcleo) -->
@@ -626,7 +646,7 @@ function polyPoints(sides, radius) {
     <!-- General upgrades panel (right side) -->
     <div
       v-if="gameState.generalMode === 'selected'"
-      class="hud-inspection absolute top-28 right-3 w-56 p-3 rounded-xl bg-[#0a0f1c]/90 backdrop-blur-sm
+      class="hud-inspection absolute top-28 right-3 w-72 max-h-[calc(100vh-15rem)] overflow-y-auto p-3 rounded-xl bg-[#0a0f1c]/90 backdrop-blur-sm
              ring-1 ring-cyan-400/20 pointer-events-auto text-xs space-y-2"
     >
       <div class="font-bold text-sm" style="color: #8be9fd">General</div>
@@ -637,52 +657,13 @@ function polyPoints(sides, radius) {
         <div>Recolección: {{ Math.round((gameState.general.collectRate || 18) * 10) / 10 }}/s</div>
       </div>
 
-      <!-- Árbol de habilidades: dos ramas con niveles encadenados -->
-      <div class="pt-1 border-t border-cyan-400/10 space-y-2">
+      <div class="pt-1 border-t border-cyan-400/10 space-y-1">
         <div class="text-cyan-300/80 text-[11px] font-semibold">Árbol de habilidades</div>
-        <div v-for="branch in generalTree" :key="branch.name">
-          <div class="text-[10px] text-cyan-400/70 font-semibold mb-1">{{ branch.name }}</div>
-          <div class="space-y-0.5">
-            <div
-              v-for="(u, i) in branch.nodes"
-              :key="u.id"
-              class="relative pl-3"
-            >
-              <!-- conector vertical -->
-              <span
-                v-if="i > 0"
-                class="absolute left-1 -top-1 h-2 w-px"
-                :class="u.owned || u.unlocked ? 'bg-cyan-400/50' : 'bg-cyan-400/15'"
-              ></span>
-              <div
-                class="flex items-center justify-between px-2 py-1 rounded ring-1"
-                :class="u.owned
-                  ? 'bg-emerald-400/15 ring-emerald-400/30'
-                  : u.unlocked
-                    ? 'bg-white/5 ring-cyan-400/10'
-                    : 'bg-white/[0.02] ring-cyan-400/5 opacity-45'"
-              >
-                <span class="text-[10px]" :class="u.owned ? 'text-emerald-200' : 'text-cyan-100/80'">
-                  {{ u.owned ? '✓ ' : !u.unlocked ? '🔒 ' : '' }}{{ u.label }}
-                </span>
-                <span v-if="!u.owned && u.unlocked" class="flex items-center gap-1">
-                  <span class="text-amber-300/70 text-[10px] tabular-nums">{{ u.cost }}</span>
-                  <button
-                    class="px-1.5 py-0.5 rounded text-[10px] bg-emerald-400/15 text-emerald-200
-                           hover:bg-emerald-400/25 transition-colors"
-                    :disabled="gameState.minerals < u.cost"
-                    :class="{ 'opacity-40 cursor-not-allowed': gameState.minerals < u.cost }"
-                    @click="applyGeneralUpgrade(u.id)"
-                  >
-                    +Añadir
-                  </button>
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <UpgradeTree role="general" :owned="gameState.generalUpgrades" hotkeys @buy="applyGeneralUpgrade" />
       </div>
     </div>
+
+    <AbilityBar v-if="gameState.status === 'playing'" />
 
     <!-- Bottom build bar -->
     <div

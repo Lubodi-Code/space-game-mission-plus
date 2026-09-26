@@ -17,7 +17,7 @@ import { General, GEN_TINTS } from '~/game/General.js'
 import { net } from '~/game/net.js'
 import { appState, DIFFICULTY } from '~/game/appState.js'
 import { populateMeteorites } from '~/game/systems/worldgen.js'
-import { initWaves, updateWaves } from '~/game/systems/waves.js'
+import { initWaves, updateWaves, enemyStatMult, callWaveEarly } from '~/game/systems/waves.js'
 import { recomputeNetwork as recomputeNetworkSys } from '~/game/systems/energyNet.js'
 import { ThreeLayer } from '~/game/three/ThreeLayer.js'
 import { explosion as explosionFx, drawFx, drawPlayerCursor } from '~/game/render/fx.js'
@@ -28,6 +28,12 @@ import { startPlacement, cancelPlacement, tryPlace, updateGhost, updateRangePrev
 import { selectStructure, deselectStructure, applyUpgrade, setFireMode } from '~/game/systems/selection.js'
 import { onIntent, createRemote, renderRemote, sendSnapshot } from '~/game/net/sync.js'
 import { initSound, updateSound, setMusicState, updateShipBeds, sfxSpeed } from '~/game/sound.js'
+import { initAbilities, updateAbilities, requestAbility, handleTargetClick, cancelTargeting } from '~/game/systems/abilities.js'
+import { runBonuses } from '~/game/meta/research.js'
+import { grantRunRewards } from '~/game/meta/profile.js'
+import { equipped } from '~/game/meta/cosmetics.js'
+import { currentMode } from '~/game/modes/index.js'
+import { sfxLevelUp } from '~/game/sound.js'
 import { saveSoloSnapshot, loadSoloSnapshot, restoreSoloSnapshot, clearSoloSnapshot } from '~/game/systems/persist.js'
 
 
@@ -61,6 +67,8 @@ export class GameScene extends Phaser.Scene {
     this._beamQueue = [] // rayos disparados en este intervalo, para enviar a clientes
     this._auraQueue = [] // auras de plasma para enviar a clientes
     this.netHost = net.isHost
+    this.bonuses = runBonuses()
+    this.buildTimeMult = this.bonuses.buildTimeMult // lo lee Structure al calcular buildTime
 
     this.cam = this.cameras.main
     this.cam.setBounds(0, 0, WORLD.width, WORLD.height)
@@ -104,6 +112,15 @@ export class GameScene extends Phaser.Scene {
     this.structures.push(core)
     this.recomputeNetwork()
 
+    // Modo (economía) + investigación (bonos iniciales). Un resume de sesión los sobrescribe.
+    gameState.minerals = Math.round(gameState.minerals * currentMode().economyMult) + this.bonuses.minerals
+    if (this.bonuses.coreHpMult !== 1) {
+      core.maxHp = Math.round(core.maxHp * this.bonuses.coreHpMult)
+      core.hp = core.maxHp
+      gameState.coreHp = core.hp
+      gameState.coreHpMax = core.maxHp
+    }
+
     const resumeSnapshot = appState.mp.role === 'solo' ? loadSoloSnapshot() : null
 
     this.cam.centerOn(this.core.x, this.core.y)
@@ -135,18 +152,19 @@ export class GameScene extends Phaser.Scene {
       fireEnemyBeam: (opts) => this.epSystem.fireBeam(opts),
       killEnemy: (enemy) => killEnemy(this, enemy),
       spawnSmallShip: (typeKey, x, y) => {
-        const mult = DIFFICULTY[appState.difficulty] || DIFFICULTY.normal
+        const mult = enemyStatMult()
         const enemy = new Enemy(typeKey, x, y, this)
         enemy.id = ++this._enemySeq
-        enemy.hp = Math.round(enemy.def.hp * mult.hpMult)
+        enemy.hp = Math.round(enemy.def.hp * mult.hp)
         enemy.maxHp = enemy.hp
-        enemy.damage = enemy.def.damage * mult.dmgMult
+        enemy.damage = enemy.def.damage * mult.dmg
         this.enemies.push(enemy)
       },
       enemyGrid: this.enemyGrid,
     }
 
-    this.general = new General(this, this.core.x + 60, this.core.y, GEN_TINTS[0])
+    this.general = new General(this, this.core.x + 60, this.core.y, equipped('hull').tint ?? GEN_TINTS[0])
+    this.general.beamSkin = true // el rayo del comandante local usa el cosmético equipado
     this.general.pid = 0
     this.general.setLabel(appState.playerName || 'Comandante')
     this.generals.set(0, this.general)
@@ -157,6 +175,7 @@ export class GameScene extends Phaser.Scene {
     this.multiSelGfx = this.add.graphics().setDepth(44)
 
     this.setupInput()
+    initAbilities(this)
     initWaves(this)
     if (resumeSnapshot) restoreSoloSnapshot(this, resumeSnapshot)
     this.setSpeed(1)
@@ -224,6 +243,14 @@ export class GameScene extends Phaser.Scene {
     })
 
     this.input.on('pointerup', (p) => {
+      // Habilidad apuntando: el clic elige el objetivo; clic derecho la cancela.
+      if (gameState.abilityTargeting) {
+        if (this._rightDown) cancelTargeting()
+        else if (!this._dragging) handleTargetClick(this, p.worldX, p.worldY)
+        this._dragging = false
+        this._rightDown = false
+        return
+      }
       // Modo General seleccionado: clic izquierdo mueve/recolecta, derecho cancela.
       if (gameState.generalMode === 'selected') {
         if (!this._dragging && !this._rightDown) {
@@ -349,7 +376,8 @@ export class GameScene extends Phaser.Scene {
     })
 
     this.input.keyboard?.on('keydown-ESC', () => {
-      if (gameState.generalMode === 'selected') this.deselectGeneral()
+      if (gameState.abilityTargeting) cancelTargeting()
+      else if (gameState.generalMode === 'selected') this.deselectGeneral()
       else cancelPlacement(this)
     })
     this.input.keyboard?.on('keydown-SPACE', () => {
@@ -369,6 +397,8 @@ export class GameScene extends Phaser.Scene {
       bus.on('upgrade', ({ structureId, upgradeId }) => applyUpgrade(this, structureId, upgradeId)),
       bus.on('upgradeGeneral', (upgradeId) => this.applyGeneralUpgrade(upgradeId)),
       bus.on('fireMode', ({ structureId, mode }) => setFireMode(this, structureId, mode)),
+      bus.on('ability', (id) => { if (!this.remote) requestAbility(this, id) }),
+      bus.on('callWave', () => { if (!this.remote) callWaveEarly(this) }),
     ]
   }
 
@@ -506,6 +536,7 @@ export class GameScene extends Phaser.Scene {
     updateWaves(this, d)
     updateEnemies(this, d)
     for (const g of this.generals.values()) g.update(d / 1000, this.world)
+    updateAbilities(this, d)
     gameState.general.alive = this.general.alive
     gameState.general.hp = Math.ceil(this.general.hp)
     gameState.general.respawnIn = Math.ceil(Math.max(0, this.general.respawn) / 1000)
@@ -554,6 +585,7 @@ export class GameScene extends Phaser.Scene {
     if (gameState.status !== 'playing') return
     gameState.status = 'gameover'
     clearSoloSnapshot()
+    this.grantRewards(false)
     if (this.core) this.explosion(this.core.x, this.core.y, 0xff5566, FX.coreExplosionRadius)
     this.cameras.main.shake(300, 0.002)
     cancelPlacement(this)
@@ -563,7 +595,23 @@ export class GameScene extends Phaser.Scene {
     if (gameState.status !== 'playing') return
     gameState.status = 'victory'
     clearSoloSnapshot()
+    this.grantRewards(true)
     cancelPlacement(this)
+  }
+
+  // XP / Chatarra al terminar (perfil local). El cliente remoto no llega aquí.
+  grantRewards(victory) {
+    gameState.abilityTargeting = null
+    gameState.runRewards = grantRunRewards({
+      mode: appState.mode,
+      sector: this.sector?.n || 1,
+      wave: gameState.wave,
+      waveTotal: gameState.waveTotal,
+      victory,
+      kills: gameState.kills,
+      sectorReward: this.sector?.reward || 0,
+    })
+    if (gameState.runRewards.levelUp) sfxLevelUp()
   }
 
   // -------------------------------------------------------------- nebulae

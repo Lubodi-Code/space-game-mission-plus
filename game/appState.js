@@ -3,7 +3,7 @@ import { reactive, watch } from 'vue'
 // ponytail: solo-run resume across page reload. Multiplayer never restores (the
 // PeerJS connection dies on reload), so it's excluded from the persisted snapshot.
 const SAVE_KEY = 'sgmp_resume'
-const saved = JSON.parse(sessionStorage.getItem(SAVE_KEY) || 'null')
+const saved = typeof window !== 'undefined' ? JSON.parse(sessionStorage.getItem(SAVE_KEY) || 'null') : null
 
 /**
  * App-level UI state (which screen is showing, chosen difficulty).
@@ -12,15 +12,16 @@ const saved = JSON.parse(sessionStorage.getItem(SAVE_KEY) || 'null')
 export const appState = reactive({
   view: saved?.view || 'lobby', // 'lobby' | 'game'
   difficulty: saved?.difficulty || 'normal', // 'normal' | 'hard'
-  mode: saved?.mode || 'campaign', // ver src/game/modes/index.js
+  mode: saved?.mode || 'classic', // ver game/modes/index.js
+  sector: saved?.sector || 1, // ver game/meta/sectors.js
   playerName: 'Comandante',
   mp: { role: 'solo', connected: false, code: null, ping: false, players: [] },
 })
 
 watch(
-  () => [appState.view, appState.difficulty, appState.mode],
-  ([view, difficulty, mode]) => {
-    sessionStorage.setItem(SAVE_KEY, JSON.stringify({ view, difficulty, mode }))
+  () => [appState.view, appState.difficulty, appState.mode, appState.sector],
+  ([view, difficulty, mode, sector]) => {
+    sessionStorage.setItem(SAVE_KEY, JSON.stringify({ view, difficulty, mode, sector }))
   }
 )
 
@@ -31,10 +32,11 @@ export const DIFFICULTY = {
   hard:   { label: 'Difícil', hpMult: 1.5, dmgMult: 1.35, countMult: 5.5, gapMult: 0.25, startMinerals: 200 },
 }
 
-export function startGame(difficulty, mode = appState.mode) {
+export function startGame(difficulty, mode = appState.mode, sector = appState.sector) {
   sessionStorage.removeItem('sgmp_solo_run') // JUGAR siempre empieza partida nueva, no reanuda una vieja
   appState.difficulty = difficulty
   appState.mode = mode
+  appState.sector = sector
   appState.view = 'game'
 }
 

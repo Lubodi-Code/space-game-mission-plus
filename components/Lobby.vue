@@ -1,12 +1,30 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { startGame, DIFFICULTY } from '~/game/appState'
 import { appState } from '~/game/appState'
-import { MODES } from '~/game/modes/index'
+import { MODES, DEFAULT_MODE } from '~/game/modes/index'
+import { SECTORS } from '~/game/meta/sectors'
+import { profile, levelFromXp } from '~/game/meta/profile'
 import { net } from '~/game/net'
+import { initUiSound, sfxUi } from '~/game/sound'
 
-const difficulty = ref('normal')
-const mode = ref('campaign')
+const difficulty = ref(appState.difficulty || 'normal')
+const mode = ref(MODES[appState.mode] ? appState.mode : DEFAULT_MODE)
+const sector = ref(Math.min(appState.sector || 1, profile.sectorUnlocked))
+const lvl = computed(() => levelFromXp(profile.xp))
+const ENEMY_NAMES = { kamikaze: 'Kamikaze', warden: 'Guardián', leech: 'Sanguijuela', bomber: 'Bombardero' }
+
+function pickSector(n) {
+  if (n > profile.sectorUnlocked) { sfxUi('error'); return }
+  sector.value = n
+  sfxUi('click')
+}
+
+function openView(v) {
+  initUiSound()
+  sfxUi('click')
+  appState.view = v
+}
 const joinCode = ref(new URLSearchParams(location.search).get('join')?.toUpperCase() || '')
 const playerName = ref(localStorage.getItem('sgmp_name') || 'Comandante')
 const linkCopied = ref(false)
@@ -21,7 +39,8 @@ function copyInviteLink() {
 function play() {
   appState.playerName = playerName.value.slice(0, 16) || 'Comandante'
   localStorage.setItem('sgmp_name', appState.playerName)
-  startGame(difficulty.value, mode.value)
+  initUiSound()
+  startGame(difficulty.value, mode.value, sector.value)
 }
 
 function saveName() {
@@ -86,7 +105,7 @@ function joinGame() {
     <div class="stars stars--far"></div>
     <div class="stars stars--near"></div>
 
-    <div class="relative z-10 flex flex-col items-center text-center px-6">
+    <div class="relative z-10 my-auto flex flex-col items-center text-center px-4 sm:px-6 w-full">
       <!-- Emblem -->
       <svg viewBox="0 0 64 64" class="w-20 h-20 mb-6 drop-shadow-[0_0_18px_rgba(108,200,255,0.6)]">
         <polygon points="32,6 53,18 53,42 32,54 11,42 11,18" fill="none" stroke="#6cc8ff" stroke-width="2.5" />
@@ -113,20 +132,65 @@ function joinGame() {
         />
       </div>
 
+      <!-- Perfil: nivel, XP, monedas -->
+      <div class="mt-6 w-full max-w-md flex items-center gap-3 px-3 py-2 rounded-xl bg-white/5 ring-1 ring-cyan-400/15">
+        <div class="lvl-badge">{{ lvl.level }}</div>
+        <div class="flex-1 text-left">
+          <div class="flex justify-between text-[10px] text-cyan-300/70"><span>NIVEL DE COMANDANTE</span><span>{{ lvl.into }}/{{ lvl.need }} XP</span></div>
+          <div class="h-1.5 rounded-full bg-white/10 overflow-hidden mt-1"><div class="h-full bg-cyan-300" :style="{ width: (100 * lvl.into / lvl.need) + '%' }"></div></div>
+        </div>
+        <div class="text-right text-xs leading-tight">
+          <div class="text-amber-200 tabular-nums">⚙ {{ profile.scrap }}</div>
+          <div class="text-fuchsia-200 tabular-nums">◆ {{ profile.crystals }}</div>
+        </div>
+      </div>
+      <div class="mt-3 flex gap-2">
+        <button class="menu-btn" @click="openView('research')">🔬 Investigación</button>
+        <button class="menu-btn menu-btn--shop" @click="openView('shop')">🛒 Tienda</button>
+      </div>
+
       <!-- Modo -->
-      <div class="mt-6">
+      <div class="mt-6 w-full max-w-md">
         <p class="text-xs text-cyan-300/50 mb-2 tracking-widest">MODO</p>
-        <div class="flex gap-2">
+        <div class="grid grid-cols-2 gap-3">
           <button
             v-for="(m, key) in MODES"
             :key="key"
-            class="diff-btn"
-            :class="{ 'diff-btn--active': mode === key }"
-            :title="m.desc"
-            @click="mode = key"
+            class="mode-card"
+            :class="{ 'mode-card--active': mode === key }"
+            @click="mode = key; sfxUi('click')"
           >
-            {{ m.label }}
+            <img :src="m.art" :alt="m.label" class="mode-art" loading="lazy" />
+            <span class="mode-body">
+              <span class="block text-base font-bold text-white">{{ m.label }}</span>
+              <span class="block text-[11px] text-amber-200/90 font-semibold">{{ m.minutes }}</span>
+              <span class="block text-[10px] text-cyan-100/70 leading-snug mt-0.5">{{ m.desc }}</span>
+            </span>
           </button>
+        </div>
+      </div>
+
+      <!-- Sector -->
+      <div class="mt-5 w-full max-w-md">
+        <p class="text-xs text-cyan-300/50 mb-2 tracking-widest">SECTOR</p>
+        <div class="grid grid-cols-5 gap-1.5">
+          <button
+            v-for="sc in SECTORS"
+            :key="sc.n"
+            class="sector-btn"
+            :class="{ 'sector-btn--active': sector === sc.n, 'sector-btn--locked': sc.n > profile.sectorUnlocked }"
+            :title="sc.n > profile.sectorUnlocked ? 'Ganá el sector anterior para desbloquearlo' : sc.name"
+            @click="pickSector(sc.n)"
+          >
+            {{ sc.n > profile.sectorUnlocked ? '🔒' : sc.n }}
+          </button>
+        </div>
+        <div class="mt-2 text-[11px] text-cyan-200/70">
+          <b class="text-cyan-100">{{ SECTORS[sector - 1].name }}</b>
+          · enemigos +{{ Math.round((SECTORS[sector - 1].hpMult - 1) * 100) }}% vida
+          <span v-if="SECTORS[sector - 1].newEnemies.length" class="text-fuchsia-300">
+            · nuevo: {{ SECTORS[sector - 1].newEnemies.map((e) => ENEMY_NAMES[e] || e).join(', ') }}
+          </span>
         </div>
       </div>
 
@@ -184,6 +248,7 @@ function joinGame() {
       <div class="mt-10 text-[11px] text-cyan-300/40 space-y-1">
         <p>Clic en una estructura del panel inferior y clic en el mapa para construir.</p>
         <p>Clic derecho o Esc para cancelar · usa Nodos para extender la red.</p>
+        <p>Habilidades del comandante: Z Mega Rayo · C EMP · V Reparación · B Bombardeo · N adelanta la oleada.</p>
       </div>
     </div>
   </div>
@@ -193,7 +258,7 @@ function joinGame() {
 @reference 'tailwindcss';
 
 .lobby {
-  @apply absolute inset-0 flex items-center justify-center overflow-y-auto py-8;
+  @apply absolute inset-0 flex justify-center overflow-y-auto overflow-x-hidden py-8;
   background: radial-gradient(ellipse at 50% 40%, #0e1b33 0%, #05070f 70%);
 }
 
@@ -218,6 +283,41 @@ function joinGame() {
          bg-cyan-300 hover:bg-cyan-200 active:scale-95 transition-all;
   box-shadow: 0 0 30px rgba(108, 200, 255, 0.5);
 }
+
+.menu-btn {
+  @apply px-4 py-1.5 text-sm font-semibold rounded-lg bg-white/5 ring-1 ring-cyan-400/25
+         text-cyan-100 hover:bg-cyan-400/15 active:scale-95 transition-all;
+}
+.menu-btn--shop {
+  @apply ring-amber-300/40 text-amber-100 hover:bg-amber-400/15;
+  box-shadow: 0 0 14px rgba(255, 176, 46, 0.25);
+}
+.lvl-badge {
+  @apply w-9 h-9 shrink-0 flex items-center justify-center rounded-lg font-extrabold text-[#05070f] bg-cyan-300;
+  box-shadow: 0 0 14px rgba(139, 233, 253, 0.5);
+}
+.mode-card {
+  @apply relative overflow-hidden rounded-xl ring-1 ring-cyan-400/20 text-left transition-all
+         hover:ring-cyan-300/50 active:scale-[0.98];
+  min-height: 9rem;
+}
+.mode-card--active {
+  @apply ring-2 ring-cyan-300;
+  box-shadow: 0 0 22px rgba(108, 200, 255, 0.35);
+}
+.mode-art {
+  @apply absolute inset-0 w-full h-full object-cover opacity-60;
+}
+.mode-body {
+  @apply relative block p-3 pt-12 h-full;
+  background: linear-gradient(to top, rgba(5, 7, 15, 0.95) 35%, rgba(5, 7, 15, 0));
+}
+.sector-btn {
+  @apply py-1.5 rounded-md text-sm font-bold bg-white/5 ring-1 ring-cyan-400/20 text-cyan-100
+         hover:bg-cyan-400/10 transition-colors;
+}
+.sector-btn--active { @apply bg-cyan-400/25 ring-cyan-300 text-white; }
+.sector-btn--locked { @apply opacity-40 cursor-not-allowed; }
 
 .mp-btn {
   @apply px-4 py-1.5 text-sm rounded-md bg-white/5 ring-1 ring-cyan-400/20

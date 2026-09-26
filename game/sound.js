@@ -42,8 +42,8 @@ const beds = {}               // camas en loop (movimiento de naves)
 const music = { buffers: {}, node: null, gain: null, lfo: null, name: null, want: null, loaded: false }
 
 export function initSound(scene) {
-  if (ctx) return
-  ctx = scene?.sound?.context || null // null si Phaser cae a HTML5 audio → silencio
+  if (master) return
+  ctx = ctx || scene?.sound?.context || null // null si Phaser cae a HTML5 audio → silencio
   if (!ctx) return
   master = ctx.createGain()
   master.gain.value = 0.7
@@ -52,6 +52,19 @@ export function initSound(scene) {
   comp.connect(ctx.destination)
   buildReverb()
   loadAudio()
+}
+
+// Menús (lobby/tienda): crea el contexto propio en el primer gesto del usuario. Si luego
+// arranca Phaser, initSound reutiliza este mismo contexto.
+export function initUiSound() {
+  if (typeof window === 'undefined') return
+  if (!ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext
+    if (!AC) return
+    try { ctx = new AC() } catch { return }
+  }
+  if (ctx.state === 'suspended') ctx.resume()
+  initSound(null)
 }
 
 export function setMasterVolume(v) {
@@ -251,4 +264,107 @@ export function updateShipBeds(light, heavy) {
 // Llamar cada frame: mantiene el centro de cámara para espacializar los SFX.
 export function updateSound(cx, cy, viewW) {
   view.cx = cx; view.cy = cy; view.w = viewW || view.w
+}
+
+// ------------------------------------------------ SFX sintetizados (Fase 10: habilidades y UI)
+// Todo con osciladores + ruido: no pesan nada y no requieren samples nuevos.
+function out(vol, pan) {
+  const g = ctx.createGain()
+  g.gain.value = vol
+  if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = pan; g.connect(p); p.connect(master) }
+  else g.connect(master)
+  return g
+}
+
+function sweep({ type = 'sine', f0, f1, dur, gain = 0.2, at = 0, pan = 0, vol = 1 }) {
+  const t = ctx.currentTime + at
+  const g = out(1, pan)
+  g.gain.setValueAtTime(0.0001, t)
+  g.gain.exponentialRampToValueAtTime(gain * vol, t + Math.min(0.03, dur * 0.2))
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+  const o = ctx.createOscillator()
+  o.type = type
+  o.frequency.setValueAtTime(f0, t)
+  o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur)
+  o.connect(g)
+  o.start(t)
+  o.stop(t + dur + 0.02)
+}
+
+let noiseBuf = null
+function noise({ dur, gain = 0.2, at = 0, pan = 0, vol = 1, lp = 2000 }) {
+  if (!noiseBuf) {
+    noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate)
+    const d = noiseBuf.getChannelData(0)
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1
+  }
+  const t = ctx.currentTime + at
+  const src = ctx.createBufferSource()
+  src.buffer = noiseBuf
+  const f = ctx.createBiquadFilter()
+  f.type = 'lowpass'
+  f.frequency.setValueAtTime(lp, t)
+  f.frequency.exponentialRampToValueAtTime(80, t + dur)
+  const g = out(1, pan)
+  g.gain.setValueAtTime(gain * vol, t)
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+  src.connect(f); f.connect(g)
+  src.start(t)
+  src.stop(t + dur + 0.02)
+}
+
+function at(x, y) { return x == null ? { pan: 0, vol: 1 } : spatial(x, y) }
+
+export function sfxCharge(x, y, ms = 800) {
+  if (!ctx) return
+  const { pan, vol } = at(x, y)
+  sweep({ type: 'sawtooth', f0: 90, f1: 900, dur: ms / 1000, gain: 0.12, pan, vol })
+  sweep({ type: 'sine', f0: 180, f1: 1800, dur: ms / 1000, gain: 0.08, pan, vol })
+}
+
+export function sfxMegaBeam(x, y) {
+  if (!ctx) return
+  const { pan, vol } = at(x, y)
+  noise({ dur: 0.9, gain: 0.5, pan, vol, lp: 5000 })
+  sweep({ type: 'sawtooth', f0: 420, f1: 40, dur: 1.1, gain: 0.3, pan, vol })
+  sweep({ type: 'square', f0: 1200, f1: 200, dur: 0.5, gain: 0.08, pan, vol })
+  playSample('laser', x, y, { gain: 1.2, rate: 0.45, bass: 12, reverb: 0.6, throttleMs: 0 })
+}
+
+export function sfxEmp(x, y) {
+  if (!ctx) return
+  const { pan, vol } = at(x, y)
+  sweep({ type: 'sine', f0: 160, f1: 30, dur: 0.8, gain: 0.5, pan, vol })
+  sweep({ type: 'triangle', f0: 2400, f1: 120, dur: 0.6, gain: 0.12, pan, vol })
+  noise({ dur: 0.5, gain: 0.25, pan, vol, lp: 1500 })
+}
+
+export function sfxRepair(x, y) {
+  if (!ctx) return
+  const { pan, vol } = at(x, y)
+  ;[523, 659, 784, 1047].forEach((f, i) => sweep({ type: 'sine', f0: f, f1: f * 1.01, dur: 0.25, gain: 0.12, at: i * 0.07, pan, vol }))
+}
+
+export function sfxStrike(x, y) {
+  if (!ctx) return
+  const { pan, vol } = at(x, y)
+  sweep({ type: 'sine', f0: 1800, f1: 300, dur: 0.9, gain: 0.08, pan, vol }) // silbido de caída
+}
+
+export function sfxUi(kind = 'click') {
+  if (!ctx) return
+  if (kind === 'click') sweep({ type: 'triangle', f0: 880, f1: 660, dur: 0.06, gain: 0.08 })
+  else if (kind === 'hover') sweep({ type: 'sine', f0: 1400, f1: 1500, dur: 0.03, gain: 0.03 })
+  else if (kind === 'error') sweep({ type: 'square', f0: 180, f1: 120, dur: 0.14, gain: 0.07 })
+}
+
+export function sfxPurchase() {
+  if (!ctx) return
+  ;[988, 1319, 1976].forEach((f, i) => sweep({ type: 'triangle', f0: f, f1: f, dur: 0.18, gain: 0.1, at: i * 0.06 }))
+  noise({ dur: 0.35, gain: 0.05, lp: 9000, at: 0.1 })
+}
+
+export function sfxLevelUp() {
+  if (!ctx) return
+  ;[392, 523, 659, 784, 1047].forEach((f, i) => sweep({ type: 'sawtooth', f0: f, f1: f, dur: 0.22, gain: 0.07, at: i * 0.09 }))
 }

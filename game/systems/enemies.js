@@ -47,7 +47,9 @@ export function nearestStructure(scene, x, y) {
 }
 
 export function killEnemy(scene, e) {
+  if (e.dead) return
   e.dead = true
+  gameState.kills++
   gameState.minerals = Math.min(gameState.mineralsCap, gameState.minerals + e.def.reward)
   spawnFloatingText(scene, e.x, e.y, `+${e.def.reward}`, '#49e07a')
   explosion(scene, e.x, e.y, e.def.color, 14 * e.def.scale)

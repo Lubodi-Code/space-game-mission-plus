@@ -10,3 +10,8 @@ assets-src
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
+
+# secretos locales
+.env
+.env.*
+!.env.example

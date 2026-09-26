@@ -1,26 +1,48 @@
+import { appState } from '../appState.js'
+
 // Modos de juego como datos. Un modo describe las reglas que varían entre partidas
-// (cuántas oleadas, ritmo del intermedio). El selector del lobby elige `appState.mode`;
+// (ritmo, economía, cantidad de enemigos). El selector del lobby elige `appState.mode`;
 // systems/waves.js lo lee en initWaves/updateWaves. Añadir un modo = una entrada aquí.
 //
-// ponytail: hoy los modos solo difieren en waveCount + intermissionMs (knobs que antes
-// eran constantes). Cuando un modo necesite reglas propias (objetivo distinto, worldgen,
-// estado inicial), agrégale un campo aquí y léelo donde toque — no hace falta más maquinaria.
+// - waveBudgetMs: tiempo máximo de una oleada. Si no se limpió a tiempo, la siguiente entra
+//   igual y los enemigos se acumulan. Es lo que acota la duración total de la partida.
+// - countScale: multiplica la cantidad de enemigos por oleada (encima de la dificultad).
+// - economyMult: minería (recolectores + General) y minerales iniciales.
+// - buildTimeMult: tiempo de construcción de estructuras.
 
 export const MODES = {
-  campaign: {
-    id: 'campaign',
-    label: 'Campaña',
-    desc: '10 oleadas. El modo clásico.',
+  quick: {
+    id: 'quick',
+    label: 'Rápido',
+    desc: '10 oleadas en 5–10 minutos. Economía acelerada, sin respiro.',
+    minutes: '5–10 min',
+    art: '/assets/art/mode-quick.webp',
     waveCount: 10,
-    intermissionMs: 4000,
+    firstWaveMs: 8000,
+    intermissionMs: 3000,
+    waveBudgetMs: 38000,
+    countScale: 0.45,
+    economyMult: 1.8,
+    buildTimeMult: 0.5,
   },
-  blitz: {
-    id: 'blitz',
-    label: 'Blitz',
-    desc: '6 oleadas, sin respiro.',
-    waveCount: 6,
-    intermissionMs: 1800,
+  classic: {
+    id: 'classic',
+    label: 'Clásico',
+    desc: '10 oleadas en 10–15 minutos. El modo estratégico de siempre.',
+    minutes: '10–15 min',
+    art: '/assets/art/mode-classic.webp',
+    waveCount: 10,
+    firstWaveMs: 15000,
+    intermissionMs: 6000,
+    waveBudgetMs: 75000,
+    countScale: 0.8,
+    economyMult: 1.15,
+    buildTimeMult: 0.85,
   },
 }
 
-export const DEFAULT_MODE = 'campaign'
+export const DEFAULT_MODE = 'classic'
+
+export function currentMode() {
+  return MODES[appState.mode] || MODES[DEFAULT_MODE]
+}
