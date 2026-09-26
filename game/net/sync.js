@@ -216,6 +216,8 @@ export function applySnapshot(scene, snap) {
       spr.glow = scene.add.image(x, y, REGISTRY[type].textureKey)
         .setScale(1.3).setAlpha(0.35).setBlendMode(glowBlend()).setDepth(14)
       spr.tx = x; spr.ty = y
+      spr.type = type
+      scene.cam?.ignore([spr, spr.glow])
       scene.eById.set(id, spr)
       spawnMarker(scene, x, y)
     }

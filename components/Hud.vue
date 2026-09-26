@@ -12,6 +12,7 @@ import { levelFromXp, profile } from '~/game/meta/profile'
 import { appState } from '~/game/appState'
 import { IS_TOUCH } from '~/game/quality'
 import { EnemyType, REGISTRY } from '~/game/enemies/EnemyType'
+import { sfxWaveStart, sfxCoreAlarm, sfxVictory, sfxDefeat } from '~/game/sound'
 
 // Mapeo de tipos de enemigos a nombres legibles
 const ENEMY_LABELS = {
@@ -67,6 +68,16 @@ const activeLabel = computed(() => {
 const coreHpPct = computed(() =>
   Math.max(0, Math.round((gameState.coreHp / gameState.coreHpMax) * 100))
 )
+
+watch(coreHpPct, (pct, previous) => {
+  if (gameState.status === 'playing' && pct < 25 && pct < previous) sfxCoreAlarm()
+})
+
+watch(() => gameState.status, (status, previous) => {
+  if (status === previous) return
+  if (status === 'victory') sfxVictory()
+  else if (status === 'gameover') sfxDefeat()
+})
 
 const energyLabel = computed(() => `${Math.round(gameState.energy)} / ${gameState.energyMax}`)
 const brownout = computed(() => gameState.energy < 1)
@@ -166,6 +177,7 @@ watch(() => gameState.wave, (newVal, oldVal) => {
   if (newVal > 0) {
     if (waveBannerTimer) clearTimeout(waveBannerTimer)
     const isBoss = gameState.bossWave
+    sfxWaveStart(isBoss)
     const text = isBoss ? `⚠ OLEADA ${newVal} — JEFE` : `OLEADA ${newVal}`
     waveBanner.value = { text, isBoss }
     waveBannerTimer = setTimeout(() => { waveBanner.value = null }, 1800)

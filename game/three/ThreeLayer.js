@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { createCommanderShip } from './shipModel.js'
+import { createCommanderShip, createEnemyShipModel } from './shipModel.js'
 import { createSectorBackdrop } from './sectorBackdrop.js'
 import { createStructureModel } from './structureModels.js'
 import { createExplosion, createMissileModel } from './fxModels.js'
@@ -9,8 +9,10 @@ import { appState } from '~/game/appState.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { WORLD } from '~/game/balance.js'
 import { LOW_GFX, RENDER_SCALE } from '~/game/quality.js'
+import { REGISTRY } from '~/game/enemies/EnemyType.js'
+import { updateTiltCamera } from './tilt.js'
 
-// Capa de render 3D (Three.js) que vive DETRÁS del canvas de Phaser (canvas transparente al frente).
+// Capa de render 3D (Three.js) que vive detrás del canvas invisible de Phaser.
 // Modo actual: FONDO 3D + METEORITOS 3D + explosiones. Dibuja el fondo espacial (estrellas con
 // twinkle + nebulosas con parallax), los meteoritos (malla OBJ con texturas PBR, ver _loadMeteor/
 // sync) y las explosiones. El resto del gameplay (estructuras/enemigos), el selector, los enlaces,
@@ -99,26 +101,32 @@ function darken(hex, f = 0.22) {
 }
 
 export class ThreeLayer {
-  constructor(parent, phaserCanvas) {
+  constructor(parent, phaserCanvas, game) {
     this.parent = parent
+    // GameScene debe pasar `this.game` como tercer argumento para dibujar tras Phaser.
+    this.game = game
+    this.pendingRender = false
     this.tickPrev = performance.now()
     this.viewCenter = { x: WORLD.width / 2, y: WORLD.height / 2 }
 
     const renderer = new THREE.WebGLRenderer({ antialias: RENDER_SCALE < 2, alpha: false, powerPreference: 'high-performance' })
     // En móvil renderizar a 1x: el DPR 2-3x de los celulares multiplica los píxeles x4-9 y hunde los FPS.
-    // resize() recibe el tamaño FÍSICO del canvas de Phaser (ya × RENDER_SCALE): ratio 1 aquí.
+    // resize() usa el ancho físico de Phaser y el alto físico visible del contenedor.
     renderer.setPixelRatio(1)
     renderer.autoClear = false
     renderer.setClearColor(0x010104, 1)
     const cv = renderer.domElement
     cv.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;z-index:0;pointer-events:none'
     parent.insertBefore(cv, parent.firstChild)
-    // Canvas de Phaser (transparente) ENCIMA de Three: z-index 1. El HUD de Vue debe tener un
+    // Canvas de Phaser invisible ENCIMA de Three para recibir input. El HUD de Vue debe tener un
     // z-index mayor para seguir recibiendo clics por encima del juego.
     if (phaserCanvas) {
       phaserCanvas.style.position = 'absolute'
       phaserCanvas.style.zIndex = '1'
       phaserCanvas.style.background = 'transparent'
+      phaserCanvas.style.width = '100%'
+      phaserCanvas.style.height = '100%'
+      phaserCanvas.style.opacity = '0'
     }
     this.renderer = renderer
 
@@ -130,16 +138,30 @@ export class ThreeLayer {
     this._loader = new THREE.TextureLoader()
 
     this._buildGameScene()
+    if (phaserCanvas) {
+      this.boardTexture = new THREE.CanvasTexture(phaserCanvas)
+      this.boardTexture.colorSpace = THREE.SRGBColorSpace
+      this.board = new THREE.Mesh(
+        new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({
+          map: this.boardTexture, transparent: true, premultipliedAlpha: true,
+          depthTest: false, depthWrite: false, side: THREE.DoubleSide,
+        }),
+      )
+      this.board.renderOrder = 10000
+      this.scene.add(this.board)
+    }
     this._buildBackground()
 
     this.meshes = new Map()   // objeto de juego -> { root, ... }
+    this.enemyModels = new Map() // Enemy host o sprite remoto -> nave 3D
     this.meteors = new Map()  // meteorito de juego -> { mesh, baseScale, spin, axis, dying, dieT }
     this.explosions = []
     this.nexus = null         // núcleo 3D (se crea en sync cuando existe el core)
     this._loadMeteor()
 
-    this.resize(phaserCanvas?.width || (parent.clientWidth || window.innerWidth) * RENDER_SCALE,
-      phaserCanvas?.height || (parent.clientHeight || window.innerHeight) * RENDER_SCALE)
+    this.resize(phaserCanvas?.width || Math.round((parent.clientWidth || window.innerWidth) * RENDER_SCALE))
+    if (game) game.events.on('postrender', this._onPostRender, this)
   }
 
   tex(url) {
@@ -439,15 +461,14 @@ export class ThreeLayer {
     const sk = cam.shakeEffect
     const ox = sk && sk.isRunning ? sk._offsetX : 0
     const oy = sk && sk.isRunning ? sk._offsetY : 0
-    // Frustum en coords de MUNDO con la cámara en el origen: left/right/top/bottom
-    // son relativos a la posición de la cámara, así que NO la movemos (si la moviéramos
-    // al centro se duplicaría el offset y todo quedaría fuera de vista). top<bottom invierte Y.
-    this.camera.left = wv.x - ox
-    this.camera.right = wv.x + wv.width - ox
-    this.camera.top = wv.y - oy
-    this.camera.bottom = wv.y + wv.height - oy
-    this.camera.position.set(0, 0, 600)
-    this.camera.updateProjectionMatrix()
+    const view = { x: wv.x - ox, y: wv.y - oy, width: wv.width, height: wv.height }
+    const canvas = this.renderer.domElement
+    updateTiltCamera(this.camera, view, { w: canvas.width, h: canvas.height })
+    if (this.board) {
+      this.board.position.set(view.x + view.width / 2, view.y + view.height / 2, 0)
+      // PlaneGeometry tiene UV superior en +Y; el mundo de Phaser crece hacia abajo.
+      this.board.scale.set(view.width, -view.height, 1)
+    }
     this.viewCenter.x = wv.x + wv.width / 2
     this.viewCenter.y = wv.y + wv.height / 2
   }
@@ -459,6 +480,7 @@ export class ThreeLayer {
     this._syncNexus(scene)
     this._syncGenerals(scene)
     this._syncStructures(scene)
+    this._syncEnemies(scene)
     this._syncMissiles(scene)
     if (!this.meteorGeo || !scene?.meteorites) return
     for (const m of scene.meteorites) {
@@ -496,17 +518,18 @@ export class ThreeLayer {
   // la última mejora en 3D y animación al mejorar. El núcleo sigue con _syncNexus. Las formas 2D
   // de Phaser se ocultan de la cámara principal; barras de vida/construcción siguen en 2D.
   _syncStructures(scene) {
-    if (!scene?.structures || scene.remote) return
+    const structures = scene?.remote ? [...(scene.sById?.values() || [])] : scene?.structures
+    if (!structures) return
     this.structs ||= new Map()
     const now = performance.now()
     const dt = Math.min(0.05, (now - (this._structPrev || now)) / 1000)
     this._structPrev = now
     for (const [s, e] of this.structs) {
-      if (s.dead || !scene.structures.includes(s)) {
+      if (s.dead || !structures.includes(s)) {
         this.scene.remove(e.root); e.root.userData.dispose(); this.structs.delete(s)
       }
     }
-    for (const s of scene.structures) {
+    for (const s of structures) {
       if (s.isCore || s.dead) continue
       let e = this.structs.get(s)
       if (!e) {
@@ -517,6 +540,7 @@ export class ThreeLayer {
         e = { root, color: null, decorN: 0, powered: null }
         this.structs.set(s, e)
       }
+      e.root.position.set(s.x, s.y, 4)
       const u = e.root.userData
       if (s._accent && !e.accentHidden) { scene.cam?.ignore(s._accent); e.accentHidden = true }
       const col = s.fxColor || s.def.color
@@ -533,6 +557,60 @@ export class ThreeLayer {
       u.setBuilding(s.building ? s.buildProgress / (s.buildTime || 1) : 1)
       if (s.aimAngle != null) u.setAim(s.aimAngle)
       u.update(dt, now)
+    }
+  }
+
+  // Naves enemigas 3D: el simulador sigue siendo Phaser, pero el cuerpo visible vive aquí.
+  // El mismo reconciliador sirve para host y cliente remoto (que expone sprites interpolados).
+  _syncEnemies(scene) {
+    const enemies = scene?.remote ? [...(scene.eById?.values() || [])] : scene?.enemies
+    if (!enemies) return
+    const live = new Set()
+    for (const enemy of enemies) {
+      if (!enemy || enemy.dead || (scene.remote && enemy.visible === false)) continue
+      const def = scene.remote ? REGISTRY[enemy.type] : enemy.def
+      if (!def) continue
+      live.add(enemy)
+      let entry = this.enemyModels.get(enemy)
+      if (!entry) {
+        const radius = scene.remote
+          ? 12 * 0.5 * (enemy.escala || def.scale || 1)
+          : enemy.radius
+        const root = createEnemyShipModel({ tint: def.color, radius, type: enemy.type || 'grunt' })
+        const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: this.glowTex, color: def.color, transparent: true, opacity: 0.32,
+          blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+        }))
+        halo.scale.set(radius * 4.4, radius * 4.4, 1)
+        halo.position.z = -2
+        root.add(halo)
+        this.scene.add(root)
+        const phaserObjects = scene.remote ? [enemy, enemy.glow] : [enemy.sprite, enemy.glow]
+        scene.cam?.ignore(phaserObjects.filter(Boolean))
+        entry = { root, halo, radius, lastHeading: null, bank: 0 }
+        this.enemyModels.set(enemy, entry)
+      }
+      const x = scene.remote ? enemy.x : enemy.x
+      const y = scene.remote ? enemy.y : enemy.y
+      const heading = Number.isFinite(enemy.heading) ? enemy.heading : 0
+      const turn = entry.lastHeading == null ? 0 : Math.atan2(Math.sin(heading - entry.lastHeading), Math.cos(heading - entry.lastHeading))
+      entry.lastHeading = heading
+      entry.bank = entry.bank * 0.88 + Math.max(-0.36, Math.min(0.36, turn * 5))
+      entry.root.visible = scene.remote ? enemy.visible !== false : !enemy.dead
+      entry.root.position.set(x, y, 12)
+      entry.root.rotation.x = -0.24 + entry.bank
+      entry.root.rotation.z = heading
+      const pulse = 0.24 + Math.sin(performance.now() * 0.008 + heading) * 0.08
+      entry.halo.material.opacity = pulse
+      const stun = scene.remote ? false : enemy.stunMs > 0
+      entry.halo.material.color.setHex(stun ? 0x8be9fd : def.color)
+      if (entry.root.userData.engine) entry.root.userData.engine.material.color.setHex(stun ? 0x8be9fd : def.color)
+    }
+    for (const [enemy, entry] of this.enemyModels) {
+      if (!live.has(enemy)) {
+        this._dispose(entry)
+        this.enemyModels.delete(enemy)
+      }
     }
   }
 
@@ -563,34 +641,38 @@ export class ThreeLayer {
   // Misma nave que la vitrina de la tienda (shipModel.js). El sprite 2D se oculta de la
   // cámara principal pero sigue en el minimapa. Solo host/solo (scene.generals).
   _syncGenerals(scene) {
-    if (!scene?.generals) return
+    const generals = scene?.remote ? [...(scene.genSprites?.values() || [])] : [...(scene.generals?.values() || [])]
+    if (!generals.length) return
     this.gens ||= new Map()
     for (const [g, e] of this.gens) {
-      if (![...scene.generals.values()].includes(g)) { this.scene.remove(e.root); e.root.userData.dispose(); this.gens.delete(g) }
+      if (!generals.includes(g)) { this.scene.remove(e.root); e.root.userData.dispose(); this.gens.delete(g) }
     }
-    for (const g of scene.generals.values()) {
+    for (const g of generals) {
       let e = this.gens.get(g)
       if (!e) {
-        const root = createCommanderShip(g.tint, g.beamSkin ? equipped('design')?.design : 'falcon')
+        const tint = scene.remote ? (g.tintTopLeft || 0x8be9fd) : g.tint
+        const root = createCommanderShip(tint, !scene.remote && g.beamSkin ? equipped('design')?.design : 'falcon')
         root.scale.setScalar(0.62)
         this.scene.add(root)
-        scene.cam?.ignore(g.sprite)
+        scene.cam?.ignore(scene.remote ? [g, g.label].filter(Boolean) : g.sprite)
         e = { root, tint: g.tint }
         this.gens.set(g, e)
       }
-      if (e.tint !== g.tint) { e.root.userData.setTint(g.tint); e.tint = g.tint }
-      e.root.visible = g.alive
+      const tint = scene.remote ? (g.tintTopLeft || 0x8be9fd) : g.tint
+      if (e.tint !== tint) { e.root.userData.setTint(tint); e.tint = tint }
+      const alive = scene.remote ? g.visible !== false : g.alive
+      e.root.visible = alive
       e.root.position.set(g.x, g.y, 20)
-      const rot = g.sprite.rotation
-      e.root.rotation.set(0, 0, rot)
+      const rot = scene.remote ? (g.rotation || 0) : g.sprite.rotation
+      e.root.rotation.set(-0.16, 0, rot)
       // Alabeo al girar: se nota el volumen 3D.
       const turn = rot - (e.lastRot ?? rot)
       e.lastRot = rot
       e.bank = (e.bank || 0) * 0.9 + Math.max(-0.5, Math.min(0.5, turn * 8))
-      e.root.rotateX(e.bank)
+      e.root.rotation.x = -0.16 + e.bank
       const pulse = 0.8 + 0.25 * Math.sin(performance.now() * 0.02)
       e.root.userData.engine.scale.setScalar(pulse)
-      if (g.beamSkin) this._updateTrail(e, g, rot)
+      if (!scene.remote && g.beamSkin) this._updateTrail(e, g, rot)
     }
   }
 
@@ -976,6 +1058,20 @@ export class ThreeLayer {
 
   // -------------------------------------------------------------------- render
   render(timeMs) {
+    if (this.game) {
+      this.pendingRender = true
+      return
+    }
+    this._renderFrame()
+  }
+
+  _onPostRender() {
+    if (!this.pendingRender) return
+    this.pendingRender = false
+    this._renderFrame()
+  }
+
+  _renderFrame() {
     const now = performance.now()
     const dt = Math.min(0.05, (now - this.tickPrev) / 1000)
     this.tickPrev = now
@@ -1011,12 +1107,14 @@ export class ThreeLayer {
     r.clear()
     r.render(this.bgScene, this.bgCamera)
     r.clearDepth()
+    if (this.boardTexture) this.boardTexture.needsUpdate = true
     r.render(this.scene, this.camera)
   }
 
-  resize(w, h) {
-    this.renderer.setSize(w, h, false)
-    this.bgCamera.aspect = w / h
+  resize(w, _phaserHeight) {
+    const screenHeight = Math.round((this.parent.clientHeight || window.innerHeight) * RENDER_SCALE)
+    this.renderer.setSize(w, screenHeight, false)
+    this.bgCamera.aspect = w / screenHeight
     this.bgCamera.updateProjectionMatrix()
     this.backdrop?.fit(this.bgCamera)
   }
@@ -1078,6 +1176,13 @@ export class ThreeLayer {
   }
 
   dispose() {
+    this.game?.events.off('postrender', this._onPostRender, this)
+    if (this.board) {
+      this.scene.remove(this.board)
+      this.board.geometry.dispose()
+      this.board.material.dispose()
+      this.boardTexture.dispose()
+    }
     if (this.nexus) { this._dispose(this.nexus); this.nexus = null; this.nexusCore = null }
     for (const [, e] of this.meshes) this._dispose(e)
     this.meshes.clear()
@@ -1099,6 +1204,7 @@ export class ThreeLayer {
     for (const [, e] of this.structs || []) e.root.userData.dispose()
     for (const [, m] of this.missiles || []) m.userData.dispose()
     for (const [, e] of this.gens || []) { e.root.userData.dispose(); e.trail?.geometry.dispose(); e.trail?.material.dispose() }
+    for (const [, e] of this.enemyModels || []) this._dispose(e)
     for (const f of this.fx || []) f.dispose()
     this.nebulaAlpha?.dispose()
     this.backdrop?.dispose()

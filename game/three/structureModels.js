@@ -6,7 +6,8 @@ export const DECORS = ['fast', 'triple', 'wide', 'heavy', 'pods', 'plasma', 'lon
 export function createStructureModel({ role, sides, size, color, isCore }) {
   const root = new THREE.Group()
   const model = new THREE.Group()
-  model.rotation.x = -0.45
+  // Perspectiva cenital suave: deja ver las paredes y los adornos 3D sin inclinar el mapa completo.
+  model.rotation.x = -0.34
   root.add(model)
   const r = Math.max(1, size || 10)
   const count = Math.max(3, Math.round(sides || 6))
