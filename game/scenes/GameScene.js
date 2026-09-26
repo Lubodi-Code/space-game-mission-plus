@@ -20,6 +20,7 @@ import { populateMeteorites } from '~/game/systems/worldgen.js'
 import { initWaves, updateWaves, enemyStatMult, callWaveEarly } from '~/game/systems/waves.js'
 import { recomputeNetwork as recomputeNetworkSys } from '~/game/systems/energyNet.js'
 import { ThreeLayer } from '~/game/three/ThreeLayer.js'
+import { installTiltInput } from '~/game/input/tiltInput.js'
 import { explosion as explosionFx, drawFx, drawPlayerCursor, upgradeBurst } from '~/game/render/fx.js'
 import { updateProjectiles } from '~/game/systems/projectiles.js'
 import { updateHealers } from '~/game/systems/healers.js'
@@ -90,7 +91,11 @@ export class GameScene extends Phaser.Scene {
     this.remote = !net.isHost && net.conns.length > 0
 
     // Capa de render 3D (fondo + meteoritos + explosiones) — compartida entre host y cliente.
-    this.three = new ThreeLayer(this.game.canvas.parentElement, this.game.canvas)
+    this.three = new ThreeLayer(this.game.canvas.parentElement, this.game.canvas, this.game)
+    if (!this.game._tiltInputInstalled) {
+      installTiltInput(this.game, () => this.three)
+      this.game._tiltInputInstalled = true
+    }
     initSound(this)
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.render3D, this)
 

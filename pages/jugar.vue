@@ -21,6 +21,7 @@ useHead({
       <GameCanvas />
       <!-- Vue HUD overlay on top of the canvas -->
       <Hud />
+      <Tutorial v-if="appState.view === 'game'" :solo="appState.mp.role === 'solo'" />
     </template>
   </div>
 </template>

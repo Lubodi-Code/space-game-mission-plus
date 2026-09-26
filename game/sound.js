@@ -34,7 +34,11 @@ const MUSIC_VOL = 0.5
 
 let ctx = null
 let master = null
+let musicBus = null
+let sfxBus = null
 let reverbBus = null
+const audioPrefs = { music: 1, sfx: 1 }
+let prefsLoaded = false
 const view = { cx: 0, cy: 0, w: 1920 }
 const lastAt = {}
 const buffers = {}            // nombre → AudioBuffer (samples)
@@ -45,9 +49,16 @@ export function initSound(scene) {
   if (master) return
   ctx = ctx || scene?.sound?.context || null // null si Phaser cae a HTML5 audio → silencio
   if (!ctx) return
+  loadAudioPrefs()
   master = ctx.createGain()
   master.gain.value = 0.7
+  musicBus = ctx.createGain()
+  sfxBus = ctx.createGain()
+  musicBus.gain.value = audioPrefs.music
+  sfxBus.gain.value = audioPrefs.sfx
   const comp = ctx.createDynamicsCompressor() // techo suave para que los graves no saturen
+  musicBus.connect(master)
+  sfxBus.connect(master)
   master.connect(comp)
   comp.connect(ctx.destination)
   buildReverb()
@@ -69,6 +80,39 @@ export function initUiSound() {
 
 export function setMasterVolume(v) {
   if (master) master.gain.value = v
+}
+
+function loadAudioPrefs() {
+  if (prefsLoaded) return
+  prefsLoaded = true
+  try {
+    const saved = JSON.parse(localStorage.getItem('sgmp_audio'))
+    if (Number.isFinite(saved?.music)) audioPrefs.music = Math.max(0, Math.min(1, saved.music))
+    if (Number.isFinite(saved?.sfx)) audioPrefs.sfx = Math.max(0, Math.min(1, saved.sfx))
+  } catch { /* storage no disponible */ }
+}
+
+function saveAudioPrefs() {
+  try { localStorage.setItem('sgmp_audio', JSON.stringify(audioPrefs)) } catch { /* storage no disponible */ }
+}
+
+export function setMusicVolume(v) {
+  loadAudioPrefs()
+  audioPrefs.music = Math.max(0, Math.min(1, Number(v) || 0))
+  if (musicBus) musicBus.gain.value = audioPrefs.music
+  saveAudioPrefs()
+}
+
+export function setSfxVolume(v) {
+  loadAudioPrefs()
+  audioPrefs.sfx = Math.max(0, Math.min(1, Number(v) || 0))
+  if (sfxBus) sfxBus.gain.value = audioPrefs.sfx
+  saveAudioPrefs()
+}
+
+export function getAudioPrefs() {
+  loadAudioPrefs()
+  return { ...audioPrefs }
 }
 
 // ----------------------------------------------------------- carga (música + samples)
@@ -103,7 +147,7 @@ function buildReverb() {
   const wet = ctx.createGain()
   wet.gain.value = 0.9
   conv.connect(wet)
-  wet.connect(master)
+  wet.connect(sfxBus)
   reverbBus = conv
 }
 
@@ -141,7 +185,7 @@ function swapMusic(name, fade = 1.4) {
   lfoDepth.connect(g.gain)
   lfo.start(t)
   src.connect(g)
-  g.connect(master)
+  g.connect(musicBus)
   src.start(t)
   music.node = src; music.gain = g; music.lfo = lfo; music.name = name
 }
@@ -190,9 +234,9 @@ function playSample(name, x, y, { gain = 1, rate = 1, bass = 0, reverb = 0, thro
     const p = ctx.createStereoPanner()
     p.pan.value = pan
     g.connect(p)
-    p.connect(master)
+    p.connect(sfxBus)
   } else {
-    g.connect(master)
+    g.connect(sfxBus)
   }
   if (reverb && reverbBus) {
     const rg = ctx.createGain()
@@ -228,8 +272,8 @@ export function sfxLock(x, y) {
     osc.type = 'sine'
     osc.frequency.value = f
     osc.connect(g)
-    if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = pan; g.connect(p); p.connect(master) }
-    else g.connect(master)
+    if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = pan; g.connect(p); p.connect(sfxBus) }
+    else g.connect(sfxBus)
     osc.start(t)
     osc.stop(t + 0.07)
   }
@@ -247,7 +291,7 @@ function bedTarget(name, count, perUnit, max) {
     const g = ctx.createGain()
     g.gain.value = 0
     src.connect(g)
-    g.connect(master)
+    g.connect(sfxBus)
     src.start()
     b = beds[name] = { gain: g }
   }
@@ -271,8 +315,8 @@ export function updateSound(cx, cy, viewW) {
 function out(vol, pan) {
   const g = ctx.createGain()
   g.gain.value = vol
-  if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = pan; g.connect(p); p.connect(master) }
-  else g.connect(master)
+  if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = pan; g.connect(p); p.connect(sfxBus) }
+  else g.connect(sfxBus)
   return g
 }
 
@@ -429,4 +473,53 @@ export function sfxHeal(x, y) {
 export function sfxLevelUp() {
   if (!ctx) return
   ;[392, 523, 659, 784, 1047].forEach((f, i) => sweep({ type: 'sawtooth', f0: f, f1: f, dur: 0.22, gain: 0.07, at: i * 0.09 }))
+}
+
+// Señales de oleada y estado de la partida.
+export function sfxWaveStart(isBoss) {
+  if (!ctx) return
+  const dur = isBoss ? 1.35 : 0.75
+  sweep({ type: 'sawtooth', f0: isBoss ? 95 : 145, f1: isBoss ? 58 : 105, dur, gain: isBoss ? 0.075 : 0.055 })
+  sweep({ type: 'sine', f0: isBoss ? 72 : 110, f1: isBoss ? 48 : 82, dur: dur + 0.15, gain: 0.16 })
+  if (isBoss) sweep({ type: 'sine', f0: 107, f1: 71, dur: 1.5, gain: 0.07, at: 0.12 })
+}
+
+export function sfxCoreAlarm() {
+  if (!ctx || !throttle('coreAlarm', 2500)) return
+  for (const delay of [0, 0.38]) {
+    sweep({ type: 'triangle', f0: 780, f1: 520, dur: 0.3, gain: 0.09, at: delay })
+    sweep({ type: 'sine', f0: 390, f1: 260, dur: 0.3, gain: 0.07, at: delay })
+  }
+}
+
+export function sfxVictory() {
+  if (!ctx) return
+  ;[[392, 0], [494, 0.32], [587, 0.64], [784, 0.96]].forEach(([f, delay]) => {
+    sweep({ type: 'triangle', f0: f, f1: f * 1.005, dur: 0.65, gain: 0.075, at: delay })
+    sweep({ type: 'sine', f0: f * 1.5, f1: f * 1.5, dur: 0.55, gain: 0.035, at: delay })
+  })
+  ;[392, 494, 587].forEach((f) => sweep({ type: 'sine', f0: f, f1: f, dur: 0.7, gain: 0.055, at: 1.35 }))
+}
+
+export function sfxDefeat() {
+  if (!ctx) return
+  ;[[392, 0], [330, 0.33], [262, 0.66], [196, 0.99]].forEach(([f, delay]) => {
+    sweep({ type: 'triangle', f0: f, f1: f * 0.94, dur: 0.75, gain: 0.07, at: delay })
+    sweep({ type: 'sine', f0: f / 2, f1: f / 2, dur: 0.65, gain: 0.08, at: delay })
+  })
+  sweep({ type: 'sine', f0: 98, f1: 62, dur: 0.8, gain: 0.11, at: 1.3 })
+}
+
+// size es un multiplicador aproximado del tamaño del enemigo.
+export function sfxEnemyDeath(x, y, size = 1) {
+  if (!ctx || !throttle('enemyDeath', 75)) return
+  const { pan, vol } = at(x, y)
+  if (vol <= 0.03) return
+  if (size >= 1.5) {
+    sweep({ type: 'sine', f0: 150, f1: 55, dur: 0.3, gain: 0.14, pan, vol })
+    noise({ dur: 0.17, gain: 0.08, lp: 900, pan, vol })
+  } else {
+    sweep({ type: 'triangle', f0: 1400, f1: 520, dur: 0.11, gain: 0.065, pan, vol })
+    noise({ dur: 0.07, gain: 0.035, lp: 4200, pan, vol })
+  }
 }
