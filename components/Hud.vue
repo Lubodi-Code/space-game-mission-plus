@@ -10,6 +10,7 @@ import { ABILITIES } from '~/game/systems/abilities'
 import { sectorByN } from '~/game/meta/sectors'
 import { levelFromXp, profile } from '~/game/meta/profile'
 import { appState } from '~/game/appState'
+import { IS_TOUCH } from '~/game/quality'
 import { EnemyType, REGISTRY } from '~/game/enemies/EnemyType'
 
 // Mapeo de tipos de enemigos a nombres legibles
@@ -38,7 +39,9 @@ const generalTooltip = {
 }
 
 const speedLabels = ['Pausa', 'Lenta', 'Normal', 'Rápida']
-const speeds = SPEED.steps.map((v, i) => ({ label: speedLabels[i] || v, value: v }))
+const speeds = SPEED.steps
+  .map((v, i) => ({ label: speedLabels[i] || v, value: v }))
+  .filter((sp) => !IS_TOUCH || sp.value !== 0.5) // en móvil: Pausa · Normal · Rápida
 
 function setSpeed(v) {
   bus.emit('speed', v)
@@ -173,7 +176,7 @@ const hoveredStructure = ref(null)
 const tooltipPos = ref({ x: 0, y: 0 })
 const tooltipsDisabled = ref(localStorage.getItem('sgmp_hide_tooltips') === '1')
 function showTooltip(s, event) {
-  if (tooltipsDisabled.value) return
+  if (tooltipsDisabled.value || IS_TOUCH) return // en táctil el "hover" llega al tocar y tapaba todo
   hoveredStructure.value = s
   const rect = event.target.closest('button').getBoundingClientRect()
   tooltipPos.value = { x: rect.left + rect.width / 2, y: rect.top - 8 }
@@ -215,6 +218,19 @@ function callWave() {
 
 // Táctil: no hay clic derecho ni Esc → botón flotante que cancela lo que esté activo.
 const cancelable = computed(() => !!(activeLabel.value || gameState.generalMode === 'selected' || gameState.abilityTargeting))
+function goToEvent() {
+  bus.emit('gotoEvent')
+}
+// Flecha al borde de la pantalla hacia el evento cuando no está a la vista.
+const eventArrow = computed(() => {
+  const ev = gameState.event
+  if (!ev || ev.onScreen) return null
+  const a = ev.angle
+  const x = 50 + Math.cos(a) * 44
+  const y = 50 + Math.sin(a) * 40
+  return { left: x + '%', top: y + '%', transform: `translate(-50%, -50%) rotate(${a}rad)` }
+})
+
 function cancelAll() {
   bus.emit('cancel')
 }
@@ -394,7 +410,7 @@ function polyPoints(sides, radius) {
       >
         ¡Oleada ya! +{{ gameState.nextWaveIn * 4 }} <span class="opacity-50">N</span>
       </button>
-      <div class="text-[10px] text-cyan-400/50">Sector {{ sectorInfo.n }} · {{ sectorInfo.name }}</div>
+      <div class="hud-sector text-[10px] text-cyan-400/50">Sector {{ sectorInfo.n }} · {{ sectorInfo.name }}</div>
 
       <!-- General status (below wave) -->
       <div v-if="gameState.general.alive" class="mt-1 text-xs flex items-center gap-1 text-cyan-300/80">
@@ -491,6 +507,11 @@ function polyPoints(sides, radius) {
           </div>
           <div v-if="gameState.runRewards.levelUp" class="text-amber-300 font-bold animate-pulse">¡Subiste a nivel {{ gameState.runRewards.levelUp }}!</div>
           <div v-if="gameState.runRewards.sectorUnlocked" class="text-fuchsia-300 font-semibold">Sector {{ gameState.runRewards.sectorUnlocked }} desbloqueado</div>
+          <div v-if="gameState.runRewards.newCosmetics?.length" class="mx-auto max-w-xs px-3 py-2 rounded-xl bg-fuchsia-400/10 ring-1 ring-fuchsia-300/40">
+            <div class="text-fuchsia-200 font-bold text-sm">🎁 ¡Cosméticos nuevos!</div>
+            <div class="text-[11px] text-fuchsia-100/80">{{ gameState.runRewards.newCosmetics.join(' · ') }}</div>
+            <div class="text-[10px] text-fuchsia-100/50 mt-0.5">Equipalos en la Tienda</div>
+          </div>
         </div>
         <div class="flex gap-3 justify-center">
           <button
@@ -691,6 +712,18 @@ function polyPoints(sides, radius) {
 
     <AbilityBar v-if="gameState.status === 'playing'" :class="{ 'ability-under-sheet': sheetOpen }" />
 
+    <!-- Evento: meteorito gigante (systems/specialMeteors.js) -->
+    <div v-if="gameState.event?.kind === 'giant' && gameState.status === 'playing'" class="event-card pointer-events-auto">
+      <span class="text-lg">☄</span>
+      <span class="leading-tight">
+        <b class="text-amber-200">Meteorito gigante</b>
+        <span class="block text-[10px] text-amber-100/70">Solo el comandante lo mina · x4 · {{ gameState.event.timeLeft }}s</span>
+      </span>
+      <button v-if="!gameState.event.mining" class="event-go" @click="goToEvent">Ir</button>
+      <span v-else class="text-[10px] text-emerald-200 font-bold">Minando…</span>
+    </div>
+    <div v-if="eventArrow && gameState.status === 'playing'" class="event-arrow" :style="eventArrow">➤</div>
+
     <!-- Cancelar (táctil y también útil con mouse) -->
     <button v-if="cancelable" class="cancel-fab pointer-events-auto" @click="cancelAll">✕ Cancelar</button>
 
@@ -842,6 +875,23 @@ function polyPoints(sides, radius) {
   .build-btn-label { display: none; }
 }
 
+.event-card {
+  @apply absolute left-1/2 -translate-x-1/2 top-12 flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full text-xs
+         bg-[#1a1206]/85 ring-1 ring-amber-300/50;
+  box-shadow: 0 0 18px rgba(255, 210, 74, 0.35);
+  animation: eventIn 0.3s ease-out;
+}
+.event-go {
+  @apply px-3 py-1 rounded-full font-bold text-[#05070f] bg-amber-300 active:scale-95;
+}
+.event-arrow {
+  @apply absolute text-2xl text-amber-300 pointer-events-none;
+  text-shadow: 0 0 10px rgba(255, 210, 74, 0.9);
+  animation: arrowPulse 0.9s ease-in-out infinite;
+}
+@keyframes eventIn { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes arrowPulse { 50% { opacity: 0.45; } }
+
 .sheet-close {
   @apply w-7 h-7 -mr-1 flex items-center justify-center rounded-full bg-white/5 text-cyan-100/70 hover:bg-white/15;
 }
@@ -882,6 +932,7 @@ function polyPoints(sides, radius) {
     width: max-content; max-width: 92vw; text-align: center; font-size: 10px; border-radius: 0.75rem;
   }
   :deep(.ability-under-sheet) { display: none; }
+  .hud-hint, .hud-sector { display: none; }
 }
 @media (max-width: 700px) {
   .hud-topbar .ml-auto > span:first-child { display: none; } /* tiempo: poco espacio */

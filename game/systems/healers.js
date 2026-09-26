@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import { gameState } from '~/game/gameState.js'
-import { HEAL_ORB_COLOR, orbScale } from '~/game/render/fx.js'
+import { HEAL_ORB_COLOR, orbScale, healSparkFx } from '~/game/render/fx.js'
 
 // Esferas sanadoras (estructura Healer). delta en MS; dt en segundos.
 
@@ -68,7 +68,8 @@ export function updateHealers(scene, delta) {
       if (better) h.target = better
       h.retarget = 500
     }
-    const speed = h.owner.def.sphereSpeed
+    // Stats de la ESTRUCTURA (las mejoras las modifican), no del def base.
+    const speed = h.owner.sphereSpeed ?? h.owner.def.sphereSpeed
     let healing = false
     if (h.target) {
       const t = h.target
@@ -87,7 +88,9 @@ export function updateHealers(scene, delta) {
         const cd = h.owner.def.healDamageCooldown || 0
         const onCooldown = cd > 0 && scene.time.now - (t.lastDamaged ?? -Infinity) < cd
         if (!onCooldown) {
-          t.hp = Math.min(t.maxHp, t.hp + h.owner.def.healRate * dt)
+          t.hp = Math.min(t.maxHp, t.hp + (h.owner.healRate ?? h.owner.def.healRate) * dt)
+          h.sparkT = (h.sparkT || 0) - delta
+          if (h.sparkT <= 0) { healSparkFx(scene, t.x, t.y, t.radius); h.sparkT = 380 }
           if (t.isCore) gameState.coreHp = Math.min(t.maxHp, Math.ceil(t.hp))
           t.drawHpBar()
           // Hilo de curación esfera→edificio
@@ -103,7 +106,10 @@ export function updateHealers(scene, delta) {
       h.y += (h.owner.y + Math.sin(a) * 34 - h.y) * 0.05
     }
     h.sprite.setPosition(h.x, h.y)
-    h.sprite.setScale(orbScale(scene.time.now, i, healing))
+    // Nacimiento: crece con rebote en ~350 ms.
+    const age = Math.min(1, (scene.time.now - (h.born ?? 0)) / 350)
+    const pop = age < 1 ? Phaser.Math.Easing.Back.Out(age) : 1
+    h.sprite.setScale(orbScale(scene.time.now, i, healing) * pop)
     h.sprite.setAlpha(healing ? 1 : 0.75)
   }
 }

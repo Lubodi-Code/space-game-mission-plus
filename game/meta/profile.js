@@ -21,8 +21,9 @@ function blank() {
     crystals: 0, // premium: solo lo escribe la sincronización con el servidor (10E)
     research: [],
     sectorUnlocked: 1,
+    maxSectorWon: 0,
     bestWave: {}, // `${mode}:${sector}` → mejor oleada alcanzada
-    cosmetics: { owned: ['beam_default', 'trail_none', 'hull_default'], equipped: { beam: 'beam_default', trail: 'trail_none', hull: 'hull_default' } },
+    cosmetics: { owned: ['beam_default', 'trail_none', 'hull_default'], equipped: { beam: 'beam_default', trail: 'trail_none', hull: 'hull_default', explosion: 'boom_default', nexus: 'nexus_default', turret: 'turret_default' } },
     stats: { runs: 0, wins: 0, kills: 0 },
   }
 }
@@ -40,6 +41,8 @@ function load() {
 }
 
 export const profile = reactive(load())
+// Perfiles viejos (antes de maxSectorWon): ganar el sector N desbloqueaba el N+1.
+profile.maxSectorWon = Math.max(profile.maxSectorWon || 0, (profile.sectorUnlocked || 1) - 1)
 
 if (hasStorage) {
   watch(profile, (p) => {
@@ -78,6 +81,7 @@ export function grantRunRewards({ mode, sector, wave, waveTotal, victory, kills,
   let unlocked = null
   if (victory) {
     profile.stats.wins++
+    profile.maxSectorWon = Math.max(profile.maxSectorWon || 0, sector)
     if (sector >= profile.sectorUnlocked && sector < 10) { profile.sectorUnlocked = sector + 1; unlocked = sector + 1 }
   }
   const after = levelFromXp(profile.xp).level

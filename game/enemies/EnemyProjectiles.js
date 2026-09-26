@@ -1,3 +1,4 @@
+import { enemyImpactAt } from '~/game/systems/specialMeteors.js'
 import Phaser from 'phaser'
 import { sfxEnemyBeam } from '~/game/sound.js'
 
@@ -32,6 +33,7 @@ export class EnemyProjectileSystem {
   fireBeam(opts) {
     const { from, to, damage, color, width } = opts
     sfxEnemyBeam(from.x, from.y)
+    enemyImpactAt(this.scene, to.x, to.y) // puede detonar meteoritos explosivos cercanos
     this.beams.push({
       x1: from.x, y1: from.y,
       x2: to.x, y2: to.y,
@@ -60,6 +62,7 @@ export class EnemyProjectileSystem {
       if (d <= step + 6) {
         // Impact.
         p.sprite.destroy()
+        enemyImpactAt(this.scene, p.tx, p.ty)
         if (p.splash > 0) {
           this.scene.explosion(p.tx, p.ty, p.color, p.splash)
           for (const s of [...this.scene.structures]) {

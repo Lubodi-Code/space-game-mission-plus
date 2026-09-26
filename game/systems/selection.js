@@ -1,6 +1,8 @@
 import { bus } from '~/game/bus.js'
 import { gameState } from '~/game/gameState.js'
 import { UPGRADES } from '~/game/structures/upgrades.js'
+import { upgradeBurst } from '~/game/render/fx.js'
+import { sfxUpgrade, sfxUi } from '~/game/sound.js'
 
 // Selección/inspección de estructuras: emite al bus para que el HUD muestre el panel.
 // Estado en la escena: scene.selectedStructure, scene._pendingFocusId.
@@ -17,7 +19,7 @@ export function selectStructure(scene, s) {
     powered: s.powered,
     building: s.building,
     fireMode: s.fireMode || 'auto',
-    upgrades: s.upgrades || [],
+    upgrades: [...(s.upgrades || [])], // copia: Vue no ve los push que hace Phaser sobre el original
     // stats contextuales según rol
     stats: {
       atkRange: s.atkRange || s.def.atkRange || null,
@@ -51,11 +53,15 @@ export function applyUpgrade(scene, structureId, upgradeId) {
   if (!upg) return
   // Safety: verificar prerequisito aunque la UI ya lo filtre
   if (upg.requires && !(s.upgrades || []).includes(upg.requires)) return
+  if ((s.upgrades || []).includes(upg.id)) return
   const cost = upg.cost || 0
-  if (gameState.minerals < cost) return
+  if (gameState.minerals < cost) { sfxUi('error'); return }
   gameState.minerals -= cost
   s.applyUpgrade(upg)
   if (s.applyUpgradeVisual) s.applyUpgradeVisual(upg)
+  s.upgradePulse = { color: upg.tint || s.def.color, t: 0 } // lo consume ThreeLayer (modelo 3D)
+  upgradeBurst(scene, s.x, s.y, upg.tint || s.def.color, s.radius, upg.label)
+  sfxUpgrade(s.x, s.y)
   selectStructure(scene, s)
 }
 

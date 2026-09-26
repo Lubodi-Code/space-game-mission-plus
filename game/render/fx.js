@@ -2,8 +2,8 @@ import Phaser from 'phaser'
 import { COMBAT, FX } from '~/game/balance.js'
 import { net } from '~/game/net.js'
 import { glowBlend } from './blend.js'
-import { sfxImpact } from '~/game/sound.js'
-import { LOW_GFX } from '~/game/quality.js'
+import { sfxImpact, sfxHeal } from '~/game/sound.js'
+import { LOW_GFX, RENDER_SCALE } from '~/game/quality.js'
 
 // Efectos visuales transitorios. Funciones que reciben `scene`; sin estado propio.
 
@@ -15,6 +15,7 @@ export function spawnFloatingText(scene, x, y, text, color) {
     fontStyle: 'bold',
     stroke: '#000',
     strokeThickness: 3,
+    resolution: RENDER_SCALE,
   }).setOrigin(0.5).setDepth(35)
   scene.tweens.add({
     targets: t,
@@ -24,6 +25,73 @@ export function spawnFloatingText(scene, x, y, text, color) {
     ease: 'Quad.out',
     onComplete: () => t.destroy(),
   })
+}
+
+// Respuesta visual al comprar una mejora: dos anillos que se expanden, chispas que suben en
+// espiral y el nombre de la mejora flotando. Todo en Phaser (sobre el 3D).
+export function upgradeBurst(scene, x, y, color, radius, label) {
+  const r = Math.max(12, radius)
+  for (const [delay, w] of [[0, 3], [120, 1.5]]) {
+    const g = scene.add.graphics().setDepth(34).setBlendMode(Phaser.BlendModes.ADD)
+    const st = { k: 0 }
+    scene.tweens.add({
+      targets: st, k: 1, delay, duration: 650, ease: 'Cubic.out',
+      onUpdate: () => {
+        g.clear()
+        g.lineStyle(w, color, 1 - st.k).strokeCircle(x, y, r + st.k * r * 3.2)
+        g.fillStyle(color, 0.18 * (1 - st.k)).fillCircle(x, y, r + st.k * r * 1.5)
+      },
+      onComplete: () => g.destroy(),
+    })
+  }
+  const n = LOW_GFX ? 10 : 18
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2
+    const p = scene.add.graphics().setDepth(35).setBlendMode(Phaser.BlendModes.ADD)
+    p.fillStyle(i % 3 ? color : 0xffffff, 1).fillCircle(0, 0, 1.6 + Math.random() * 1.6)
+    p.setPosition(x + Math.cos(a) * r, y + Math.sin(a) * r)
+    scene.tweens.add({
+      targets: p,
+      x: x + Math.cos(a + 0.9) * r * 2.4,
+      y: y + Math.sin(a + 0.9) * r * 2.4 - 26,
+      alpha: 0, scale: 0.2,
+      duration: 700 + Math.random() * 300, ease: 'Quad.out',
+      onComplete: () => p.destroy(),
+    })
+  }
+  const css = '#' + (color >>> 0).toString(16).padStart(6, '0')
+  const t = scene.add.text(x, y - r - 10, `▲ ${label || 'MEJORA'}`, {
+    fontSize: '14px', fontFamily: 'monospace', fontStyle: 'bold', color: css,
+    stroke: '#000', strokeThickness: 4, resolution: RENDER_SCALE,
+  }).setOrigin(0.5).setDepth(36).setScale(0.6)
+  scene.tweens.add({ targets: t, scale: 1, duration: 220, ease: 'Back.out' })
+  scene.tweens.add({ targets: t, y: y - r - 44, alpha: 0, delay: 650, duration: 600, ease: 'Quad.in', onComplete: () => t.destroy() })
+}
+
+// Esfera sanadora que nace: anillo que se cierra + destello.
+export function orbSpawnFx(scene, x, y) {
+  const g = scene.add.graphics().setDepth(33).setBlendMode(Phaser.BlendModes.ADD)
+  const st = { k: 0 }
+  scene.tweens.add({
+    targets: st, k: 1, duration: 420, ease: 'Quad.out',
+    onUpdate: () => {
+      g.clear()
+      g.lineStyle(2, HEAL_ORB_COLOR, 1 - st.k).strokeCircle(x, y, 26 * (1 - st.k) + 4)
+      g.fillStyle(0xffffff, 0.6 * (1 - st.k)).fillCircle(x, y, 5 * (1 - st.k) + 1)
+    },
+    onComplete: () => g.destroy(),
+  })
+  sfxHeal(x, y)
+}
+
+// Curación en curso: una cruz verde que sube desde el edificio.
+export function healSparkFx(scene, x, y, r = 10) {
+  const g = scene.add.graphics().setDepth(33).setBlendMode(Phaser.BlendModes.ADD)
+  g.fillStyle(HEAL_ORB_COLOR, 1)
+  g.fillRect(-1, -4, 2, 8)
+  g.fillRect(-4, -1, 8, 2)
+  g.setPosition(x + (Math.random() - 0.5) * r * 1.6, y + (Math.random() - 0.3) * r)
+  scene.tweens.add({ targets: g, y: g.y - 18, alpha: 0, duration: 650, ease: 'Quad.out', onComplete: () => g.destroy() })
 }
 
 export function hitFlash(scene, x, y) {

@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { RENDER_SCALE } from '~/game/quality.js'
 import { gameState } from '~/game/gameState.js'
 import { WORLD, CAMERA, structureByKey } from '~/game/balance.js'
 import { net } from '~/game/net.js'
@@ -216,7 +217,7 @@ export function applySnapshot(scene, snap) {
       // Misma nave y escala que el host (General.js usa 'general_ship' 0.85).
       g = scene.add.image(x, y, 'general_ship').setTint(GEN_TINTS[pid % GEN_TINTS.length]).setScale(0.85).setDepth(17)
       g.tx = x; g.ty = y
-      g.label = scene.add.text(x, y - 30, name || '', { fontSize: '11px', color: '#cfe8ff', fontFamily: 'monospace' }).setOrigin(0.5).setDepth(19)
+      g.label = scene.add.text(x, y - 30, name || '', { fontSize: '11px', color: '#cfe8ff', fontFamily: 'monospace', resolution: RENDER_SCALE }).setOrigin(0.5).setDepth(19)
       scene.genSprites.set(pid, g)
     }
     g.tx = x; g.ty = y; g.setVisible(!!alive)

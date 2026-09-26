@@ -2,12 +2,12 @@
 import { ref, computed, onMounted } from 'vue'
 import { appState } from '~/game/appState'
 import { profile } from '~/game/meta/profile'
-import { COSMETICS, COSMETIC_BY_ID, RARITY, SLOTS, owns, buyWithScrap, equip, featuredToday } from '~/game/meta/cosmetics'
+import { COSMETICS, COSMETIC_BY_ID, RARITY, SLOTS, owns, buyWithScrap, equip, featuredToday, unlockProgress, claimUnlocks } from '~/game/meta/cosmetics'
 import { sfxUi, sfxPurchase } from '~/game/sound'
 import { CRYSTAL_PACKS } from '~/shared/catalog'
 import { account, initAccount, loginGoogle, loginEmail, logout, buyCosmeticWithCrystals, syncAccount } from '~/game/meta/account'
 
-onMounted(() => { initAccount(); syncAccount() })
+onMounted(() => { initAccount(); syncAccount(); claimUnlocks() })
 const checkoutPack = ref<string | null>(null)
 const email = ref('')
 const emailSent = ref(false)
@@ -22,12 +22,19 @@ function buyPack(id: string) {
 
 // Tienda de cosméticos estilo Fortnite / Fall Guys: destacado del día, pestañas por tipo,
 // tarjetas por rareza y vitrina 3D a la izquierda. Solo aspecto: nada da ventaja en combate.
-const tab = ref<'featured' | 'beam' | 'hull' | 'trail' | 'crystals'>('featured')
+const tab = ref<string>('featured') // featured | rewards | crystals | id de slot
 const selected = ref<string>(profile.cosmetics.equipped.beam)
 const toast = ref('')
 
 const featured = featuredToday()
-const items = computed(() => (tab.value === 'featured' ? featured : tab.value === 'crystals' ? [] : COSMETICS.filter((c) => c.slot === tab.value)))
+// Recompensas: todo lo que se desbloquea jugando, primero lo más cercano a conseguirse.
+const rewards = computed(() => COSMETICS.filter((c) => c.unlock)
+  .map((c) => ({ c, p: unlockProgress(c) }))
+  .sort((a, b) => Number(a.p.done) - Number(b.p.done) || (b.p.cur / b.p.need) - (a.p.cur / a.p.need)))
+const rewardsDone = computed(() => rewards.value.filter((r) => r.p.done).length)
+const items = computed(() => (tab.value === 'featured' ? featured
+  : tab.value === 'rewards' ? rewards.value.map((r) => r.c)
+  : tab.value === 'crystals' ? [] : COSMETICS.filter((c) => c.slot === tab.value)))
 const sel = computed(() => COSMETIC_BY_ID[selected.value])
 
 // La vitrina muestra lo equipado, reemplazando el slot del ítem que se está mirando.
@@ -48,10 +55,13 @@ const resetIn = computed(() => {
 function hex(n?: number) {
   return n == null ? '#8be9fd' : '#' + (n >>> 0).toString(16).padStart(6, '0')
 }
+const RAINBOW = 'linear-gradient(90deg,#ff5566,#ffd24a,#49e07a,#4fc3ff,#c77dff)'
 function swatch(c: any) {
-  if (c.slot === 'beam') return c.anim === 'hue' ? 'linear-gradient(90deg,#ff5566,#ffd24a,#49e07a,#4fc3ff,#c77dff)' : hex(c.color)
+  if (c.anim === 'hue') return c.slot === 'explosion' ? 'radial-gradient(circle,#fff,#ff7ad9 35%,#4fc3ff 60%,transparent 70%)' : RAINBOW
   if (c.slot === 'hull') return hex(c.tint)
-  return c.color ? hex(c.color) : '#223'
+  if (c.slot === 'explosion') return c.color ? `radial-gradient(circle,#fff,${hex(c.color)} 40%,transparent 70%)` : 'radial-gradient(circle,#fff,#8aa4c8 40%,transparent 70%)'
+  if (!c.color) return c.slot === 'nexus' ? '#8be9fd' : c.slot === 'turret' ? 'linear-gradient(90deg,#ff5566,#ffd24a,#5bd0ff)' : '#223'
+  return hex(c.color)
 }
 
 function flash(msg: string) {
@@ -97,6 +107,7 @@ const actLabel = computed(() => {
   if (owns(c.id)) return 'Equipar'
   if (c.price?.scrap) return `Comprar · ⚙ ${c.price.scrap}`
   if (c.price?.crystals) return `Comprar · ◆ ${c.price.crystals}`
+  if (c.unlock) return `🔒 ${unlockProgress(c).label}`
   return ''
 })
 
@@ -135,7 +146,7 @@ function back() {
             v-if="actLabel"
             class="act-btn"
             :class="{ 'act-btn--done': actLabel === 'Equipado', 'act-btn--premium': !owns(sel.id) && sel.price?.crystals }"
-            :disabled="actLabel === 'Equipado'"
+            :disabled="actLabel === 'Equipado' || actLabel.startsWith('🔒')"
             @click="act"
           >
             {{ actLabel }}
@@ -148,6 +159,7 @@ function back() {
         <nav class="flex gap-1.5 overflow-x-auto pb-1">
           <button class="tab" :class="{ 'tab--on': tab === 'featured' }" @click="tab = 'featured'; sfxUi('click')">★ Destacado</button>
           <button v-for="s in SLOTS" :key="s.id" class="tab" :class="{ 'tab--on': tab === s.id }" @click="tab = s.id; sfxUi('click')">{{ s.label }}</button>
+          <button class="tab tab--gift" :class="{ 'tab--on': tab === 'rewards' }" @click="tab = 'rewards'; sfxUi('click')">🎁 Recompensas {{ rewardsDone }}/{{ rewards.length }}</button>
           <button class="tab tab--gem" :class="{ 'tab--on': tab === 'crystals' }" @click="tab = 'crystals'; sfxUi('click')">◆ Cristales</button>
         </nav>
 
@@ -204,7 +216,9 @@ function back() {
                 <template v-else-if="owns(c.id)">Tuyo</template>
                 <template v-else-if="c.price?.scrap">⚙ {{ c.price.scrap }}</template>
                 <template v-else-if="c.price?.crystals">◆ {{ c.price.crystals }}</template>
+                <template v-else-if="c.unlock">🔒 {{ unlockProgress(c).label }}</template>
               </span>
+              <span v-if="c.unlock && !owns(c.id)" class="unlock-bar"><span :style="{ width: (100 * unlockProgress(c).cur / unlockProgress(c).need) + '%' }" /></span>
             </span>
           </button>
         </div>
@@ -256,6 +270,12 @@ function back() {
 }
 .tab--on { @apply bg-white text-[#05070f] ring-white; }
 .tab--gem { @apply ring-fuchsia-300/50 text-fuchsia-100; }
+.tab--gift { @apply ring-amber-300/50 text-amber-100; }
+.unlock-bar { @apply block mt-1 h-1 rounded-full bg-white/10 overflow-hidden; }
+.unlock-bar > span { @apply block h-full bg-amber-300; }
+.card-swatch--explosion { width: 4rem; height: 4rem; }
+.card-swatch--nexus { clip-path: polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%); border-radius: 0; }
+.card-swatch--turret { width: 80%; height: 0.4rem; }
 .pack-tag { @apply absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-300 text-[#05070f]; }
 .card {
   @apply relative flex flex-col rounded-xl overflow-hidden text-left transition-transform active:scale-95;

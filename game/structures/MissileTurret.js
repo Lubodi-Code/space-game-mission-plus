@@ -101,6 +101,7 @@ export class MissileTurret extends Structure {
     const dx = target.x - this.x
     const dy = target.y - this.y
     const d = Math.hypot(dx, dy) || 1
+    this.aimAngle = Math.atan2(dy, dx) // lo usa el modelo 3D
     sprite.setRotation(Math.atan2(dy, dx) + Math.PI / 2)
     const timeToTarget = d / (this.projSpeed || 130)
     const spreadVal = this.spread ?? 30

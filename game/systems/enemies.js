@@ -1,6 +1,8 @@
 import Phaser from 'phaser'
 import { gameState } from '~/game/gameState.js'
 import { spawnFloatingText, explosion } from '~/game/render/fx.js'
+import { IS_TOUCH } from '~/game/quality.js'
+import { explosionColor } from '~/game/meta/cosmetics.js'
 
 // Loop de enemigos: grid espacial + update por enemigo + barras de HP en lote. delta en MS.
 export function updateEnemies(scene, delta) {
@@ -51,7 +53,7 @@ export function killEnemy(scene, e) {
   e.dead = true
   gameState.kills++
   gameState.minerals = Math.min(gameState.mineralsCap, gameState.minerals + e.def.reward)
-  spawnFloatingText(scene, e.x, e.y, `+${e.def.reward}`, '#49e07a')
-  explosion(scene, e.x, e.y, e.def.color, 14 * e.def.scale)
+  if (!IS_TOUCH || e.def.boss) spawnFloatingText(scene, e.x, e.y, `+${e.def.reward}`, '#49e07a') // móvil: solo jefes
+  explosion(scene, e.x, e.y, explosionColor(e.def.color), 14 * e.def.scale)
   e.destroy()
 }

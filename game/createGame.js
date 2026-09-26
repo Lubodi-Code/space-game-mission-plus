@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
 import { BootScene } from './scenes/BootScene.js'
 import { GameScene } from './scenes/GameScene.js'
-import { LOW_GFX } from './quality.js'
+import { RENDER_SCALE } from './quality.js'
 
 /**
  * Build and mount the Phaser game inside the given DOM container.
@@ -12,11 +12,13 @@ export function createGame(parent) {
     type: Phaser.AUTO, // WebGL when available, Canvas fallback
     parent,
     transparent: true, // el fondo lo dibuja la capa Three.js detrás del canvas
+    // Canvas a resolución física (RENDER_SCALE × CSS) mostrado con zoom 1/R: nitidez en pantallas
+    // de alta densidad. Scale.NONE + ResizeObserver en lugar de RESIZE, que siempre renderiza a 1x.
     scale: {
-      mode: Phaser.Scale.RESIZE,
-      autoCenter: Phaser.Scale.CENTER_BOTH,
-      width: '100%',
-      height: '100%',
+      mode: Phaser.Scale.NONE,
+      width: Math.round((parent.clientWidth || window.innerWidth) * RENDER_SCALE),
+      height: Math.round((parent.clientHeight || window.innerHeight) * RENDER_SCALE),
+      zoom: 1 / RENDER_SCALE,
     },
     physics: {
       default: 'arcade',
@@ -29,13 +31,23 @@ export function createGame(parent) {
       activePointers: 3, // multi-touch support
     },
     render: {
-      antialias: !LOW_GFX,
+      antialias: true,
       roundPixels: false,
     },
     scene: [BootScene, GameScene],
   }
 
   const game = new Phaser.Game(config)
+  const ro = new ResizeObserver(() => {
+    const w = Math.round(parent.clientWidth * RENDER_SCALE)
+    const h = Math.round(parent.clientHeight * RENDER_SCALE)
+    if (w > 0 && h > 0 && (w !== game.scale.width || h !== game.scale.height)) {
+      game.scale.resize(w, h)
+      game.scale.setZoom(1 / RENDER_SCALE)
+    }
+  })
+  ro.observe(parent)
+  game.events.once('destroy', () => ro.disconnect())
   if (import.meta.env.DEV) {
     window.__PHASER_GAME__ = game
   }

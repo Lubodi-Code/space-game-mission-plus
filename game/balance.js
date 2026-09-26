@@ -1,5 +1,6 @@
 import { DIFFICULTY } from './appState.js'
 import { EnemyType } from './enemies/EnemyType.js'
+import { RENDER_SCALE as R } from './quality.js'
 
 export const BUILD = {
   overlapRadius: 18
@@ -48,13 +49,15 @@ export const FX = {
 
 export const WORLD = { width: 10800, height: 7200 }
 
+// El canvas de Phaser se renderiza a RENDER_SCALE píxeles por píxel CSS (nitidez en pantallas
+// de alta densidad), así que zoom y umbrales en píxeles se escalan por R: la vista queda igual.
 export const CAMERA = {
-  minZoom: 0.25,
-  maxZoom: 1.0,
-  startZoom: 0.55,
-  zoomStep: 0.05,
+  minZoom: 0.25 * R,
+  maxZoom: 1.0 * R,
+  startZoom: 0.55 * R,
+  zoomStep: 0.05 * R,
   keyPanSpeed: 1500,
-  dragThreshold: 4,
+  dragThreshold: 4 * R,
 }
 
 export const METEOR = {

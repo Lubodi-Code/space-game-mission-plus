@@ -3,6 +3,7 @@ import { gameState } from '~/game/gameState.js'
 import { COMBAT } from '~/game/balance.js'
 import { Structure } from './Structure.js'
 import { sfxLaser, sfxLock } from '~/game/sound.js'
+import { turretBeamColor } from '~/game/meta/cosmetics.js'
 
 export class LaserTurret extends Structure {
   constructor(def, x, y, scene) {
@@ -49,6 +50,7 @@ export class LaserTurret extends Structure {
     // 3) Disparo. Blip de "lock" al enganchar un objetivo tras estar ocioso.
     if (!this._engaged) { sfxLock(this.x, this.y); this._engaged = true }
     sfxLaser(this.x, this.y)
+    this.aimAngle = Math.atan2(target.y - this.y, target.x - this.x) // lo usa el modelo 3D
     this.fireLaser(target, world)
 
     // 4) Recarga: el rayo progresivo es continuo; el resto respeta su cooldown.
@@ -121,14 +123,15 @@ export class LaserTurret extends Structure {
   }
 
   pushBeam(x2, y2, big) {
+    const color = turretBeamColor(this.fxColor) // cosmético 'turret' (si hay) pisa el color de la mejora
     this.scene.lasers.push({
       x1: this.x, y1: this.y, x2, y2,
       ttl: big ? COMBAT.laserTtlMs * 3 : COMBAT.laserTtlMs,
-      color: this.fxColor,
+      color,
       width: big ? 5 : 2.5,
     })
     if (this.scene.netHost) this.scene._beamQueue.push(
-      [Math.round(this.x), Math.round(this.y), Math.round(x2), Math.round(y2), this.fxColor, big ? 5 : 2.5,
+      [Math.round(this.x), Math.round(this.y), Math.round(x2), Math.round(y2), color, big ? 5 : 2.5,
        big ? COMBAT.laserTtlMs * 3 : COMBAT.laserTtlMs, COMBAT.laserTtlMs]) // ttl + base de alfa: el cliente reusa drawBeam() y desvanece igual
   }
 
