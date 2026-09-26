@@ -571,7 +571,7 @@ export class ThreeLayer {
     for (const g of scene.generals.values()) {
       let e = this.gens.get(g)
       if (!e) {
-        const root = createCommanderShip(g.tint)
+        const root = createCommanderShip(g.tint, g.beamSkin ? equipped('design')?.design : 'falcon')
         root.scale.setScalar(0.62)
         this.scene.add(root)
         scene.cam?.ignore(g.sprite)

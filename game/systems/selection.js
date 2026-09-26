@@ -23,7 +23,7 @@ export function selectStructure(scene, s) {
     // stats contextuales según rol
     stats: {
       atkRange: s.atkRange || s.def.atkRange || null,
-      damage: s.laserDamage ?? s.missileDamage ?? s.def.damage ?? null,
+      damage: s.laserDamage ?? s.missileDamage ?? s.dmg ?? s.def.damage ?? null,
       cooldown: s.cooldown || s.def.cooldown || null,
       energyDrain: s.energyDrain || s.def.energyDrain || null,
       healRate: (s.healRate ?? s.def.healRate) || null,

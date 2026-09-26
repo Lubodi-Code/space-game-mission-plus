@@ -20,10 +20,11 @@ function blank() {
     scrap: 0,
     crystals: 0, // premium: solo lo escribe la sincronización con el servidor (10E)
     research: [],
+    arsenal: [], // keys de torretas del Arsenal compradas (meta/arsenal.js)
     sectorUnlocked: 1,
     maxSectorWon: 0,
     bestWave: {}, // `${mode}:${sector}` → mejor oleada alcanzada
-    cosmetics: { owned: ['beam_default', 'trail_none', 'hull_default'], equipped: { beam: 'beam_default', trail: 'trail_none', hull: 'hull_default', explosion: 'boom_default', nexus: 'nexus_default', turret: 'turret_default' } },
+    cosmetics: { owned: ['beam_default', 'trail_none', 'hull_default'], equipped: { beam: 'beam_default', trail: 'trail_none', hull: 'hull_default', design: 'design_falcon', explosion: 'boom_default', nexus: 'nexus_default', turret: 'turret_default' } },
     stats: { runs: 0, wins: 0, kills: 0 },
   }
 }

@@ -3,10 +3,11 @@ import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import * as THREE from 'three'
 import { COSMETIC_BY_ID } from '~/game/meta/cosmetics'
 import { createCommanderShip } from '~/game/three/shipModel'
+import { createStructureModel } from '~/game/three/structureModels'
 
 // Vitrina 3D retro de la tienda: nave del comandante low-poly con bordes neón girando sobre
 // un pedestal, disparando el rayo del cosmético que se está mirando.
-const props = defineProps<{ hull: string; beam: string; trail: string }>()
+const props = defineProps<{ hull: string; beam: string; trail: string; design?: string; turret?: { role: string; sides: number; color: number } | null }>()
 
 const host = ref<HTMLDivElement | null>(null)
 let renderer: THREE.WebGLRenderer | null = null
@@ -53,10 +54,6 @@ onMounted(() => {
   // Misma nave que en el juego (shipModel.js). El modelo vive en el plano XY con la nariz en
   // +X; aquí se acuesta sobre el pedestal (XZ) y gira alrededor de Y.
   const ship = new THREE.Group()
-  const model = createCommanderShip(hullColor())
-  model.rotation.x = -Math.PI / 2
-  model.scale.setScalar(0.065)
-  ship.add(model)
   ship.position.y = 0.7
   scene.add(ship)
 
@@ -68,7 +65,36 @@ onMounted(() => {
   const core = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, LEN, 8, 1, true), beamCore)
   beam.rotation.z = core.rotation.z = -Math.PI / 2
   beam.position.x = core.position.x = 26 + LEN / 2
-  model.add(beam, core)
+
+  // (Re)construye la nave con el diseño elegido; el rayo viaja con ella.
+  const buildShip = () => {
+    const old = state.ship
+    if (old) { old.remove(beam, core); ship.remove(old); old.userData.dispose() }
+    const m = createCommanderShip(hullColor(), props.design || 'falcon')
+    m.rotation.x = -Math.PI / 2
+    m.scale.setScalar(0.065)
+    m.add(beam, core)
+    ship.add(m)
+    state.ship = m
+  }
+  state.buildShip = buildShip
+
+  // Torreta del Arsenal en la vitrina (cuando se mira una en la tienda).
+  const turretHolder = new THREE.Group()
+  turretHolder.position.y = 0.2
+  scene.add(turretHolder)
+  const buildTurret = () => {
+    if (state.turret) { turretHolder.remove(state.turret); state.turret.userData.dispose(); state.turret = null }
+    const t = props.turret
+    ship.visible = !t
+    if (!t) return
+    const m = createStructureModel({ role: t.role, sides: t.sides, size: 10, color: t.color, isCore: false })
+    m.rotation.x = -Math.PI / 2
+    m.scale.setScalar(0.1)
+    turretHolder.add(m)
+    state.turret = m
+  }
+  state.buildTurret = buildTurret
 
   // Estela: puntos que se desprenden del motor.
   const N = 60
@@ -80,7 +106,9 @@ onMounted(() => {
   scene.add(trail)
   const parts = Array.from({ length: N }, () => ({ x: 0, y: 0, z: 0, life: 0 }))
 
-  Object.assign(state, { scene, cam, ship: model, pedRing, beamMat, beamCore, trail, trailMat, parts, pos })
+  Object.assign(state, { scene, cam, pedRing, beamMat, beamCore, trail, trailMat, parts, pos })
+  buildShip()
+  buildTurret()
   setColors()
 
   const resize = () => {
@@ -97,6 +125,11 @@ onMounted(() => {
   const tick = (t: number) => {
     raf = requestAnimationFrame(tick)
     ship.rotation.y = t * 0.0006
+    if (state.turret) {
+      turretHolder.rotation.y = t * 0.0005
+      state.turret.userData.setAim(t * 0.0012)
+      state.turret.userData.update(0.016, t)
+    }
     ship.position.y = 0.7 + Math.sin(t * 0.002) * 0.08
     const b = beamDef()
     const phase = (t % 1600) / 1600
@@ -112,7 +145,7 @@ onMounted(() => {
     if (td?.style) {
       trailMat.color.setHex(td.color || 0xffffff)
       trailMat.size = td.style === 'pixel' ? 0.2 : td.style === 'comet' ? 0.16 : 0.1
-      const wp = new THREE.Vector3(-17, 0, 0).applyMatrix4(model.matrixWorld)
+      const wp = new THREE.Vector3(-17, 0, 0).applyMatrix4(state.ship.matrixWorld)
       const p = parts[spawnI++ % N]
       p.x = wp.x + (Math.random() - 0.5) * 0.1; p.y = wp.y + (Math.random() - 0.5) * 0.1; p.z = wp.z; p.life = 1
       for (let i = 0; i < N; i++) {
@@ -133,10 +166,14 @@ onMounted(() => {
 })
 
 watch(() => props.hull, () => state.ship && setColors())
+watch(() => props.design, () => { if (state.buildShip) { state.buildShip(); setColors() } })
+watch(() => props.turret?.role, () => state.buildTurret?.())
 
 onBeforeUnmount(() => {
   cancelAnimationFrame(raf)
   ro?.disconnect()
+  state.ship?.userData.dispose()
+  state.turret?.userData.dispose()
   renderer?.dispose()
   renderer?.domElement.remove()
   renderer = null

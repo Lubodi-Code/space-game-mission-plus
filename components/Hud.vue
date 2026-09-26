@@ -29,7 +29,8 @@ const ENEMY_LABELS = {
   [EnemyType.BOMBER]: { label: 'Bombardero', color: '#ffb02e' },
 }
 
-const structures = STRUCTURES
+import { buildableStructures, WEAPON_ROLES } from '~/game/meta/arsenal'
+const structures = computed(() => buildableStructures())
 
 const generalTooltip = {
   label: 'General',
@@ -292,7 +293,7 @@ function onKey(e) {
     return
   }
 
-  if (e.key >= '1' && e.key <= '6') { const s = STRUCTURES[+e.key - 1]; if (s) pick(s); return }
+  if (e.key >= '0' && e.key <= '9') { const s = structures.value[e.key === '0' ? 9 : +e.key - 1]; if (s) pick(s); return }
   const ab = ABILITY_KEYS[e.key.toLowerCase()]
   if (ab) { bus.emit('ability', ab); return }
   if (e.key === 'n' || e.key === 'N') { callWave(); return }
@@ -642,7 +643,7 @@ function polyPoints(sides, radius) {
       </div>
 
       <!-- Fire mode toggle (solo torretas) -->
-      <div v-if="selectedStructure.role === 'turret' || selectedStructure.role === 'missile'" class="pt-1 border-t border-cyan-400/10">
+      <div v-if="WEAPON_ROLES.includes(selectedStructure.role)" class="pt-1 border-t border-cyan-400/10">
         <div class="flex gap-2 items-center" title="F alterna modo de fuego">
           <button
             class="px-2 py-1 rounded text-[11px] ring-1 transition-colors"
@@ -754,7 +755,7 @@ function polyPoints(sides, radius) {
         @mouseleave="hideTooltip"
         @click="pick(s)"
       >
-        <span class="key-badge">{{ i + 1 }}</span>
+        <span class="key-badge">{{ i < 9 ? i + 1 : i === 9 ? 0 : '' }}</span>
         <svg class="w-6 h-6" viewBox="0 0 24 24">
           <polygon
             :points="polyPoints(s.sides, s.size)"
@@ -798,7 +799,7 @@ function polyPoints(sides, radius) {
       <div class="font-bold text-[11px] mb-0.5" :style="{ color: hoveredStructure.css }">{{ hoveredStructure.label }}</div>
       <div class="text-cyan-200/70 mb-0.5 leading-snug">{{ hoveredStructure.desc }}</div>
       <div class="text-cyan-300/50 space-y-0.5">
-        <div v-if="hoveredStructure.role === 'turret' || hoveredStructure.role === 'missile'">
+        <div v-if="WEAPON_ROLES.includes(hoveredStructure.role)">
           Daño: {{ hoveredStructure.damage }} · Alcance: {{ hoveredStructure.atkRange }}
         </div>
         <div v-if="hoveredStructure.role === 'turret'">

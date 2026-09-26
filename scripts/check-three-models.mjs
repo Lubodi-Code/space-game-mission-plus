@@ -3,7 +3,7 @@
 import * as THREE from 'three'
 
 const { createStructureModel, DECORS } = await import('../game/three/structureModels.js')
-const roles = ['core', 'relay', 'collector', 'battery', 'healer', 'turret', 'missile']
+const roles = ['core', 'relay', 'collector', 'battery', 'healer', 'turret', 'missile', 'tesla', 'cryo', 'railgun', 'flak', 'mortar', 'shield']
 let n = 0
 for (const role of roles) {
   const m = createStructureModel({ role, sides: 6, size: role === 'core' ? 46 : 10, color: 0x6cc8ff, isCore: role === 'core' })

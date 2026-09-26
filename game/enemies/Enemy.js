@@ -108,9 +108,16 @@ export class Enemy {
     this.vx += this.ax * dt
     this.vy += this.ay * dt
 
+    // Ralentización (torretas Criogénica / Tesla): baja la velocidad máxima mientras dure.
+    let vmax = this.maxSpeed
+    if (this.slowMs > 0) {
+      this.slowMs -= dt * 1000
+      vmax *= this.slowFactor || 0.5
+      if (this.slowMs <= 0) { this.slowFactor = 1; this.sprite.clearTint() } else this.sprite.setTint(0x9ae8ff)
+    }
     const vMag = Math.hypot(this.vx, this.vy)
-    if (vMag > this.maxSpeed) {
-      const s = this.maxSpeed / vMag
+    if (vMag > vmax) {
+      const s = vmax / vMag
       this.vx *= s; this.vy *= s
     }
 

@@ -364,6 +364,36 @@ export function sfxPurchase() {
   noise({ dur: 0.35, gain: 0.05, lp: 9000, at: 0.1 })
 }
 
+// ---- Torretas del Arsenal
+export function sfxTesla(x, y) {
+  if (!ctx || !throttle('tesla', 70)) return
+  const { pan, vol } = at(x, y)
+  if (vol <= 0.03) return
+  noise({ dur: 0.12, gain: 0.18, lp: 6000, pan, vol })
+  sweep({ type: 'square', f0: 1800, f1: 400, dur: 0.1, gain: 0.05, pan, vol })
+}
+export function sfxCryo(x, y) {
+  if (!ctx || !throttle('cryo', 90)) return
+  const { pan, vol } = at(x, y)
+  if (vol <= 0.03) return
+  sweep({ type: 'sine', f0: 2400, f1: 1600, dur: 0.18, gain: 0.05, pan, vol })
+  noise({ dur: 0.2, gain: 0.05, lp: 9000, pan, vol })
+}
+export function sfxRail(x, y) {
+  if (!ctx || !throttle('rail', 120)) return
+  const { pan, vol } = at(x, y)
+  if (vol <= 0.03) return
+  sweep({ type: 'sawtooth', f0: 3000, f1: 120, dur: 0.35, gain: 0.12, pan, vol })
+  noise({ dur: 0.25, gain: 0.2, lp: 3000, pan, vol })
+}
+export function sfxFlak(x, y) {
+  if (!ctx || !throttle('flak', 80)) return
+  const { pan, vol } = at(x, y)
+  if (vol <= 0.03) return
+  noise({ dur: 0.16, gain: 0.3, lp: 1800, pan, vol })
+  sweep({ type: 'triangle', f0: 220, f1: 60, dur: 0.15, gain: 0.12, pan, vol })
+}
+
 // Mejora comprada: barrido ascendente + acorde brillante.
 export function sfxUpgrade(x, y) {
   if (!ctx) return

@@ -89,15 +89,23 @@ export function createStructureModel({ role, sides, size, color, isCore }) {
   }
 
   // Low polygon chassis, raised in +Z so its visible wall carries the silhouette.
-  const baseHeight = r * (kind === 'core' ? 0.42 : 0.55)
-  prism(model, r, baseHeight, baseHeight / 2, kind === 'turret' ? 3 : kind === 'core' || kind === 'missile' ? 6 : count)
-  prism(model, r * 0.72, r * 0.18, baseHeight + r * 0.09, kind === 'turret' ? 3 : count)
+  const baseHeight = r * (kind === 'core' ? 0.42 : kind === 'railgun' ? 0.3 : 0.55)
+  const baseSides = kind === 'turret' ? 3 : kind === 'cryo' ? 8
+    : kind === 'flak' || kind === 'core' || kind === 'missile' ? 6 : kind === 'tesla' ? 4 : count
+  prism(model, r, baseHeight, baseHeight / 2, baseSides)
+  prism(model, r * 0.72, r * 0.18, baseHeight + r * 0.09, baseSides)
   const top = baseHeight + r * 0.18
   let head = null
   let spinner = null
   let coreCrystal = null
   let healerOrbs = []
   let chargeBars = []
+  let teslaArcs = null
+  let lastSpark = -Infinity
+  let cryoMist = null
+  let railCoils = []
+  let shieldCrystal = null
+  let shieldDome = null
 
   if (kind === 'core') {
     prism(model, r * 0.43, r * 0.7, top + r * 0.35, 6)
@@ -143,6 +151,72 @@ export function createStructureModel({ role, sides, size, color, isCore }) {
         nose.position.set(r * 0.95, y, r * 0.12)
       }
     }
+  } else if (kind === 'tesla') {
+    prism(model, r * 0.23, r * 1.25, top + r * 0.62, 4)
+    for (const z of [0.35, 0.68, 1.01]) ring(model, r * 0.46, r * 0.075, top + r * z)
+    const tip = add(model, new THREE.IcosahedronGeometry(r * 0.23, 1), tint, 1)
+    tip.position.z = top + r * 1.42
+    const positions = new Float32Array(4 * 4 * 2 * 3)
+    const sparks = ownGeometry(new THREE.BufferGeometry())
+    sparks.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    teslaArcs = new THREE.LineSegments(sparks, edgeMaterial())
+    model.add(teslaArcs)
+  } else if (kind === 'cryo') {
+    prism(model, r * 0.44, r * 0.9, top + r * 0.45, 10)
+    for (const z of [0.15, 0.45, 0.75]) ring(model, r * 0.45, r * 0.045, top + r * z)
+    head = new THREE.Group()
+    head.position.z = top + r * 0.8
+    model.add(head)
+    box(head, r * 0.25, 0, 0, r * 0.52, r * 0.4, r * 0.4)
+    const emitter = add(head, new THREE.OctahedronGeometry(r * 0.25), tint, 1)
+    emitter.scale.x = 2.3
+    emitter.position.x = r * 0.72
+    cryoMist = new THREE.Mesh(ownGeometry(new THREE.SphereGeometry(r * 0.38, 8, 5)),
+      ownMaterial(new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.2, depthWrite: false })))
+    cryoMist.position.x = r * 1.05
+    head.add(cryoMist)
+  } else if (kind === 'railgun') {
+    head = new THREE.Group()
+    head.position.z = top + r * 0.24
+    model.add(head)
+    prism(head, r * 0.38, r * 0.35, 0, 6)
+    for (const y of [-r * 0.21, r * 0.21]) {
+      box(head, r * 0.72, y, r * 0.12, r * 1.5, r * 0.12, r * 0.17)
+      for (let i = 0; i < 5; i++) {
+        const coil = box(head, r * (0.24 + i * 0.29), y, r * 0.12, r * 0.075, r * 0.22, r * 0.27)
+        railCoils.push(coil)
+      }
+    }
+    box(head, r * 0.34, 0, r * 0.12, r * 0.3, r * 0.5, r * 0.15)
+  } else if (kind === 'flak') {
+    prism(model, r * 0.8, r * 0.38, top + r * 0.19, 6)
+    head = new THREE.Group()
+    head.position.z = top + r * 0.4
+    model.add(head)
+    prism(head, r * 0.43, r * 0.36, 0, 6)
+    for (const y of [-r * 0.2, r * 0.2]) {
+      for (const z of [-r * 0.1, r * 0.19]) barrel(head, r * 0.72, r * 0.15, r * 0.18, y, z)
+    }
+  } else if (kind === 'mortar') {
+    prism(model, r * 0.8, r * 0.3, top + r * 0.15, 8)
+    head = new THREE.Group()
+    head.position.z = top + r * 0.3
+    model.add(head)
+    const tube = new THREE.Group()
+    tube.rotation.y = 0.42
+    head.add(tube)
+    prism(tube, r * 0.34, r * 1.15, r * 0.62, 10)
+    ring(tube, r * 0.38, r * 0.065, r * 1.2)
+    prism(tube, r * 0.23, r * 0.025, r * 1.22, 10, 0x101b30)
+    for (const y of [-r * 0.48, r * 0.48]) box(head, 0, y, r * 0.2, r * 0.3, r * 0.16, r * 0.42)
+  } else if (kind === 'shield') {
+    prism(model, r * 0.26, r * 0.86, top + r * 0.43, 6)
+    shieldCrystal = orb(model, r * 0.31, 0, 0, top + r * 1.08)
+    shieldDome = new THREE.Mesh(ownGeometry(new THREE.SphereGeometry(r * 1.12, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2)),
+      ownMaterial(new THREE.MeshBasicMaterial({ color: tint, wireframe: true, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide })))
+    shieldDome.rotation.x = Math.PI / 2
+    shieldDome.position.z = top + r * 0.2
+    model.add(shieldDome)
   }
 
   const progress = new THREE.Mesh(
@@ -166,12 +240,16 @@ export function createStructureModel({ role, sides, size, color, isCore }) {
     tint = new THREE.Color(hex)
     for (const m of tintMaterials) m.emissive.copy(tint)
     for (const m of lineMaterials) m.color.copy(tint)
+    if (cryoMist) cryoMist.material.color.copy(tint)
+    if (shieldDome) shieldDome.material.color.copy(tint)
     progress.material.color.copy(tint)
   }
   function setPowered(value) {
     powered = !!value
     for (const m of tintMaterials) m.emissiveIntensity = powered ? m.userData.litIntensity : 0.025
     for (const m of lineMaterials) m.opacity = powered ? 0.95 : 0.12
+    if (cryoMist) cryoMist.material.opacity = powered ? 0.2 : 0.035
+    if (shieldDome) shieldDome.material.opacity = powered ? 0.3 : 0.035
   }
   function setBuilding(frac) {
     building = THREE.MathUtils.clamp(Number.isFinite(frac) ? frac : 0, 0, 1)
@@ -257,6 +335,41 @@ export function createStructureModel({ role, sides, size, color, isCore }) {
     for (let i = 0; i < chargeBars.length; i++) {
       const h = 0.55 + 0.4 * (0.5 + 0.5 * Math.sin(t * 2.2 + i * 1.2))
       chargeBars[i].scale.z = h
+    }
+    if (teslaArcs && timeMs - lastSpark >= 80) {
+      lastSpark = timeMs
+      const a = teslaArcs.geometry.attributes.position
+      for (let arc = 0; arc < 4; arc++) {
+        const angle = arc * Math.PI / 2 + Math.random() * 0.5
+        let x = Math.cos(angle) * r * 0.12
+        let y = Math.sin(angle) * r * 0.12
+        let z = top + r * 1.42
+        for (let step = 0; step < 4; step++) {
+          const nx = Math.cos(angle) * r * (0.22 + step * 0.13) + (Math.random() - 0.5) * r * 0.18
+          const ny = Math.sin(angle) * r * (0.22 + step * 0.13) + (Math.random() - 0.5) * r * 0.18
+          const nz = z + (Math.random() - 0.5) * r * 0.22
+          const offset = (arc * 4 + step) * 2
+          a.setXYZ(offset, x, y, z)
+          a.setXYZ(offset + 1, nx, ny, nz)
+          x = nx; y = ny; z = nz
+        }
+      }
+      a.needsUpdate = true
+    }
+    if (cryoMist) {
+      cryoMist.scale.setScalar(0.9 + 0.16 * Math.sin(t * 3.2))
+      cryoMist.material.opacity = (powered ? 0.2 : 0.035) * (0.8 + 0.2 * Math.sin(t * 3.2))
+    }
+    for (let i = 0; i < railCoils.length; i++) {
+      railCoils[i].material.emissiveIntensity = powered ? (Math.floor(t * 9) % 5 === i % 5 ? 1.8 : 0.2) : 0.025
+    }
+    if (shieldCrystal) {
+      shieldCrystal.rotation.z += dt * 0.9
+      shieldCrystal.position.z = top + r * (1.08 + 0.08 * Math.sin(t * 2))
+    }
+    if (shieldDome) {
+      shieldDome.scale.setScalar(1 + 0.04 * Math.sin(t * 2.1))
+      shieldDome.material.opacity = (powered ? 0.3 : 0.035) * (0.85 + 0.15 * Math.sin(t * 2.1))
     }
     if (plasma) plasma.scale.setScalar(1 + 0.13 * Math.sin(t * 4))
     if (decorGroup && decorAge < 1) {

@@ -79,13 +79,14 @@ export function restoreSoloSnapshot(scene, snap) {
 
   for (const row of snap.structs) {
     const s = createStructure(row.key, row.x, row.y, scene)
-    s.hp = row.hp
-    s.maxHp = row.maxHp
     scene.structures.push(s)
     for (const id of row.upgrades) {
       const u = UPGRADES.find((x) => x.id === id)
       if (u) { s.applyUpgrade(u); s.applyUpgradeVisual?.(u) }
     }
+    // Después de las mejoras: los valores guardados ya incluyen hpMult (si no, se aplicaría dos veces).
+    s.maxHp = row.maxHp
+    s.hp = row.hp
   }
   scene.recomputeNetwork()
 

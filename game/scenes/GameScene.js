@@ -30,6 +30,7 @@ import { onIntent, createRemote, renderRemote, sendSnapshot } from '~/game/net/s
 import { initSound, updateSound, setMusicState, updateShipBeds, sfxSpeed } from '~/game/sound.js'
 import { initAbilities, updateAbilities, requestAbility, handleTargetClick, cancelTargeting } from '~/game/systems/abilities.js'
 import { runBonuses } from '~/game/meta/research.js'
+import { WEAPON_ROLES } from '~/game/meta/arsenal.js'
 import { initSpecialMeteors, updateSpecialMeteors, goToGiant } from '~/game/systems/specialMeteors.js'
 import { grantRunRewards } from '~/game/meta/profile.js'
 import { equipped, claimUnlocks } from '~/game/meta/cosmetics.js'
@@ -290,7 +291,7 @@ export class GameScene extends Phaser.Scene {
         })
         if (hit) {
           // Shift+clic sobre una torreta: alterna en la multi-selección.
-          if (p.event?.shiftKey && (hit.role === 'turret' || hit.role === 'missile')) {
+          if (p.event?.shiftKey && WEAPON_ROLES.includes(hit.role)) {
             if (this.multiSel.has(hit)) this.multiSel.delete(hit)
             else this.multiSel.add(hit)
             gameState.multiSelCount = this.multiSel.size

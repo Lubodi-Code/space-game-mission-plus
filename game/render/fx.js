@@ -190,6 +190,28 @@ export function auraBurst(scene, x, y, color, radius) {
 // Pura: dibuja un haz sobre el Graphics `g` (la usan el host y el cliente remoto).
 // Estilo "3D": halo exterior ancho, cuerpo de color y núcleo blanco caliente, con
 // destello en la boca y flash de impacto — todo con blending ADD del fxGraphics.
+// Rayo eléctrico quebrado (Tesla): zigzag que cambia cada frame + halo.
+export function drawJagged(g, x1, y1, x2, y2, color, width, a) {
+  const dx = x2 - x1; const dy = y2 - y1
+  const len = Math.hypot(dx, dy) || 1
+  const nx = -dy / len; const ny = dx / len
+  const segs = Math.max(4, Math.round(len / 18))
+  const pts = [[x1, y1]]
+  for (let i = 1; i < segs; i++) {
+    const t = i / segs
+    const off = (Math.random() - 0.5) * Math.min(22, len * 0.25)
+    pts.push([x1 + dx * t + nx * off, y1 + dy * t + ny * off])
+  }
+  pts.push([x2, y2])
+  for (const [w, al, c] of [[width * 4, 0.15, color], [width * 1.6, 0.6, color], [Math.max(1, width * 0.5), 0.95, 0xffffff]]) {
+    g.lineStyle(w, c, al * a)
+    g.beginPath(); g.moveTo(pts[0][0], pts[0][1])
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1])
+    g.strokePath()
+  }
+  g.fillStyle(0xffffff, 0.8 * a).fillCircle(x2, y2, width * 1.6)
+}
+
 export function drawBeam(g, x1, y1, x2, y2, color, width, a) {
   g.lineStyle(width * 5, color, a * 0.10); g.lineBetween(x1, y1, x2, y2) // halo difuso
   g.lineStyle(width * 2.4, color, a * 0.30); g.lineBetween(x1, y1, x2, y2) // cuerpo
@@ -244,8 +266,9 @@ export function drawFx(scene, delta) {
       scene.lasers.splice(i, 1)
       continue
     }
-    const a = l.ttl / COMBAT.laserTtlMs
-    drawBeam(g, l.x1, l.y1, l.x2, l.y2, l.color, l.width ?? 2.5, a)
+    const a = Math.min(1, l.ttl / COMBAT.laserTtlMs)
+    if (l.jag) drawJagged(g, l.x1, l.y1, l.x2, l.y2, l.color, l.width ?? 2, a)
+    else drawBeam(g, l.x1, l.y1, l.x2, l.y2, l.color, l.width ?? 2.5, a)
   }
   scene.epSystem.draw(g)
 }

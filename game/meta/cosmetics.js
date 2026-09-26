@@ -14,7 +14,8 @@ export const COSMETIC_BY_ID = Object.fromEntries(COSMETICS.map((c) => [c.id, c])
 
 export const SLOTS = [
   { id: 'beam', label: 'Rayos' },
-  { id: 'hull', label: 'Naves' },
+  { id: 'design', label: 'Diseños' },
+  { id: 'hull', label: 'Colores de nave' },
   { id: 'trail', label: 'Estelas' },
   { id: 'explosion', label: 'Explosiones' },
   { id: 'nexus', label: 'Núcleo' },

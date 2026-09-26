@@ -82,6 +82,16 @@ export const COSMETICS = [
   { id: 'trail_gold', slot: 'trail', name: 'Polvo de oro', rarity: 'epic', color: 0xffd24a, style: 'spark', unlock: { level: 10 } },
   { id: 'trail_void', slot: 'trail', name: 'Rastro del vacío', rarity: 'legendary', color: 0xa855ff, style: 'comet', unlock: { sector: 8 } },
 
+  // ---- Diseños de nave del comandante (forma 3D; ver game/three/shipModel.js SHIP_DESIGNS)
+  { id: 'design_falcon', slot: 'design', name: 'Falcon', rarity: 'common', design: 'falcon', price: null },
+  { id: 'design_interceptor', slot: 'design', name: 'Interceptor', rarity: 'rare', design: 'interceptor', unlock: { level: 3 } },
+  { id: 'design_manta', slot: 'design', name: 'Manta', rarity: 'rare', design: 'manta', unlock: { sector: 2 } },
+  { id: 'design_wasp', slot: 'design', name: 'Avispa', rarity: 'rare', design: 'wasp', unlock: { kills: 1200 } },
+  { id: 'design_bulwark', slot: 'design', name: 'Baluarte', rarity: 'epic', design: 'bulwark', unlock: { wins: 2 } },
+  { id: 'design_phantom', slot: 'design', name: 'Fantasma', rarity: 'epic', design: 'phantom', unlock: { level: 9 } },
+  { id: 'design_twin', slot: 'design', name: 'Gemela', rarity: 'legendary', design: 'twin', unlock: { sector: 5 } },
+  { id: 'design_crown', slot: 'design', name: 'Corona', rarity: 'legendary', design: 'crown', price: { crystals: 350 } },
+
   // ---- Explosiones (bajas enemigas)
   { id: 'boom_default', slot: 'explosion', name: 'Según la nave', rarity: 'common', price: null },
   { id: 'boom_fire', slot: 'explosion', name: 'Fuego', rarity: 'common', color: 0xff8a3d, unlock: { level: 2 } },
