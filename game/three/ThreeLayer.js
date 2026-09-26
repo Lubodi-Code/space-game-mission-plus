@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { createCommanderShip } from './shipModel.js'
+import { createCommanderShip, createEnemyShipModel } from './shipModel.js'
 import { createSectorBackdrop } from './sectorBackdrop.js'
 import { createStructureModel } from './structureModels.js'
 import { createExplosion, createMissileModel } from './fxModels.js'
@@ -9,6 +9,7 @@ import { appState } from '~/game/appState.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { WORLD } from '~/game/balance.js'
 import { LOW_GFX, RENDER_SCALE } from '~/game/quality.js'
+import { REGISTRY } from '~/game/enemies/EnemyType.js'
 
 // Capa de render 3D (Three.js) que vive DETRÁS del canvas de Phaser (canvas transparente al frente).
 // Modo actual: FONDO 3D + METEORITOS 3D + explosiones. Dibuja el fondo espacial (estrellas con
@@ -133,6 +134,7 @@ export class ThreeLayer {
     this._buildBackground()
 
     this.meshes = new Map()   // objeto de juego -> { root, ... }
+    this.enemyModels = new Map() // Enemy host o sprite remoto -> nave 3D
     this.meteors = new Map()  // meteorito de juego -> { mesh, baseScale, spin, axis, dying, dieT }
     this.explosions = []
     this.nexus = null         // núcleo 3D (se crea en sync cuando existe el core)
@@ -459,6 +461,7 @@ export class ThreeLayer {
     this._syncNexus(scene)
     this._syncGenerals(scene)
     this._syncStructures(scene)
+    this._syncEnemies(scene)
     this._syncMissiles(scene)
     if (!this.meteorGeo || !scene?.meteorites) return
     for (const m of scene.meteorites) {
@@ -496,17 +499,18 @@ export class ThreeLayer {
   // la última mejora en 3D y animación al mejorar. El núcleo sigue con _syncNexus. Las formas 2D
   // de Phaser se ocultan de la cámara principal; barras de vida/construcción siguen en 2D.
   _syncStructures(scene) {
-    if (!scene?.structures || scene.remote) return
+    const structures = scene?.remote ? [...(scene.sById?.values() || [])] : scene?.structures
+    if (!structures) return
     this.structs ||= new Map()
     const now = performance.now()
     const dt = Math.min(0.05, (now - (this._structPrev || now)) / 1000)
     this._structPrev = now
     for (const [s, e] of this.structs) {
-      if (s.dead || !scene.structures.includes(s)) {
+      if (s.dead || !structures.includes(s)) {
         this.scene.remove(e.root); e.root.userData.dispose(); this.structs.delete(s)
       }
     }
-    for (const s of scene.structures) {
+    for (const s of structures) {
       if (s.isCore || s.dead) continue
       let e = this.structs.get(s)
       if (!e) {
@@ -517,6 +521,7 @@ export class ThreeLayer {
         e = { root, color: null, decorN: 0, powered: null }
         this.structs.set(s, e)
       }
+      e.root.position.set(s.x, s.y, 4)
       const u = e.root.userData
       if (s._accent && !e.accentHidden) { scene.cam?.ignore(s._accent); e.accentHidden = true }
       const col = s.fxColor || s.def.color
@@ -533,6 +538,60 @@ export class ThreeLayer {
       u.setBuilding(s.building ? s.buildProgress / (s.buildTime || 1) : 1)
       if (s.aimAngle != null) u.setAim(s.aimAngle)
       u.update(dt, now)
+    }
+  }
+
+  // Naves enemigas 3D: el simulador sigue siendo Phaser, pero el cuerpo visible vive aquí.
+  // El mismo reconciliador sirve para host y cliente remoto (que expone sprites interpolados).
+  _syncEnemies(scene) {
+    const enemies = scene?.remote ? [...(scene.eById?.values() || [])] : scene?.enemies
+    if (!enemies) return
+    const live = new Set()
+    for (const enemy of enemies) {
+      if (!enemy || enemy.dead || (scene.remote && enemy.visible === false)) continue
+      const def = scene.remote ? REGISTRY[enemy.type] : enemy.def
+      if (!def) continue
+      live.add(enemy)
+      let entry = this.enemyModels.get(enemy)
+      if (!entry) {
+        const radius = scene.remote
+          ? 12 * 0.5 * (enemy.escala || def.scale || 1)
+          : enemy.radius
+        const root = createEnemyShipModel({ tint: def.color, radius, type: enemy.type || 'grunt' })
+        const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: this.glowTex, color: def.color, transparent: true, opacity: 0.32,
+          blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+        }))
+        halo.scale.set(radius * 4.4, radius * 4.4, 1)
+        halo.position.z = -2
+        root.add(halo)
+        this.scene.add(root)
+        const phaserObjects = scene.remote ? [enemy, enemy.glow] : [enemy.sprite, enemy.glow]
+        scene.cam?.ignore(phaserObjects.filter(Boolean))
+        entry = { root, halo, radius, lastHeading: null, bank: 0 }
+        this.enemyModels.set(enemy, entry)
+      }
+      const x = scene.remote ? enemy.x : enemy.x
+      const y = scene.remote ? enemy.y : enemy.y
+      const heading = Number.isFinite(enemy.heading) ? enemy.heading : 0
+      const turn = entry.lastHeading == null ? 0 : Math.atan2(Math.sin(heading - entry.lastHeading), Math.cos(heading - entry.lastHeading))
+      entry.lastHeading = heading
+      entry.bank = entry.bank * 0.88 + Math.max(-0.36, Math.min(0.36, turn * 5))
+      entry.root.visible = scene.remote ? enemy.visible !== false : !enemy.dead
+      entry.root.position.set(x, y, 12)
+      entry.root.rotation.x = -0.24 + entry.bank
+      entry.root.rotation.z = heading
+      const pulse = 0.24 + Math.sin(performance.now() * 0.008 + heading) * 0.08
+      entry.halo.material.opacity = pulse
+      const stun = scene.remote ? false : enemy.stunMs > 0
+      entry.halo.material.color.setHex(stun ? 0x8be9fd : def.color)
+      if (entry.root.userData.engine) entry.root.userData.engine.material.color.setHex(stun ? 0x8be9fd : def.color)
+    }
+    for (const [enemy, entry] of this.enemyModels) {
+      if (!live.has(enemy)) {
+        this._dispose(entry)
+        this.enemyModels.delete(enemy)
+      }
     }
   }
 
@@ -563,34 +622,38 @@ export class ThreeLayer {
   // Misma nave que la vitrina de la tienda (shipModel.js). El sprite 2D se oculta de la
   // cámara principal pero sigue en el minimapa. Solo host/solo (scene.generals).
   _syncGenerals(scene) {
-    if (!scene?.generals) return
+    const generals = scene?.remote ? [...(scene.genSprites?.values() || [])] : [...(scene.generals?.values() || [])]
+    if (!generals.length) return
     this.gens ||= new Map()
     for (const [g, e] of this.gens) {
-      if (![...scene.generals.values()].includes(g)) { this.scene.remove(e.root); e.root.userData.dispose(); this.gens.delete(g) }
+      if (!generals.includes(g)) { this.scene.remove(e.root); e.root.userData.dispose(); this.gens.delete(g) }
     }
-    for (const g of scene.generals.values()) {
+    for (const g of generals) {
       let e = this.gens.get(g)
       if (!e) {
-        const root = createCommanderShip(g.tint, g.beamSkin ? equipped('design')?.design : 'falcon')
+        const tint = scene.remote ? (g.tintTopLeft || 0x8be9fd) : g.tint
+        const root = createCommanderShip(tint, !scene.remote && g.beamSkin ? equipped('design')?.design : 'falcon')
         root.scale.setScalar(0.62)
         this.scene.add(root)
-        scene.cam?.ignore(g.sprite)
+        scene.cam?.ignore(scene.remote ? [g, g.label].filter(Boolean) : g.sprite)
         e = { root, tint: g.tint }
         this.gens.set(g, e)
       }
-      if (e.tint !== g.tint) { e.root.userData.setTint(g.tint); e.tint = g.tint }
-      e.root.visible = g.alive
+      const tint = scene.remote ? (g.tintTopLeft || 0x8be9fd) : g.tint
+      if (e.tint !== tint) { e.root.userData.setTint(tint); e.tint = tint }
+      const alive = scene.remote ? g.visible !== false : g.alive
+      e.root.visible = alive
       e.root.position.set(g.x, g.y, 20)
-      const rot = g.sprite.rotation
-      e.root.rotation.set(0, 0, rot)
+      const rot = scene.remote ? (g.rotation || 0) : g.sprite.rotation
+      e.root.rotation.set(-0.16, 0, rot)
       // Alabeo al girar: se nota el volumen 3D.
       const turn = rot - (e.lastRot ?? rot)
       e.lastRot = rot
       e.bank = (e.bank || 0) * 0.9 + Math.max(-0.5, Math.min(0.5, turn * 8))
-      e.root.rotateX(e.bank)
+      e.root.rotation.x = -0.16 + e.bank
       const pulse = 0.8 + 0.25 * Math.sin(performance.now() * 0.02)
       e.root.userData.engine.scale.setScalar(pulse)
-      if (g.beamSkin) this._updateTrail(e, g, rot)
+      if (!scene.remote && g.beamSkin) this._updateTrail(e, g, rot)
     }
   }
 
@@ -1099,6 +1162,7 @@ export class ThreeLayer {
     for (const [, e] of this.structs || []) e.root.userData.dispose()
     for (const [, m] of this.missiles || []) m.userData.dispose()
     for (const [, e] of this.gens || []) { e.root.userData.dispose(); e.trail?.geometry.dispose(); e.trail?.material.dispose() }
+    for (const [, e] of this.enemyModels || []) this._dispose(e)
     for (const f of this.fx || []) f.dispose()
     this.nebulaAlpha?.dispose()
     this.backdrop?.dispose()

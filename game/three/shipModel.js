@@ -226,3 +226,77 @@ function createVariantShip(tint, design) {
 export function createCommanderShip(tint = 0xffaa44, design = 'falcon') {
   return VARIANTS[design] ? createVariantShip(tint, design) : createFalconShip(tint)
 }
+
+// Enemigos: siluetas low-poly pequeñas, extruidas y ligeramente inclinadas para que
+// conserven la lectura cenital del juego, pero ya no parezcan pegatinas planas.
+// El llamador aplica la escala final según el radio real de cada enemigo.
+export function createEnemyShipModel({ tint = 0x49e07a, radius = 10, type = 'grunt' } = {}) {
+  const root = new THREE.Group()
+  const r = Math.max(4, radius)
+  const long = r * (type === 'runner' || type === 'kamikaze' ? 2.7 : type === 'mothership' || type === 'commandship' ? 2.35 : 2.2)
+  const wide = r * (type === 'brute' || type === 'bomber' || type === 'warden' ? 1.35 : 0.95)
+  const depth = r * (type === 'mothership' || type === 'commandship' ? 0.46 : 0.34)
+  const hullPoints = type === 'brute' || type === 'bomber'
+    ? [[-long * 0.52, -wide], [long * 0.2, -wide * 0.96], [long * 0.55, -wide * 0.45], [long * 0.55, wide * 0.45], [long * 0.2, wide * 0.96], [-long * 0.52, wide]]
+    : type === 'runner' || type === 'kamikaze'
+      ? [[-long * 0.58, -wide * 0.42], [long * 0.55, 0], [-long * 0.58, wide * 0.42], [-long * 0.2, 0]]
+      : [[-long * 0.58, -wide * 0.6], [long * 0.18, -wide * 0.72], [long * 0.56, 0], [long * 0.18, wide * 0.72], [-long * 0.58, wide * 0.6], [-long * 0.32, 0]]
+
+  const body = new THREE.MeshStandardMaterial({
+    color: 0x172238, emissive: tint, emissiveIntensity: 0.22,
+    metalness: 0.55, roughness: 0.4, flatShading: true, side: THREE.DoubleSide,
+  })
+  const armor = body.clone()
+  armor.color.setHex(0x2c3a56)
+  const edge = new THREE.LineBasicMaterial({ color: tint, transparent: true, opacity: 0.95 })
+  const add = (geometry, material) => {
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 18), edge))
+    root.add(mesh)
+    return mesh
+  }
+
+  add(extrude(hullPoints, depth, Math.max(0.5, r * 0.06)), body)
+  const wingSpan = wide * (type === 'artillery' || type === 'saboteur' ? 1.9 : 1.35)
+  const wingDepth = Math.max(0.45, depth * 0.45)
+  const wingL = add(extrude([[-r * 0.15, -wide * 0.45], [-r * 0.65, -wingSpan], [-long * 0.4, -wingSpan * 0.82], [-long * 0.18, -wide * 0.4]], wingDepth, 0.35), armor)
+  const wingR = add(extrude([[-r * 0.15, wide * 0.45], [-long * 0.18, wide * 0.4], [-long * 0.4, wingSpan * 0.82], [-r * 0.65, wingSpan]], wingDepth, 0.35), armor)
+  wingL.rotation.x = 0.12
+  wingR.rotation.x = -0.12
+
+  const cockpit = new THREE.Mesh(new THREE.OctahedronGeometry(Math.max(1.4, r * 0.22), 0), new THREE.MeshStandardMaterial({
+    color: 0xbfeaff, emissive: 0x8be9fd, emissiveIntensity: 0.8,
+    metalness: 0.2, roughness: 0.2, flatShading: true,
+  }))
+  cockpit.position.set(long * 0.25, 0, Math.max(1.5, r * 0.28))
+  cockpit.scale.set(1.5, 0.72, 0.55)
+  root.add(cockpit)
+
+  const engineMaterial = new THREE.MeshBasicMaterial({ color: tint })
+  const engine = new THREE.Mesh(new THREE.OctahedronGeometry(Math.max(1.4, r * 0.2), 0), engineMaterial)
+  engine.position.set(-long * 0.52, 0, 0)
+  engine.scale.set(type === 'mothership' || type === 'commandship' ? 1.9 : 1.25, 1, 0.8)
+  root.add(engine)
+  if (type === 'runner' || type === 'kamikaze' || type === 'mothership' || type === 'commandship') {
+    const second = engine.clone()
+    second.position.y = r * 0.35
+    root.add(second)
+  }
+
+  // Inclinação base: suficiente para mostrar paredes y sombras sin convertir el juego en
+  // una cámara isométrica ni desplazar las coordenadas lógicas del mapa.
+  root.rotation.x = -0.24
+  root.userData = {
+    engine,
+    setTint(c) {
+      body.emissive.setHex(c)
+      armor.emissive.setHex(c)
+      edge.color.setHex(c)
+      engineMaterial.color.setHex(c)
+    },
+    dispose() {
+      root.traverse((o) => { o.geometry?.dispose(); o.material?.dispose?.() })
+    },
+  }
+  return root
+}

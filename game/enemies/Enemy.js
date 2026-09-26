@@ -42,6 +42,10 @@ export class Enemy {
       .setBlendMode(glowBlend())
       .setDepth(14)
 
+    // El cuerpo visible pasa a ThreeLayer; Phaser conserva estos sprites para
+    // input/minimapa y para que la lógica de combate no cambie.
+    if (scene.three) scene.cam?.ignore([this.sprite, this.glow])
+
     this.movement = MOVEMENT[this.def.movement]
     this.attack = ATTACK[this.def.attack]
     this.evasion = this.def.evasion ? EVASION[this.def.evasion] : null
