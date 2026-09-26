@@ -13,6 +13,9 @@ import { appState } from '~/game/appState'
 import { IS_TOUCH } from '~/game/quality'
 import { EnemyType, REGISTRY } from '~/game/enemies/EnemyType'
 import { sfxWaveStart, sfxCoreAlarm, sfxVictory, sfxDefeat } from '~/game/sound'
+import Settings from './Settings.vue'
+
+const settingsOpen = ref(false)
 
 // Mapeo de tipos de enemigos a nombres legibles
 const ENEMY_LABELS = {
@@ -367,6 +370,7 @@ function polyPoints(sides, radius) {
           Oleada
           <span class="text-fuchsia-200 font-semibold">{{ gameState.wave }}/{{ gameState.waveTotal }}</span>
         </span>
+        <button class="hud-btn shrink-0" aria-label="Ajustes" title="Ajustes" @click="settingsOpen = true">⚙ <span class="hidden sm:inline">Ajustes</span></button>
       </div>
     </div>
 
@@ -840,6 +844,7 @@ function polyPoints(sides, radius) {
         No mostrar más
       </button>
     </div>
+    <Settings v-if="settingsOpen" :open="settingsOpen" @close="settingsOpen = false" />
   </div>
 </template>
 

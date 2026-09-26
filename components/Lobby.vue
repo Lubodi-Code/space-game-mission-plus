@@ -7,6 +7,9 @@ import { SECTORS } from '~/game/meta/sectors'
 import { profile, levelFromXp } from '~/game/meta/profile'
 import { net } from '~/game/net'
 import { initUiSound, sfxUi } from '~/game/sound'
+import Settings from './Settings.vue'
+
+const settingsOpen = ref(false)
 
 const difficulty = ref(appState.difficulty || 'normal')
 const mode = ref(MODES[appState.mode] ? appState.mode : DEFAULT_MODE)
@@ -144,9 +147,10 @@ function joinGame() {
           <div class="text-fuchsia-200 tabular-nums">◆ {{ profile.crystals }}</div>
         </div>
       </div>
-      <div class="mt-3 flex gap-2">
+      <div class="mt-3 flex flex-wrap justify-center gap-2">
         <button class="menu-btn" @click="openView('research')">🔬 Investigación</button>
         <button class="menu-btn menu-btn--shop" @click="openView('shop')">🛒 Tienda</button>
+        <button class="menu-btn" @click="settingsOpen = true">⚙ Ajustes</button>
       </div>
 
       <!-- Modo -->
@@ -251,6 +255,7 @@ function joinGame() {
         <p>Habilidades del comandante: Z Mega Rayo · C EMP · V Reparación · B Bombardeo · N adelanta la oleada.</p>
       </div>
     </div>
+    <Settings v-if="settingsOpen" :open="settingsOpen" @close="settingsOpen = false" />
   </div>
 </template>
 
