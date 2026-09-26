@@ -170,6 +170,8 @@ export class Structure {
   }
 
   damage(dmg) {
+    // Generador de escudo cercano (ArsenalTurrets.ShieldGenerator) activo: reduce el daño.
+    if (this.shieldUntil > this.scene.time.now) dmg *= 1 - (this.shieldReduce || 0)
     if (this.dead) return
     this.hp -= dmg
     this.lastDamaged = this.scene.time.now // el Enjambre no cura hasta pasado healDamageCooldown

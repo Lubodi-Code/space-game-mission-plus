@@ -2,13 +2,45 @@
 import { ref, computed, onMounted } from 'vue'
 import { appState } from '~/game/appState'
 import { profile } from '~/game/meta/profile'
-import { COSMETICS, COSMETIC_BY_ID, RARITY, SLOTS, owns, buyWithScrap, equip, featuredToday } from '~/game/meta/cosmetics'
+import { COSMETICS, COSMETIC_BY_ID, RARITY, SLOTS, owns, buyWithScrap, equip, featuredToday, unlockProgress, claimUnlocks } from '~/game/meta/cosmetics'
 import { sfxUi, sfxPurchase } from '~/game/sound'
 import { CRYSTAL_PACKS } from '~/shared/catalog'
+import { ARSENAL, arsenalState, buyArsenal } from '~/game/meta/arsenal'
+import { buildUpgradeTree } from '~/game/structures/upgrades'
 import { account, initAccount, loginGoogle, loginEmail, logout, buyCosmeticWithCrystals, syncAccount } from '~/game/meta/account'
 
-onMounted(() => { initAccount(); syncAccount() })
+onMounted(() => { initAccount(); syncAccount(); claimUnlocks() })
 const checkoutPack = ref<string | null>(null)
+
+// ---- Arsenal: torretas que se desbloquean para siempre con Chatarra (nunca con dinero real).
+const selTurret = ref<string>(ARSENAL[0]?.key || '')
+const turretDef = computed(() => ARSENAL.find((s) => s.key === selTurret.value))
+const turretTree = computed(() => (turretDef.value ? buildUpgradeTree(turretDef.value.role, []) : []))
+const turretStats = computed(() => {
+  const d: any = turretDef.value
+  if (!d) return []
+  const out = [`Costo en partida: ${d.cost} minerales`, `Vida: ${d.hp}`]
+  if (d.damage) out.push(`Daño: ${d.damage}`)
+  if (d.atkRange) out.push(`Alcance: ${d.atkRange}`)
+  if (d.cooldown) out.push(`Cadencia: ${(1000 / d.cooldown).toFixed(2)}/s`)
+  if (d.chains) out.push(`Saltos: ${d.chains}`)
+  if (d.slowMs) out.push(`Ralentiza: ${Math.round((1 - d.slowFactor) * 100)}% por ${(d.slowMs / 1000).toFixed(1)} s`)
+  if (d.pierce) out.push(`Atraviesa: ${d.pierce + 1} naves`)
+  if (d.splash) out.push(`Área: ${d.splash}`)
+  if (d.shieldReduce) out.push(`Reduce daño: ${Math.round(d.shieldReduce * 100)}% en ${d.shieldRange}`)
+  return out
+})
+const turretPreview = computed(() => (tab.value === 'arsenal' && turretDef.value
+  ? { role: turretDef.value.role, sides: turretDef.value.sides, color: turretDef.value.color } : null))
+function hexCss(n: number) { return '#' + (n >>> 0).toString(16).padStart(6, '0') }
+function pickTurret(key: string) { selTurret.value = key; sfxUi('click') }
+function buyTurret() {
+  const d = turretDef.value
+  if (!d) return
+  if (buyArsenal(d.key)) { sfxPurchase(); flash(`¡${d.label} desbloqueada! Ya aparece en tu barra de construcción`) }
+  else { sfxUi('error'); flash(arsenalState(d) === 'level' ? `Necesitás nivel ${d.arsenal.level}` : 'No te alcanza la Chatarra') }
+}
+const TURRET_BTN: Record<string, string> = { owned: '✔ Desbloqueada', level: '🔒 Nivel', poor: 'Falta Chatarra', available: 'Desbloquear' }
 const email = ref('')
 const emailSent = ref(false)
 async function sendLink() {
@@ -22,12 +54,19 @@ function buyPack(id: string) {
 
 // Tienda de cosméticos estilo Fortnite / Fall Guys: destacado del día, pestañas por tipo,
 // tarjetas por rareza y vitrina 3D a la izquierda. Solo aspecto: nada da ventaja en combate.
-const tab = ref<'featured' | 'beam' | 'hull' | 'trail' | 'crystals'>('featured')
+const tab = ref<string>('featured') // featured | rewards | crystals | id de slot
 const selected = ref<string>(profile.cosmetics.equipped.beam)
 const toast = ref('')
 
 const featured = featuredToday()
-const items = computed(() => (tab.value === 'featured' ? featured : tab.value === 'crystals' ? [] : COSMETICS.filter((c) => c.slot === tab.value)))
+// Recompensas: todo lo que se desbloquea jugando, primero lo más cercano a conseguirse.
+const rewards = computed(() => COSMETICS.filter((c) => c.unlock)
+  .map((c) => ({ c, p: unlockProgress(c) }))
+  .sort((a, b) => Number(a.p.done) - Number(b.p.done) || (b.p.cur / b.p.need) - (a.p.cur / a.p.need)))
+const rewardsDone = computed(() => rewards.value.filter((r) => r.p.done).length)
+const items = computed(() => (tab.value === 'featured' ? featured
+  : tab.value === 'rewards' ? rewards.value.map((r) => r.c)
+  : tab.value === 'crystals' || tab.value === 'arsenal' ? [] : COSMETICS.filter((c) => c.slot === tab.value)))
 const sel = computed(() => COSMETIC_BY_ID[selected.value])
 
 // La vitrina muestra lo equipado, reemplazando el slot del ítem que se está mirando.
@@ -48,10 +87,14 @@ const resetIn = computed(() => {
 function hex(n?: number) {
   return n == null ? '#8be9fd' : '#' + (n >>> 0).toString(16).padStart(6, '0')
 }
+const RAINBOW = 'linear-gradient(90deg,#ff5566,#ffd24a,#49e07a,#4fc3ff,#c77dff)'
 function swatch(c: any) {
-  if (c.slot === 'beam') return c.anim === 'hue' ? 'linear-gradient(90deg,#ff5566,#ffd24a,#49e07a,#4fc3ff,#c77dff)' : hex(c.color)
+  if (c.anim === 'hue') return c.slot === 'explosion' ? 'radial-gradient(circle,#fff,#ff7ad9 35%,#4fc3ff 60%,transparent 70%)' : RAINBOW
   if (c.slot === 'hull') return hex(c.tint)
-  return c.color ? hex(c.color) : '#223'
+  if (c.slot === 'design') return 'linear-gradient(135deg,#8be9fd,#c77dff 60%,#ff7ad9)'
+  if (c.slot === 'explosion') return c.color ? `radial-gradient(circle,#fff,${hex(c.color)} 40%,transparent 70%)` : 'radial-gradient(circle,#fff,#8aa4c8 40%,transparent 70%)'
+  if (!c.color) return c.slot === 'nexus' ? '#8be9fd' : c.slot === 'turret' ? 'linear-gradient(90deg,#ff5566,#ffd24a,#5bd0ff)' : '#223'
+  return hex(c.color)
 }
 
 function flash(msg: string) {
@@ -97,6 +140,7 @@ const actLabel = computed(() => {
   if (owns(c.id)) return 'Equipar'
   if (c.price?.scrap) return `Comprar · ⚙ ${c.price.scrap}`
   if (c.price?.crystals) return `Comprar · ◆ ${c.price.crystals}`
+  if (c.unlock) return `🔒 ${unlockProgress(c).label}`
   return ''
 })
 
@@ -124,9 +168,18 @@ function back() {
       <!-- Vitrina 3D -->
       <section class="showcase">
         <div class="absolute inset-0">
-          <ShopPreview :hull="preview.hull" :beam="preview.beam" :trail="preview.trail" />
+          <ShopPreview :hull="preview.hull" :beam="preview.beam" :trail="preview.trail" :design="COSMETIC_BY_ID[preview.design]?.design" :turret="turretPreview" />
         </div>
-        <div v-if="sel" class="showcase-info">
+        <div v-if="tab === 'arsenal' && turretDef" class="showcase-info">
+          <div class="text-[11px] font-bold tracking-widest text-amber-200">ARSENAL · TORRETA</div>
+          <div class="text-2xl sm:text-3xl font-extrabold text-white leading-tight">{{ turretDef.label }}</div>
+          <button class="act-btn" :class="{ 'act-btn--done': arsenalState(turretDef) === 'owned' }"
+                  :disabled="arsenalState(turretDef) === 'owned'" @click="buyTurret">
+            <template v-if="arsenalState(turretDef) === 'owned'">✔ Desbloqueada</template>
+            <template v-else>Desbloquear · ⚙ {{ turretDef.arsenal.scrap }}<span v-if="arsenalState(turretDef) === 'level'"> · Nv {{ turretDef.arsenal.level }}</span></template>
+          </button>
+        </div>
+        <div v-else-if="sel" class="showcase-info">
           <div class="text-[11px] font-bold tracking-widest" :style="{ color: RARITY[sel.rarity].css }">
             {{ RARITY[sel.rarity].label.toUpperCase() }} · {{ SLOTS.find((s) => s.id === sel.slot)?.label }}
           </div>
@@ -135,7 +188,7 @@ function back() {
             v-if="actLabel"
             class="act-btn"
             :class="{ 'act-btn--done': actLabel === 'Equipado', 'act-btn--premium': !owns(sel.id) && sel.price?.crystals }"
-            :disabled="actLabel === 'Equipado'"
+            :disabled="actLabel === 'Equipado' || actLabel.startsWith('🔒')"
             @click="act"
           >
             {{ actLabel }}
@@ -148,8 +201,43 @@ function back() {
         <nav class="flex gap-1.5 overflow-x-auto pb-1">
           <button class="tab" :class="{ 'tab--on': tab === 'featured' }" @click="tab = 'featured'; sfxUi('click')">★ Destacado</button>
           <button v-for="s in SLOTS" :key="s.id" class="tab" :class="{ 'tab--on': tab === s.id }" @click="tab = s.id; sfxUi('click')">{{ s.label }}</button>
+          <button class="tab tab--arsenal" :class="{ 'tab--on': tab === 'arsenal' }" @click="tab = 'arsenal'; sfxUi('click')">⚔ Arsenal</button>
+          <button class="tab tab--gift" :class="{ 'tab--on': tab === 'rewards' }" @click="tab = 'rewards'; sfxUi('click')">🎁 Recompensas {{ rewardsDone }}/{{ rewards.length }}</button>
           <button class="tab tab--gem" :class="{ 'tab--on': tab === 'crystals' }" @click="tab = 'crystals'; sfxUi('click')">◆ Cristales</button>
         </nav>
+
+        <!-- Arsenal: torretas nuevas con su árbol de mejoras -->
+        <div v-if="tab === 'arsenal'" class="mt-3 overflow-y-auto pb-4 space-y-3">
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <button v-for="d in ARSENAL" :key="d.key" class="card" :class="{ 'card--sel': selTurret === d.key }"
+                    :style="{ '--rar': hexCss(d.color) }" @click="pickTurret(d.key)">
+              <span class="card-art text-4xl" :style="{ color: hexCss(d.color), textShadow: `0 0 16px ${hexCss(d.color)}` }">{{ d.glyph }}</span>
+              <span class="card-foot">
+                <span class="block text-[12px] font-bold text-white truncate">{{ d.label }}</span>
+                <span class="card-price">
+                  <template v-if="arsenalState(d) === 'owned'">✔ Tuya</template>
+                  <template v-else>⚙ {{ d.arsenal.scrap }} · Nv {{ d.arsenal.level }}</template>
+                </span>
+              </span>
+            </button>
+          </div>
+          <div v-if="turretDef" class="p-3 rounded-xl bg-black/55 ring-1 ring-white/10 text-sm space-y-2">
+            <p class="text-cyan-100/85">{{ turretDef.desc }}</p>
+            <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-cyan-200/70">
+              <span v-for="st in turretStats" :key="st">{{ st }}</span>
+            </div>
+            <div class="grid sm:grid-cols-2 gap-2 pt-1">
+              <div v-for="br in turretTree" :key="br.branch" class="rounded-lg bg-white/5 ring-1 ring-white/10 p-2">
+                <div class="text-[11px] font-bold text-amber-200 mb-1">Rama {{ br.branch }} · {{ br.name }}</div>
+                <div v-for="(n, i) in br.nodes" :key="n.id" class="text-[11px] leading-snug mb-1">
+                  <b class="text-white">{{ i + 1 }}. {{ n.label }}</b> <span class="text-amber-300/80">({{ n.cost }})</span>
+                  <span class="block text-cyan-100/60">{{ n.effects.join(' · ') }}</span>
+                </div>
+              </div>
+            </div>
+            <p class="text-[10px] text-cyan-200/40">Las dos ramas son excluyentes en cada torreta. Las mejoras se compran con minerales durante la partida.</p>
+          </div>
+        </div>
 
         <!-- Cristales: cuenta + paquetes (dinero real vía ONVO) -->
         <div v-if="tab === 'crystals'" class="mt-3 overflow-y-auto pb-4 space-y-3">
@@ -204,7 +292,9 @@ function back() {
                 <template v-else-if="owns(c.id)">Tuyo</template>
                 <template v-else-if="c.price?.scrap">⚙ {{ c.price.scrap }}</template>
                 <template v-else-if="c.price?.crystals">◆ {{ c.price.crystals }}</template>
+                <template v-else-if="c.unlock">🔒 {{ unlockProgress(c).label }}</template>
               </span>
+              <span v-if="c.unlock && !owns(c.id)" class="unlock-bar"><span :style="{ width: (100 * unlockProgress(c).cur / unlockProgress(c).need) + '%' }" /></span>
             </span>
           </button>
         </div>
@@ -256,6 +346,14 @@ function back() {
 }
 .tab--on { @apply bg-white text-[#05070f] ring-white; }
 .tab--gem { @apply ring-fuchsia-300/50 text-fuchsia-100; }
+.tab--gift { @apply ring-amber-300/50 text-amber-100; }
+.tab--arsenal { @apply ring-orange-300/50 text-orange-100; }
+.unlock-bar { @apply block mt-1 h-1 rounded-full bg-white/10 overflow-hidden; }
+.unlock-bar > span { @apply block h-full bg-amber-300; }
+.card-swatch--explosion { width: 4rem; height: 4rem; }
+.card-swatch--design { width: 4rem; height: 4rem; clip-path: polygon(100% 50%, 20% 0, 35% 50%, 20% 100%); border-radius: 0; }
+.card-swatch--nexus { clip-path: polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%); border-radius: 0; }
+.card-swatch--turret { width: 80%; height: 0.4rem; }
 .pack-tag { @apply absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-300 text-[#05070f]; }
 .card {
   @apply relative flex flex-col rounded-xl overflow-hidden text-left transition-transform active:scale-95;

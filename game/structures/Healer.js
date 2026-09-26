@@ -1,3 +1,4 @@
+import { orbSpawnFx } from '~/game/render/fx.js'
 import { gameState } from '~/game/gameState.js'
 import { Structure } from './Structure.js'
 import { glowBlend } from '~/game/render/blend.js'
@@ -43,6 +44,7 @@ export class Healer extends Structure {
     const sprite = scene.add.image(this.x, this.y, 'glow').setTint(HEAL_ORB_COLOR).setScale(0.15)
       .setBlendMode(glowBlend()).setDepth(18)
     if (!this.scene.healers) this.scene.healers = []
-    this.scene.healers.push({ owner: this, x: this.x, y: this.y, target: null, sprite })
+    this.scene.healers.push({ owner: this, x: this.x, y: this.y, target: null, sprite, born: scene.time.now })
+    orbSpawnFx(scene, this.x, this.y)
   }
 }

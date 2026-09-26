@@ -9,7 +9,12 @@ export default defineNuxtConfig({
 
   modules: ['@nuxtjs/tailwindcss'],
 
-  ssr: false, // SPA mode for Phaser game (canvas renders client-side)
+  // Portada con SSR + prerender (SEO); el juego es solo cliente (Phaser/Three usan window).
+  ssr: true,
+  routeRules: {
+    '/': { prerender: true },
+    '/jugar': { ssr: false },
+  },
 
   css: ['~/style.css'],
 

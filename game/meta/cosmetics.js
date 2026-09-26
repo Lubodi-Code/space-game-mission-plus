@@ -1,4 +1,4 @@
-import { profile } from './profile.js'
+import { profile, levelFromXp } from './profile.js'
 import { premium } from './premium.js'
 
 // Catálogo de cosméticos. Solo cambian el aspecto: nunca daño, vida ni cadencia.
@@ -14,20 +14,26 @@ export const COSMETIC_BY_ID = Object.fromEntries(COSMETICS.map((c) => [c.id, c])
 
 export const SLOTS = [
   { id: 'beam', label: 'Rayos' },
-  { id: 'hull', label: 'Naves' },
+  { id: 'design', label: 'Diseños' },
+  { id: 'hull', label: 'Colores de nave' },
   { id: 'trail', label: 'Estelas' },
+  { id: 'explosion', label: 'Explosiones' },
+  { id: 'nexus', label: 'Núcleo' },
+  { id: 'turret', label: 'Torretas' },
 ]
 
 // Lo premium (precio en Cristales) solo cuenta si lo confirma el inventario del servidor.
 export function owns(id) {
   const c = COSMETIC_BY_ID[id]
-  if (c?.price?.crystals) return premium.owned.includes(id)
+  if (!c) return false
+  if (c.price?.crystals) return premium.owned.includes(id)
+  if (!c.price && !c.unlock) return true // los 'default' de cada slot
   return profile.cosmetics.owned.includes(id)
 }
 
 export function equipped(slot) {
   const id = profile.cosmetics.equipped[slot]
-  return (owns(id) && COSMETIC_BY_ID[id]) || COSMETICS.find((c) => c.slot === slot && !c.price)
+  return (owns(id) && COSMETIC_BY_ID[id]) || COSMETICS.find((c) => c.slot === slot && !c.price && !c.unlock)
 }
 
 // Color HSV → 0xRRGGBB (para el rayo animado 'hue').
@@ -40,6 +46,58 @@ export function equippedBeam(now = (typeof performance !== 'undefined' ? perform
   const b = equipped('beam')
   if (b.anim === 'hue') return { ...b, color: hsv((now / 2400) % 1, 0.75, 1) }
   return b
+}
+
+// Color de un cosmético con 'hue' animado resuelto al instante actual.
+function liveColor(c, now = (typeof performance !== 'undefined' ? performance.now() : 0)) {
+  return c.anim === 'hue' ? hsv((now / 2400) % 1, 0.75, 1) : c.color
+}
+
+// Overrides de color para el render (null/orig = sin cosmético).
+export function explosionColor(orig) {
+  const c = equipped('explosion')
+  return c?.color != null ? liveColor(c) : orig
+}
+export function turretBeamColor(orig) {
+  const c = equipped('turret')
+  return c?.color != null ? liveColor(c) : orig
+}
+export function nexusColor(orig) {
+  const c = equipped('nexus')
+  return c?.color != null ? c.color : orig
+}
+
+// ---------------------------------------------------------------- desbloqueos por progreso
+const UNLOCK_LABEL = {
+  level: (n) => `Nivel ${n}`,
+  sector: (n) => `Ganá el sector ${n}`,
+  wins: (n) => `${n} victorias`,
+  kills: (n) => `${n.toLocaleString('es-CR')} bajas`,
+  runs: (n) => `${n} partidas`,
+}
+
+function statFor(key) {
+  if (key === 'level') return levelFromXp(profile.xp).level
+  if (key === 'sector') return profile.maxSectorWon || 0
+  return profile.stats[key] || 0
+}
+
+// Estado de un desbloqueo: { key, need, cur, done, label }.
+export function unlockProgress(c) {
+  if (!c.unlock) return null
+  const [key, need] = Object.entries(c.unlock)[0]
+  const cur = statFor(key)
+  return { key, need, cur: Math.min(cur, need), done: cur >= need, label: UNLOCK_LABEL[key]?.(need) || '' }
+}
+
+// Reclama todo lo desbloqueado que falte. Devuelve los cosméticos nuevos.
+export function claimUnlocks() {
+  const out = []
+  for (const c of COSMETICS) {
+    if (!c.unlock || profile.cosmetics.owned.includes(c.id)) continue
+    if (unlockProgress(c).done) { profile.cosmetics.owned.push(c.id); out.push(c) }
+  }
+  return out
 }
 
 // Compra con Chatarra (moneda blanda, local). Las compras en cristales pasan por el servidor.

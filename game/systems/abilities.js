@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { RENDER_SCALE } from '~/game/quality.js'
 import { gameState } from '~/game/gameState.js'
 import { abilityUnlocked, runBonuses } from '~/game/meta/research.js'
 import { equippedBeam } from '~/game/meta/cosmetics.js'
@@ -87,7 +88,7 @@ export function handleTargetClick(scene, wx, wy) {
   const def = ABILITIES[id]
   if (def.target === 'enemy') {
     // Tolerancia en px de pantalla → coherente a cualquier zoom (y con el dedo en móvil).
-    const tol = 36 / scene.cam.zoom
+    const tol = (36 * RENDER_SCALE) / scene.cam.zoom
     let best = null; let bestD = Infinity
     for (const e of scene.enemies) {
       if (e.dead) continue

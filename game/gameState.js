@@ -32,6 +32,7 @@ export const gameState = reactive({
   abilities: {}, // id → { ready, cdLeft, cdMax } (lo publica systems/abilities.js)
   abilityTargeting: null, // id de la habilidad esperando un clic de objetivo
   runRewards: null, // resumen de XP/Chatarra al terminar (profile.grantRunRewards)
+  event: null, // evento temporal activo (systems/specialMeteors.js), p. ej. meteorito gigante
 })
 
 if (import.meta.env.DEV && typeof window !== 'undefined') {
@@ -70,5 +71,6 @@ export function resetGameState() {
     abilities: {},
     abilityTargeting: null,
     runRewards: null,
+    event: null,
   })
 }

@@ -74,7 +74,7 @@ export class Collector extends Structure {
     let best = null
     let bestD = this.miningRange
     for (const m of this.scene.meteorites) {
-      if (m.depleted) continue
+      if (m.depleted || m.special) continue // gigante: solo el comandante; explosivo armado: no se mina
       const d = Phaser.Math.Distance.Between(this.x, this.y, m.x, m.y)
       if (d <= bestD) {
         bestD = d

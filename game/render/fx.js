@@ -2,8 +2,8 @@ import Phaser from 'phaser'
 import { COMBAT, FX } from '~/game/balance.js'
 import { net } from '~/game/net.js'
 import { glowBlend } from './blend.js'
-import { sfxImpact } from '~/game/sound.js'
-import { LOW_GFX } from '~/game/quality.js'
+import { sfxImpact, sfxHeal } from '~/game/sound.js'
+import { LOW_GFX, RENDER_SCALE } from '~/game/quality.js'
 
 // Efectos visuales transitorios. Funciones que reciben `scene`; sin estado propio.
 
@@ -15,6 +15,7 @@ export function spawnFloatingText(scene, x, y, text, color) {
     fontStyle: 'bold',
     stroke: '#000',
     strokeThickness: 3,
+    resolution: RENDER_SCALE,
   }).setOrigin(0.5).setDepth(35)
   scene.tweens.add({
     targets: t,
@@ -24,6 +25,73 @@ export function spawnFloatingText(scene, x, y, text, color) {
     ease: 'Quad.out',
     onComplete: () => t.destroy(),
   })
+}
+
+// Respuesta visual al comprar una mejora: dos anillos que se expanden, chispas que suben en
+// espiral y el nombre de la mejora flotando. Todo en Phaser (sobre el 3D).
+export function upgradeBurst(scene, x, y, color, radius, label) {
+  const r = Math.max(12, radius)
+  for (const [delay, w] of [[0, 3], [120, 1.5]]) {
+    const g = scene.add.graphics().setDepth(34).setBlendMode(Phaser.BlendModes.ADD)
+    const st = { k: 0 }
+    scene.tweens.add({
+      targets: st, k: 1, delay, duration: 650, ease: 'Cubic.out',
+      onUpdate: () => {
+        g.clear()
+        g.lineStyle(w, color, 1 - st.k).strokeCircle(x, y, r + st.k * r * 3.2)
+        g.fillStyle(color, 0.18 * (1 - st.k)).fillCircle(x, y, r + st.k * r * 1.5)
+      },
+      onComplete: () => g.destroy(),
+    })
+  }
+  const n = LOW_GFX ? 10 : 18
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2
+    const p = scene.add.graphics().setDepth(35).setBlendMode(Phaser.BlendModes.ADD)
+    p.fillStyle(i % 3 ? color : 0xffffff, 1).fillCircle(0, 0, 1.6 + Math.random() * 1.6)
+    p.setPosition(x + Math.cos(a) * r, y + Math.sin(a) * r)
+    scene.tweens.add({
+      targets: p,
+      x: x + Math.cos(a + 0.9) * r * 2.4,
+      y: y + Math.sin(a + 0.9) * r * 2.4 - 26,
+      alpha: 0, scale: 0.2,
+      duration: 700 + Math.random() * 300, ease: 'Quad.out',
+      onComplete: () => p.destroy(),
+    })
+  }
+  const css = '#' + (color >>> 0).toString(16).padStart(6, '0')
+  const t = scene.add.text(x, y - r - 10, `▲ ${label || 'MEJORA'}`, {
+    fontSize: '14px', fontFamily: 'monospace', fontStyle: 'bold', color: css,
+    stroke: '#000', strokeThickness: 4, resolution: RENDER_SCALE,
+  }).setOrigin(0.5).setDepth(36).setScale(0.6)
+  scene.tweens.add({ targets: t, scale: 1, duration: 220, ease: 'Back.out' })
+  scene.tweens.add({ targets: t, y: y - r - 44, alpha: 0, delay: 650, duration: 600, ease: 'Quad.in', onComplete: () => t.destroy() })
+}
+
+// Esfera sanadora que nace: anillo que se cierra + destello.
+export function orbSpawnFx(scene, x, y) {
+  const g = scene.add.graphics().setDepth(33).setBlendMode(Phaser.BlendModes.ADD)
+  const st = { k: 0 }
+  scene.tweens.add({
+    targets: st, k: 1, duration: 420, ease: 'Quad.out',
+    onUpdate: () => {
+      g.clear()
+      g.lineStyle(2, HEAL_ORB_COLOR, 1 - st.k).strokeCircle(x, y, 26 * (1 - st.k) + 4)
+      g.fillStyle(0xffffff, 0.6 * (1 - st.k)).fillCircle(x, y, 5 * (1 - st.k) + 1)
+    },
+    onComplete: () => g.destroy(),
+  })
+  sfxHeal(x, y)
+}
+
+// Curación en curso: una cruz verde que sube desde el edificio.
+export function healSparkFx(scene, x, y, r = 10) {
+  const g = scene.add.graphics().setDepth(33).setBlendMode(Phaser.BlendModes.ADD)
+  g.fillStyle(HEAL_ORB_COLOR, 1)
+  g.fillRect(-1, -4, 2, 8)
+  g.fillRect(-4, -1, 8, 2)
+  g.setPosition(x + (Math.random() - 0.5) * r * 1.6, y + (Math.random() - 0.3) * r)
+  scene.tweens.add({ targets: g, y: g.y - 18, alpha: 0, duration: 650, ease: 'Quad.out', onComplete: () => g.destroy() })
 }
 
 export function hitFlash(scene, x, y) {
@@ -44,10 +112,10 @@ export function hitFlash(scene, x, y) {
   }
 }
 
-export function explosion(scene, x, y, color, radius) {
+export function explosion(scene, x, y, color, radius, kind) {
   if (net.isHost && scene._explQueue) scene._explQueue.push([Math.round(x), Math.round(y), color, Math.round(radius)])
   sfxImpact(x, y, radius / 14)
-  if (scene.three) scene.three.explode(x, y, color, radius)
+  if (scene.three) scene.three.explode(x, y, color, radius, kind)
 
   // Camera shake on zoom or proximity to action (noticeable intensity)
   const cam = scene.cameras?.main
@@ -122,6 +190,28 @@ export function auraBurst(scene, x, y, color, radius) {
 // Pura: dibuja un haz sobre el Graphics `g` (la usan el host y el cliente remoto).
 // Estilo "3D": halo exterior ancho, cuerpo de color y núcleo blanco caliente, con
 // destello en la boca y flash de impacto — todo con blending ADD del fxGraphics.
+// Rayo eléctrico quebrado (Tesla): zigzag que cambia cada frame + halo.
+export function drawJagged(g, x1, y1, x2, y2, color, width, a) {
+  const dx = x2 - x1; const dy = y2 - y1
+  const len = Math.hypot(dx, dy) || 1
+  const nx = -dy / len; const ny = dx / len
+  const segs = Math.max(4, Math.round(len / 18))
+  const pts = [[x1, y1]]
+  for (let i = 1; i < segs; i++) {
+    const t = i / segs
+    const off = (Math.random() - 0.5) * Math.min(22, len * 0.25)
+    pts.push([x1 + dx * t + nx * off, y1 + dy * t + ny * off])
+  }
+  pts.push([x2, y2])
+  for (const [w, al, c] of [[width * 4, 0.15, color], [width * 1.6, 0.6, color], [Math.max(1, width * 0.5), 0.95, 0xffffff]]) {
+    g.lineStyle(w, c, al * a)
+    g.beginPath(); g.moveTo(pts[0][0], pts[0][1])
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1])
+    g.strokePath()
+  }
+  g.fillStyle(0xffffff, 0.8 * a).fillCircle(x2, y2, width * 1.6)
+}
+
 export function drawBeam(g, x1, y1, x2, y2, color, width, a) {
   g.lineStyle(width * 5, color, a * 0.10); g.lineBetween(x1, y1, x2, y2) // halo difuso
   g.lineStyle(width * 2.4, color, a * 0.30); g.lineBetween(x1, y1, x2, y2) // cuerpo
@@ -176,8 +266,9 @@ export function drawFx(scene, delta) {
       scene.lasers.splice(i, 1)
       continue
     }
-    const a = l.ttl / COMBAT.laserTtlMs
-    drawBeam(g, l.x1, l.y1, l.x2, l.y2, l.color, l.width ?? 2.5, a)
+    const a = Math.min(1, l.ttl / COMBAT.laserTtlMs)
+    if (l.jag) drawJagged(g, l.x1, l.y1, l.x2, l.y2, l.color, l.width ?? 2, a)
+    else drawBeam(g, l.x1, l.y1, l.x2, l.y2, l.color, l.width ?? 2.5, a)
   }
   scene.epSystem.draw(g)
 }

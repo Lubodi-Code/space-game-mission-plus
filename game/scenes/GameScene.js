@@ -20,7 +20,7 @@ import { populateMeteorites } from '~/game/systems/worldgen.js'
 import { initWaves, updateWaves, enemyStatMult, callWaveEarly } from '~/game/systems/waves.js'
 import { recomputeNetwork as recomputeNetworkSys } from '~/game/systems/energyNet.js'
 import { ThreeLayer } from '~/game/three/ThreeLayer.js'
-import { explosion as explosionFx, drawFx, drawPlayerCursor } from '~/game/render/fx.js'
+import { explosion as explosionFx, drawFx, drawPlayerCursor, upgradeBurst } from '~/game/render/fx.js'
 import { updateProjectiles } from '~/game/systems/projectiles.js'
 import { updateHealers } from '~/game/systems/healers.js'
 import { updateEnemies, nearestStructure, killEnemy } from '~/game/systems/enemies.js'
@@ -30,10 +30,12 @@ import { onIntent, createRemote, renderRemote, sendSnapshot } from '~/game/net/s
 import { initSound, updateSound, setMusicState, updateShipBeds, sfxSpeed } from '~/game/sound.js'
 import { initAbilities, updateAbilities, requestAbility, handleTargetClick, cancelTargeting } from '~/game/systems/abilities.js'
 import { runBonuses } from '~/game/meta/research.js'
+import { WEAPON_ROLES } from '~/game/meta/arsenal.js'
+import { initSpecialMeteors, updateSpecialMeteors, goToGiant } from '~/game/systems/specialMeteors.js'
 import { grantRunRewards } from '~/game/meta/profile.js'
-import { equipped } from '~/game/meta/cosmetics.js'
+import { equipped, claimUnlocks } from '~/game/meta/cosmetics.js'
 import { currentMode } from '~/game/modes/index.js'
-import { sfxLevelUp } from '~/game/sound.js'
+import { sfxLevelUp, sfxUpgrade } from '~/game/sound.js'
 import { saveSoloSnapshot, loadSoloSnapshot, restoreSoloSnapshot, clearSoloSnapshot } from '~/game/systems/persist.js'
 
 
@@ -176,6 +178,7 @@ export class GameScene extends Phaser.Scene {
 
     this.setupInput()
     initAbilities(this)
+    initSpecialMeteors(this)
     initWaves(this)
     if (resumeSnapshot) restoreSoloSnapshot(this, resumeSnapshot)
     this.setSpeed(1)
@@ -288,7 +291,7 @@ export class GameScene extends Phaser.Scene {
         })
         if (hit) {
           // Shift+clic sobre una torreta: alterna en la multi-selección.
-          if (p.event?.shiftKey && (hit.role === 'turret' || hit.role === 'missile')) {
+          if (p.event?.shiftKey && WEAPON_ROLES.includes(hit.role)) {
             if (this.multiSel.has(hit)) this.multiSel.delete(hit)
             else this.multiSel.add(hit)
             gameState.multiSelCount = this.multiSel.size
@@ -387,9 +390,11 @@ export class GameScene extends Phaser.Scene {
     this.busOff = [
       bus.on('build', (key) => { this.deselectGeneral(); startPlacement(this, key) }),
       bus.on('cancel', () => {
-        if (gameState.generalMode === 'selected') this.deselectGeneral()
+        if (gameState.abilityTargeting) cancelTargeting()
+        else if (gameState.generalMode === 'selected') this.deselectGeneral()
         else cancelPlacement(this)
       }),
+      bus.on('deselect', () => deselectStructure(this)),
       bus.on('selectGeneral', () => this.selectGeneral()),
       bus.on('restart', () => { clearSoloSnapshot(); this.scene.restart() }),
       bus.on('speed', (v) => { this.setSpeed(v); sfxSpeed() }),
@@ -399,6 +404,7 @@ export class GameScene extends Phaser.Scene {
       bus.on('fireMode', ({ structureId, mode }) => setFireMode(this, structureId, mode)),
       bus.on('ability', (id) => { if (!this.remote) requestAbility(this, id) }),
       bus.on('callWave', () => { if (!this.remote) callWaveEarly(this) }),
+      bus.on('gotoEvent', () => { if (!this.remote) goToGiant(this) }),
     ]
   }
 
@@ -430,6 +436,10 @@ export class GameScene extends Phaser.Scene {
     gameState.minerals -= upg.cost
     gameState.generalUpgrades.push(upgradeId)
     for (const g of this.generals.values()) g.applyUpgrade(upg)
+    if (this.general?.alive) {
+      upgradeBurst(this, this.general.x, this.general.y, upg.tint || 0x8be9fd, this.general.radius, upg.label)
+      sfxUpgrade(this.general.x, this.general.y)
+    }
   }
 
   // Lógica en systems/energyNet.js. Wrapper conservado porque Structure.js llama
@@ -537,6 +547,7 @@ export class GameScene extends Phaser.Scene {
     updateEnemies(this, d)
     for (const g of this.generals.values()) g.update(d / 1000, this.world)
     updateAbilities(this, d)
+    updateSpecialMeteors(this, d)
     gameState.general.alive = this.general.alive
     gameState.general.hp = Math.ceil(this.general.hp)
     gameState.general.respawnIn = Math.ceil(Math.max(0, this.general.respawn) / 1000)
@@ -578,7 +589,7 @@ export class GameScene extends Phaser.Scene {
   // -------------------------------------------------------------------- fx
   // Lógica en render/fx.js. Wrapper conservado porque Structure.js / General.js /
   // EnemyProjectiles.js llaman this.scene.explosion().
-  explosion(x, y, color, radius) { explosionFx(this, x, y, color, radius) }
+  explosion(x, y, color, radius, kind) { explosionFx(this, x, y, color, radius, kind) }
 
   // ----------------------------------------------------------------- states
   gameOver() {
@@ -611,7 +622,8 @@ export class GameScene extends Phaser.Scene {
       kills: gameState.kills,
       sectorReward: this.sector?.reward || 0,
     })
-    if (gameState.runRewards.levelUp) sfxLevelUp()
+    gameState.runRewards.newCosmetics = claimUnlocks().map((c) => c.name)
+    if (gameState.runRewards.levelUp || gameState.runRewards.newCosmetics.length) sfxLevelUp()
   }
 
   // -------------------------------------------------------------- nebulae

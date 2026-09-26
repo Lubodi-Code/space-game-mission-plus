@@ -336,6 +336,54 @@ export const UPGRADES = [
   { id: 'node_a2', branch: 'A', label: 'Relé de largo alcance', cost: 80, forRole: 'relay', requires: 'node_a', range: 1.3, tint: 0x5ab8ff, decor: 'long' },
   { id: 'node_b', branch: 'B', label: 'Hub', cost: 40, forRole: 'relay', ports: 4, tint: 0x6cffe0, decor: 'pods' },
   { id: 'node_b2', branch: 'B', label: 'Blindaje reactivo', cost: 80, forRole: 'relay', requires: 'node_b', hpMult: 2.5, tint: 0xaef0ff, decor: 'heavy' },
+  // ================= Arsenal: árbol propio por torreta (A/B excluyentes, 3 niveles) =================
+  // ---- Criogénica
+  { id: 'cryo_a', branch: 'A', label: 'Ventisca', cost: 70, forRole: 'cryo', splashAdd: 60, tint: 0xbff6ff, decor: 'wide' },
+  { id: 'cryo_a2', branch: 'A', label: 'Frente frío', cost: 120, forRole: 'cryo', requires: 'cryo_a', splashMult: 1.4, slowMs: 1.3, tint: 0x9ae8ff, decor: 'plasma' },
+  { id: 'cryo_a3', branch: 'A', label: 'Cero absoluto', cost: 190, forRole: 'cryo', requires: 'cryo_a2', freeze: true, tint: 0xe8fbff, decor: 'heavy' },
+  { id: 'cryo_b', branch: 'B', label: 'Aguja de hielo', cost: 70, forRole: 'cryo', damage: 2.5, tint: 0x6cc8ff, decor: 'pierce' },
+  { id: 'cryo_b2', branch: 'B', label: 'Fragilidad', cost: 120, forRole: 'cryo', requires: 'cryo_b', slowFactor: 0.7, damage: 1.5, tint: 0x4fa8ff, decor: 'triple' },
+  { id: 'cryo_b3', branch: 'B', label: 'Lanza glacial', cost: 190, forRole: 'cryo', requires: 'cryo_b2', atkRange: 1.4, damage: 2, tint: 0x3a8bff, decor: 'long' },
+
+  // ---- Bobina Tesla
+  { id: 'tesla_a', branch: 'A', label: 'Arco extendido', cost: 80, forRole: 'tesla', chains: 1, chainRange: 1.2, tint: 0x9ab4ff, decor: 'wide' },
+  { id: 'tesla_a2', branch: 'A', label: 'Tormenta', cost: 130, forRole: 'tesla', requires: 'tesla_a', chains: 2, chainRange: 1.25, tint: 0xb89aff, decor: 'triple' },
+  { id: 'tesla_a3', branch: 'A', label: 'Jaula de Faraday', cost: 200, forRole: 'tesla', requires: 'tesla_a2', chains: 3, damage: 1.3, tint: 0xd49bff, decor: 'plasma' },
+  { id: 'tesla_b', branch: 'B', label: 'Sobrecarga', cost: 80, forRole: 'tesla', damage: 1.5, tint: 0x5b7bff, decor: 'heavy' },
+  { id: 'tesla_b2', branch: 'B', label: 'Descarga paralizante', cost: 130, forRole: 'tesla', requires: 'tesla_b', slowAdd: 900, tint: 0x6cc8ff, decor: 'pods' },
+  { id: 'tesla_b3', branch: 'B', label: 'Relámpago', cost: 200, forRole: 'tesla', requires: 'tesla_b2', damage: 1.6, cooldown: 0.8, tint: 0xffffff, decor: 'pierce' },
+
+  // ---- Flak
+  { id: 'flak_a', branch: 'A', label: 'Perdigones', cost: 80, forRole: 'flak', pellets: 3, damage: 1.2, tint: 0xffb05e, decor: 'triple' },
+  { id: 'flak_a2', branch: 'A', label: 'Abanico', cost: 130, forRole: 'flak', requires: 'flak_a', coneDeg: 1.5, tint: 0xffc47a, decor: 'wide' },
+  { id: 'flak_a3', branch: 'A', label: 'Muro de metralla', cost: 200, forRole: 'flak', requires: 'flak_a2', coneDeg: 1.4, damage: 1.4, tint: 0xffd8a0, decor: 'pods' },
+  { id: 'flak_b', branch: 'B', label: 'Cargador tambor', cost: 80, forRole: 'flak', cooldown: 0.7, tint: 0xff7a3d, decor: 'fast' },
+  { id: 'flak_b2', branch: 'B', label: 'Cañones largos', cost: 130, forRole: 'flak', requires: 'flak_b', atkRange: 1.4, tint: 0xff5e3d, decor: 'long' },
+  { id: 'flak_b3', branch: 'B', label: 'Flak pesado', cost: 200, forRole: 'flak', requires: 'flak_b2', damage: 1.8, atkRange: 1.15, tint: 0xff3d1d, decor: 'heavy' },
+
+  // ---- Escudo
+  { id: 'shield_a', branch: 'A', label: 'Domo amplio', cost: 80, forRole: 'shield', shieldRange: 1.3, tint: 0x9affef, decor: 'wide' },
+  { id: 'shield_a2', branch: 'A', label: 'Cobertura total', cost: 130, forRole: 'shield', requires: 'shield_a', shieldRange: 1.35, tint: 0x6cffe0, decor: 'plasma' },
+  { id: 'shield_a3', branch: 'A', label: 'Fortaleza', cost: 200, forRole: 'shield', requires: 'shield_a2', shieldRange: 1.3, shieldReduce: 0.1, tint: 0x3dffd0, decor: 'heavy' },
+  { id: 'shield_b', branch: 'B', label: 'Placas reactivas', cost: 80, forRole: 'shield', shieldReduce: 0.1, tint: 0x49e0c0, decor: 'pods' },
+  { id: 'shield_b2', branch: 'B', label: 'Nanorreparación', cost: 130, forRole: 'shield', requires: 'shield_b', regen: 3, tint: 0x7dffd0, decor: 'triple' },
+  { id: 'shield_b3', branch: 'B', label: 'Bastión', cost: 200, forRole: 'shield', requires: 'shield_b2', shieldReduce: 0.15, hpMult: 2, tint: 0xb4ffe8, decor: 'long' },
+
+  // ---- Cañón de riel
+  { id: 'rail_a', branch: 'A', label: 'Perforador', cost: 100, forRole: 'railgun', pierce: 2, tint: 0xfff09a, decor: 'pierce' },
+  { id: 'rail_a2', branch: 'A', label: 'Sobrepenetración', cost: 160, forRole: 'railgun', requires: 'rail_a', pierce: 3, damage: 1.2, tint: 0xffe066, decor: 'long' },
+  { id: 'rail_a3', branch: 'A', label: 'Acelerador de masa', cost: 240, forRole: 'railgun', requires: 'rail_a2', damage: 1.8, tint: 0xffffff, decor: 'heavy' },
+  { id: 'rail_b', branch: 'B', label: 'Carga rápida', cost: 100, forRole: 'railgun', cooldown: 0.7, tint: 0xffcc55, decor: 'fast' },
+  { id: 'rail_b2', branch: 'B', label: 'Condensadores', cost: 160, forRole: 'railgun', requires: 'rail_b', cooldown: 0.75, atkRange: 1.2, tint: 0xffb02e, decor: 'pods' },
+  { id: 'rail_b3', branch: 'B', label: 'Mira orbital', cost: 240, forRole: 'railgun', requires: 'rail_b2', atkRange: 1.4, damage: 1.3, tint: 0xff8a3d, decor: 'wide' },
+
+  // ---- Mortero
+  { id: 'mortar_a', branch: 'A', label: 'Carga doble', cost: 100, forRole: 'mortar', shells: 1, tint: 0xff7a5e, decor: 'pods' },
+  { id: 'mortar_a2', branch: 'A', label: 'Salva', cost: 160, forRole: 'mortar', requires: 'mortar_a', shells: 2, tint: 0xff5e3d, decor: 'triple' },
+  { id: 'mortar_a3', branch: 'A', label: 'Bombardeo', cost: 240, forRole: 'mortar', requires: 'mortar_a2', shells: 2, cooldown: 0.85, tint: 0xff3d1d, decor: 'heavy' },
+  { id: 'mortar_b', branch: 'B', label: 'Ojiva grande', cost: 100, forRole: 'mortar', splashMult: 1.4, tint: 0xffa05e, decor: 'wide' },
+  { id: 'mortar_b2', branch: 'B', label: 'Alto explosivo', cost: 160, forRole: 'mortar', requires: 'mortar_b', damage: 1.6, tint: 0xffc05e, decor: 'plasma' },
+  { id: 'mortar_b3', branch: 'B', label: 'Cráter', cost: 240, forRole: 'mortar', requires: 'mortar_b2', splashMult: 1.3, damage: 1.5, tint: 0xffe066, decor: 'long' },
 ]
 
 // Nombre de cada rama por rol (lo muestra el árbol del HUD).
@@ -347,6 +395,12 @@ export const BRANCH_NAMES = {
   collector: { A: 'Extracción', B: 'Alcance' },
   relay: { A: 'Alcance', B: 'Capacidad' },
   general: { A: 'Asalto', B: 'Comandante' },
+  cryo: { A: 'Tormenta de hielo', B: 'Punta helada' },
+  tesla: { A: 'Cadena', B: 'Potencia' },
+  flak: { A: 'Dispersión', B: 'Cadencia' },
+  shield: { A: 'Cobertura', B: 'Resistencia' },
+  railgun: { A: 'Perforación', B: 'Precisión' },
+  mortar: { A: 'Salva', B: 'Potencia' },
 }
 
 // En los edificios las ramas son excluyentes: al comprar la primera mejora de una rama, la
@@ -444,5 +498,20 @@ export function describeUpgrade(u) {
   if (u.range) out.push(`Alcance de red ${pct(u.range)}`)
   if (u.ports) out.push(`+${u.ports} conexiones`)
   if (u.hpMult) out.push(`Vida ${pct(u.hpMult)}`)
+  if (u.chains) out.push(`+${u.chains} saltos de rayo`)
+  if (u.chainRange) out.push(`Alcance del salto ${pct(u.chainRange)}`)
+  if (u.slowAdd) out.push(`Ralentiza ${(u.slowAdd / 1000).toFixed(1)} s`)
+  if (u.slowMs) out.push(`Duración del frío ${pct(u.slowMs)}`)
+  if (u.slowFactor) out.push(`Ralentización más fuerte`)
+  if (u.freeze) out.push('Cada 4º disparo congela')
+  if (u.splashAdd) out.push(`Área helada ${u.splashAdd}`)
+  if (u.splashMult) out.push(`Área ${pct(u.splashMult)}`)
+  if (u.pierce) out.push(`Atraviesa +${u.pierce} naves`)
+  if (u.pellets) out.push(`+${u.pellets} perdigones`)
+  if (u.coneDeg) out.push(`Cono ${pct(u.coneDeg)}`)
+  if (u.shells) out.push(`+${u.shells} proyectiles por salva`)
+  if (u.shieldRange) out.push(`Radio del domo ${pct(u.shieldRange)}`)
+  if (u.shieldReduce) out.push(`Reducción de daño +${Math.round(u.shieldReduce * 100)}%`)
+  if (u.regen) out.push(`Repara ${u.regen} HP/s en el domo`)
   return out
 }

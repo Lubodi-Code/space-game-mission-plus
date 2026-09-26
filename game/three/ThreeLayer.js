@@ -1,10 +1,14 @@
 import * as THREE from 'three'
 import { createCommanderShip } from './shipModel.js'
 import { createSectorBackdrop } from './sectorBackdrop.js'
+import { createStructureModel } from './structureModels.js'
+import { createExplosion, createMissileModel } from './fxModels.js'
+import { UPGRADES_BY_ID } from '~/game/structures/upgrades.js'
+import { nexusColor, equipped } from '~/game/meta/cosmetics.js'
 import { appState } from '~/game/appState.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { WORLD } from '~/game/balance.js'
-import { LOW_GFX } from '~/game/quality.js'
+import { LOW_GFX, RENDER_SCALE } from '~/game/quality.js'
 
 // Capa de render 3D (Three.js) que vive DETRÁS del canvas de Phaser (canvas transparente al frente).
 // Modo actual: FONDO 3D + METEORITOS 3D + explosiones. Dibuja el fondo espacial (estrellas con
@@ -100,9 +104,10 @@ export class ThreeLayer {
     this.tickPrev = performance.now()
     this.viewCenter = { x: WORLD.width / 2, y: WORLD.height / 2 }
 
-    const renderer = new THREE.WebGLRenderer({ antialias: !LOW_GFX, alpha: false, powerPreference: 'high-performance' })
+    const renderer = new THREE.WebGLRenderer({ antialias: RENDER_SCALE < 2, alpha: false, powerPreference: 'high-performance' })
     // En móvil renderizar a 1x: el DPR 2-3x de los celulares multiplica los píxeles x4-9 y hunde los FPS.
-    renderer.setPixelRatio(LOW_GFX ? 1 : Math.min(window.devicePixelRatio || 1, 2))
+    // resize() recibe el tamaño FÍSICO del canvas de Phaser (ya × RENDER_SCALE): ratio 1 aquí.
+    renderer.setPixelRatio(1)
     renderer.autoClear = false
     renderer.setClearColor(0x010104, 1)
     const cv = renderer.domElement
@@ -133,7 +138,8 @@ export class ThreeLayer {
     this.nexus = null         // núcleo 3D (se crea en sync cuando existe el core)
     this._loadMeteor()
 
-    this.resize(parent.clientWidth || window.innerWidth, parent.clientHeight || window.innerHeight)
+    this.resize(phaserCanvas?.width || (parent.clientWidth || window.innerWidth) * RENDER_SCALE,
+      phaserCanvas?.height || (parent.clientHeight || window.innerHeight) * RENDER_SCALE)
   }
 
   tex(url) {
@@ -244,7 +250,7 @@ export class ThreeLayer {
     }
 
     // Estrellas titilantes (Points con shader de twinkle).
-    const N = LOW_GFX ? 800 : 2400
+    const N = LOW_GFX ? 1500 : 2400
     const pos = new Float32Array(N * 3)
     const phase = new Float32Array(N)
     const size = new Float32Array(N)
@@ -277,7 +283,7 @@ export class ThreeLayer {
           vCol = aColor;
           vTw = 0.35 + 0.65 * pow(0.5 + 0.5*sin(uTime*1.8 + aPhase), 2.0);
           vec4 mv = modelViewMatrix * vec4(position,1.0);
-          gl_PointSize = aSize * (300.0 / -mv.z);
+          gl_PointSize = aSize * ${RENDER_SCALE.toFixed(2)} * (300.0 / -mv.z);
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: `
@@ -315,7 +321,7 @@ export class ThreeLayer {
     }
 
     // Polvo cercano (puntos grandes tenues para sensación de velocidad)
-    const dustN = LOW_GFX ? 100 : 300
+    const dustN = LOW_GFX ? 180 : 300
     const dustPos = new Float32Array(dustN * 3)
     const dustSize = new Float32Array(dustN)
     for (let i = 0; i < dustN; i++) {
@@ -333,7 +339,7 @@ export class ThreeLayer {
         attribute float aSize;
         void main(){
           vec4 mv = modelViewMatrix * vec4(position,1.0);
-          gl_PointSize = aSize * (300.0 / -mv.z);
+          gl_PointSize = aSize * ${RENDER_SCALE.toFixed(2)} * (300.0 / -mv.z);
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: `void main(){ vec2 c = gl_PointCoord - 0.5; float d = length(c); if(d>0.5) discard; float a = smoothstep(0.5,0.2,d) * 0.04; gl_FragColor = vec4(1,1,1,a); }`,
@@ -401,7 +407,7 @@ export class ThreeLayer {
     this.bgScene.add(atmo)
     this.bgGroups.push(atmo)
     // El planeta azul es del sector 1; los demás traen su propio elemento en el backdrop.
-    planet.visible = atmo.visible = this.backdrop.mode === 0
+    planet.visible = atmo.visible = false // cada sector trae su pintura (sectorBackdrop.js)
 
     // Sistema de estrellas fugaces (timer en render)
     this.shootingStars = []
@@ -452,6 +458,8 @@ export class ThreeLayer {
   sync(scene) {
     this._syncNexus(scene)
     this._syncGenerals(scene)
+    this._syncStructures(scene)
+    this._syncMissiles(scene)
     if (!this.meteorGeo || !scene?.meteorites) return
     for (const m of scene.meteorites) {
       let e = this.meteors.get(m)
@@ -483,6 +491,74 @@ export class ThreeLayer {
     }
   }
 
+  // ----------------------------------------------------------- estructuras 3D
+  // Modelos de structureModels.js (Codex): inclinados para que se vea el volumen, con la pieza de
+  // la última mejora en 3D y animación al mejorar. El núcleo sigue con _syncNexus. Las formas 2D
+  // de Phaser se ocultan de la cámara principal; barras de vida/construcción siguen en 2D.
+  _syncStructures(scene) {
+    if (!scene?.structures || scene.remote) return
+    this.structs ||= new Map()
+    const now = performance.now()
+    const dt = Math.min(0.05, (now - (this._structPrev || now)) / 1000)
+    this._structPrev = now
+    for (const [s, e] of this.structs) {
+      if (s.dead || !scene.structures.includes(s)) {
+        this.scene.remove(e.root); e.root.userData.dispose(); this.structs.delete(s)
+      }
+    }
+    for (const s of scene.structures) {
+      if (s.isCore || s.dead) continue
+      let e = this.structs.get(s)
+      if (!e) {
+        const root = createStructureModel({ role: s.role, sides: s.def.sides, size: s.radius, color: s.fxColor || s.def.color, isCore: false })
+        root.position.set(s.x, s.y, 4)
+        this.scene.add(root)
+        scene.cam?.ignore([s.glow, s.shape])
+        e = { root, color: null, decorN: 0, powered: null }
+        this.structs.set(s, e)
+      }
+      const u = e.root.userData
+      if (s._accent && !e.accentHidden) { scene.cam?.ignore(s._accent); e.accentHidden = true }
+      const col = s.fxColor || s.def.color
+      if (col !== e.color) { u.setColor(col); e.color = col }
+      const ups = s.upgrades || []
+      if (ups.length !== e.decorN) {
+        const last = UPGRADES_BY_ID[ups[ups.length - 1]]
+        if (last) u.setDecor(last.decor, last.tint || col)
+        e.decorN = ups.length
+      }
+      if (s.upgradePulse) { u.pulseUpgrade(s.upgradePulse.color); s.upgradePulse = null }
+      const on = s.powered && !(s.stunMs > 0)
+      if (on !== e.powered) { u.setPowered(on); e.powered = on }
+      u.setBuilding(s.building ? s.buildProgress / (s.buildTime || 1) : 1)
+      if (s.aimAngle != null) u.setAim(s.aimAngle)
+      u.update(dt, now)
+    }
+  }
+
+  // Misiles del jugador en 3D con estela (fxModels.js). El sprite 2D se oculta.
+  _syncMissiles(scene) {
+    if (!scene?.projectiles || scene.remote) return
+    this.missiles ||= new Map()
+    const now = performance.now()
+    const dt = Math.min(0.05, (now - (this._misPrev || now)) / 1000)
+    this._misPrev = now
+    const live = new Set(scene.projectiles)
+    for (const [p, m] of this.missiles) {
+      if (!live.has(p)) { this.scene.remove(m); m.userData.dispose(); this.missiles.delete(p) }
+    }
+    for (const p of scene.projectiles) {
+      let m = this.missiles.get(p)
+      if (!m) {
+        m = createMissileModel(p.color || 0xc08bff)
+        this.scene.add(m)
+        scene.cam?.ignore([p.sprite, p.glow].filter(Boolean))
+        this.missiles.set(p, m)
+      }
+      m.userData.update(p.x, p.y, Math.atan2(p.vy || 0, p.vx || 1), dt)
+    }
+  }
+
   // ------------------------------------------------------------- generales 3D
   // Misma nave que la vitrina de la tienda (shipModel.js). El sprite 2D se oculta de la
   // cámara principal pero sigue en el minimapa. Solo host/solo (scene.generals).
@@ -495,7 +571,7 @@ export class ThreeLayer {
     for (const g of scene.generals.values()) {
       let e = this.gens.get(g)
       if (!e) {
-        const root = createCommanderShip(g.tint)
+        const root = createCommanderShip(g.tint, g.beamSkin ? equipped('design')?.design : 'falcon')
         root.scale.setScalar(0.62)
         this.scene.add(root)
         scene.cam?.ignore(g.sprite)
@@ -514,8 +590,50 @@ export class ThreeLayer {
       e.root.rotateX(e.bank)
       const pulse = 0.8 + 0.25 * Math.sin(performance.now() * 0.02)
       e.root.userData.engine.scale.setScalar(pulse)
+      if (g.beamSkin) this._updateTrail(e, g, rot)
     }
   }
+
+  // Estela del comandante local (cosmético 'trail'): partículas que salen del motor.
+  _updateTrail(e, g, rot) {
+    const td = equipped('trail')
+    if (!td?.style) { if (e.trail) e.trail.visible = false; return }
+    const N = LOW_GFX ? 36 : 60
+    if (!e.trail) {
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3).fill(-9999), 3))
+      const mat = new THREE.PointsMaterial({ size: 5 * RENDER_SCALE, map: this.sparkTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, alphaTest: 0.01 })
+      e.trail = new THREE.Points(geo, mat)
+      e.trail.frustumCulled = false
+      e.trailParts = Array.from({ length: N }, () => ({ x: 0, y: 0, life: 0 }))
+      e.trailI = 0
+      this.scene.add(e.trail)
+    }
+    e.trail.visible = g.alive
+    const mat = e.trail.material
+    mat.color.setHex(td.color || 0xffffff)
+    mat.size = (td.style === 'pixel' ? 7 : td.style === 'comet' ? 6 : 4) * RENDER_SCALE
+    const moving = Math.hypot(g.tx - g.x, g.ty - g.y) > 6
+    if (moving) {
+      const p = e.trailParts[e.trailI++ % N]
+      p.x = g.x - Math.cos(rot) * 10 + (Math.random() - 0.5) * 3
+      p.y = g.y - Math.sin(rot) * 10 + (Math.random() - 0.5) * 3
+      p.life = 1
+    }
+    const arr = e.trail.geometry.attributes.position.array
+    for (let i = 0; i < N; i++) {
+      const q = e.trailParts[i]
+      q.life -= td.style === 'comet' ? 0.012 : 0.022
+      if (td.style === 'spark') { q.x += (Math.random() - 0.5) * 1.2; q.y += (Math.random() - 0.5) * 1.2 }
+      const alive = q.life > 0
+      arr[i * 3] = alive ? (td.style === 'pixel' ? Math.round(q.x / 4) * 4 : q.x) : -9999
+      arr[i * 3 + 1] = alive ? (td.style === 'pixel' ? Math.round(q.y / 4) * 4 : q.y) : -9999
+      arr[i * 3 + 2] = 18
+    }
+    e.trail.geometry.attributes.position.needsUpdate = true
+    mat.opacity = 0.85
+  }
+
 
   // ------------------------------------------------------------------ nexo 3D
   // Núcleo en 3D real (prisma hex + anillo orbital + octaedro pulsante). Al crearlo se ocultan
@@ -533,7 +651,7 @@ export class ThreeLayer {
     const core = scene?.core || (scene?.sById && [...scene.sById.values()].find((s) => s.isCore))
     if (!core) return
 
-    const color = core.def.color
+    const color = scene.remote ? core.def.color : nexusColor(core.def.color) // cosmético 'nexus'
     const root = new THREE.Group()
     root.position.set(core.x, core.y, 0)
 
@@ -590,7 +708,7 @@ export class ThreeLayer {
 
     root.add(glow, body, edges, ring, inner)
     this.scene.add(root)
-    this.nexus = { root, body, ring, inner, glow }
+    this.nexus = { root, body, ring, inner, glow, hue: !scene.remote && equipped('nexus')?.anim === 'hue' }
     this.nexusCore = core
 
     // Ocultar el core 2D de la cámara principal (sigue vivo para lógica/minimapa)
@@ -609,6 +727,12 @@ export class ThreeLayer {
     n.inner.rotation.z += dt * 1.2
     n.inner.rotation.x += dt * 0.7
     n.glow.material.opacity = 0.45 + 0.15 * Math.sin(t * 1.8)
+    if (n.hue) {
+      const c = (this._hueColor ||= new THREE.Color()).setHSL((t / 2.4) % 1, 0.8, 0.6)
+      n.body.material.emissive.copy(c)
+      n.ring.material.emissive?.copy(c)
+      n.glow.material.color.copy(c)
+    }
   }
 
   // Carga la malla OBJ + texturas PBR una vez; la geometría se normaliza a radio 1 (la escala por
@@ -645,6 +769,16 @@ export class ThreeLayer {
     })
   }
 
+  // Material compartido de los meteoritos explosivos: misma roca con brillo rojo.
+  _explosiveMat() {
+    if (!this._expMat) {
+      this._expMat = this.meteorMat.clone()
+      this._expMat.emissive = new THREE.Color(0xff3d2e)
+      this._expMat.emissiveIntensity = 0.55
+    }
+    return this._expMat
+  }
+
   _updateMeteors(dt) {
     for (const [m, e] of this.meteors) {
       if (e.dying) {
@@ -658,7 +792,21 @@ export class ThreeLayer {
         }
         e.root.scale.setScalar(k)
       } else {
-        e.mesh.rotateOnAxis(e.axis, e.spin * dt)
+        e.mesh.rotateOnAxis(e.axis, e.spin * dt * (m.special === 'giant' ? 2.5 : 1))
+        // Especiales (systems/specialMeteors.js): gigante dorado, explosivo rojo que late.
+        if (m.special !== e.special) {
+          e.special = m.special
+          e.halo.material.color.setHex(m.special === 'giant' ? 0xffd24a : m.special === 'explosive' ? 0xff3d2e : 0x49e07a)
+          if (m.special === 'giant') { e.mesh.scale.setScalar(m.radius); e.halo.scale.set(m.radius * 6, m.radius * 6, 1) }
+          if (m.special === 'explosive') e.mesh.material = this._explosiveMat()
+          else if (e.mesh.material !== this.meteorMat) e.mesh.material = this.meteorMat
+        }
+        if (m.special === 'explosive') {
+          const k = 0.5 + 0.5 * Math.sin(performance.now() * 0.008 + m.x)
+          e.halo.material.opacity = 0.45 + 0.5 * k
+        } else if (m.special === 'giant') {
+          e.halo.material.opacity = 0.7 + 0.3 * Math.sin(performance.now() * 0.004)
+        }
       }
     }
   }
@@ -720,7 +868,23 @@ export class ThreeLayer {
   }
 
   // ----------------------------------------------------------------- explosión
-  explode(x, y, color, radius) {
+  // Explosiones nuevas (fxModels.js, Codex). kind opcional: small|big|plasma|emp|meteor|boss.
+  explode(x, y, color, radius, kind) {
+    kind ||= radius >= 110 ? 'boss' : radius >= 45 ? 'big' : 'small'
+    this.fx ||= []
+    if (this.fx.length >= (LOW_GFX ? 18 : 40)) return // tope: en oleadas grandes no se apilan cientos
+    this.fx.push(createExplosion(this.scene, { x, y, color, radius, kind }))
+  }
+
+  _updateFx(dt) {
+    if (!this.fx) return
+    for (let i = this.fx.length - 1; i >= 0; i--) {
+      if (!this.fx[i].update(dt)) { this.fx[i].dispose(); this.fx.splice(i, 1) }
+    }
+  }
+
+  // Versión anterior (Points + anillos); queda por si hace falta comparar.
+  _explodeLegacy(x, y, color, radius) {
     const n = Math.min(LOW_GFX ? 40 : 90, (LOW_GFX ? 15 : 30) + Math.round(radius * 1.6))
     const pos = new Float32Array(n * 3)
     const vel = []
@@ -740,7 +904,7 @@ export class ThreeLayer {
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
     const mat = new THREE.PointsMaterial({
-      size: Math.max(6, radius * 0.6), map: this.sparkTex, vertexColors: true,
+      size: Math.max(6, radius * 0.6) * RENDER_SCALE, map: this.sparkTex, vertexColors: true,
       transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, alphaTest: 0.01,
     })
     const pts = new THREE.Points(geo, mat)
@@ -818,6 +982,7 @@ export class ThreeLayer {
 
     this.starUniforms.uTime.value = now * 0.001
     this._updateExplosions(dt)
+    this._updateFx(dt)
     this._updateMeteors(dt)
     this._updateNexus(dt)
 
@@ -931,6 +1096,10 @@ export class ThreeLayer {
       this.vignette.material.dispose()
       this.bgScene.remove(this.vignette)
     }
+    for (const [, e] of this.structs || []) e.root.userData.dispose()
+    for (const [, m] of this.missiles || []) m.userData.dispose()
+    for (const [, e] of this.gens || []) { e.root.userData.dispose(); e.trail?.geometry.dispose(); e.trail?.material.dispose() }
+    for (const f of this.fx || []) f.dispose()
     this.nebulaAlpha?.dispose()
     this.backdrop?.dispose()
     this.glowTex?.dispose()

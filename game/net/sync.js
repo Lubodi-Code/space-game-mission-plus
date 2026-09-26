@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { RENDER_SCALE } from '~/game/quality.js'
 import { gameState } from '~/game/gameState.js'
 import { WORLD, CAMERA, structureByKey } from '~/game/balance.js'
 import { net } from '~/game/net.js'
@@ -62,7 +63,9 @@ export function buildSnapshot(scene) {
     missiles: scene.projectiles.map((p) => [p.id, Math.round(p.x), Math.round(p.y), p.color, Math.round(p.vx || 0), Math.round(p.vy || 0)]),
     emissiles: scene.epSystem.projectiles.map((p) => [p.id, Math.round(p.x), Math.round(p.y), p.color, Math.round(p.vx || 0), Math.round(p.vy || 0)]),
     links: scene.links.map(([a, b]) => [a.id, b.id]),
-    meteors: scene.meteorites.filter((m) => !m.depleted).map((m) => [Math.round(m.x), Math.round(m.y), m.radius]),
+    // [x, y, radio, especial] especial: 0 normal · 1 gigante · 2 explosivo armado
+    meteors: scene.meteorites.filter((m) => !m.depleted).map((m) => [Math.round(m.x), Math.round(m.y), m.radius, m.special === 'giant' ? 1 : m.special === 'explosive' ? 2 : 0]),
+    event: scene.giant && !scene.giant.depleted ? { kind: 'giant', x: Math.round(scene.giant.x), y: Math.round(scene.giant.y), timeLeft: gameState.event?.timeLeft || 0 } : null,
     fx: {
       beams,
       mining: scene.structures
@@ -181,10 +184,25 @@ export function applySnapshot(scene, snap) {
 
   // Meteoritos: instancias reales (reusa createMeteorite); crear/quitar por posición.
   const seenM = new Set()
-  for (const [x, y] of snap.meteors || []) {
+  for (const [x, y, r, sp] of snap.meteors || []) {
     const k = x + ',' + y
     seenM.add(k)
-    if (!scene.mById.has(k)) scene.mById.set(k, createMeteorite(scene, x, y))
+    let m = scene.mById.get(k)
+    if (!m) { m = createMeteorite(scene, x, y); scene.mById.set(k, m) }
+    if (r) m.radius = r
+    m.special = sp === 1 ? 'giant' : sp === 2 ? 'explosive' : null
+  }
+  // Evento (meteorito gigante): la flecha se calcula con la cámara de ESTE cliente.
+  if (snap.event) {
+    const wv = scene.cam.worldView
+    const ev = snap.event
+    gameState.event = {
+      kind: ev.kind, timeLeft: ev.timeLeft, mining: false, remote: true,
+      onScreen: ev.x > wv.x && ev.x < wv.right && ev.y > wv.y && ev.y < wv.bottom,
+      angle: Math.atan2(ev.y - wv.centerY, ev.x - wv.centerX),
+    }
+  } else {
+    gameState.event = null
   }
   for (const [k, m] of scene.mById) if (!seenM.has(k)) { m.container.destroy(); scene.mById.delete(k) }
 
@@ -216,7 +234,7 @@ export function applySnapshot(scene, snap) {
       // Misma nave y escala que el host (General.js usa 'general_ship' 0.85).
       g = scene.add.image(x, y, 'general_ship').setTint(GEN_TINTS[pid % GEN_TINTS.length]).setScale(0.85).setDepth(17)
       g.tx = x; g.ty = y
-      g.label = scene.add.text(x, y - 30, name || '', { fontSize: '11px', color: '#cfe8ff', fontFamily: 'monospace' }).setOrigin(0.5).setDepth(19)
+      g.label = scene.add.text(x, y - 30, name || '', { fontSize: '11px', color: '#cfe8ff', fontFamily: 'monospace', resolution: RENDER_SCALE }).setOrigin(0.5).setDepth(19)
       scene.genSprites.set(pid, g)
     }
     g.tx = x; g.ty = y; g.setVisible(!!alive)

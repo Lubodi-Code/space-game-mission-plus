@@ -6,6 +6,7 @@ import { Battery } from './Battery.js'
 import { Healer } from './Healer.js'
 import { LaserTurret } from './LaserTurret.js'
 import { MissileTurret } from './MissileTurret.js'
+import { TeslaTurret, CryoTurret, RailTurret, FlakTurret, MortarTurret, ShieldGenerator } from './ArsenalTurrets.js'
 
 // Clave = ROL de la estructura (no su `key`). El nodo tiene role 'relay'.
 const CLASS_MAP = {
@@ -16,6 +17,12 @@ const CLASS_MAP = {
   healer: Healer,
   turret: LaserTurret,
   missile: MissileTurret,
+  tesla: TeslaTurret,
+  cryo: CryoTurret,
+  railgun: RailTurret,
+  flak: FlakTurret,
+  mortar: MortarTurret,
+  shield: ShieldGenerator,
 }
 
 export function createStructure(key, x, y, scene) {

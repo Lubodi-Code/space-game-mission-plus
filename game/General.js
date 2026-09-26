@@ -4,6 +4,7 @@ import { gameState } from './gameState.js'
 import { spawnFloatingText } from './render/fx.js'
 import { sfxGeneralShot } from './sound.js'
 import { equippedBeam } from './meta/cosmetics.js'
+import { RENDER_SCALE } from './quality.js'
 
 // Tinte por jugador (pid): 0 = host, 1..3 = clientes. Mismo orden en host y cliente
 // para que cada general se vea igual en ambas pantallas.
@@ -73,7 +74,7 @@ export class General {
     this.labelName = name || ''
     if (!this.nameText) {
       this.nameText = this.scene.add.text(this.x, this.y - 30, this.labelName, {
-        fontSize: '11px', color: '#cfe8ff', fontFamily: 'monospace',
+        fontSize: '11px', color: '#cfe8ff', fontFamily: 'monospace', resolution: RENDER_SCALE,
       }).setOrigin(0.5).setDepth(19)
     } else {
       this.nameText.setText(this.labelName)
@@ -145,8 +146,10 @@ export class General {
       } else {
         const mdx = m.x - this.x, mdy = m.y - this.y
         const md = Math.hypot(mdx, mdy)
-        if (md <= this.collectRange + m.radius) {
-          this.minedAccum += this.collectRate * mult * dt
+        if (m.special === 'explosive') {
+          this.mineTarget = null // armado: primero hay que desactivarlo (systems/specialMeteors.js)
+        } else if (md <= this.collectRange + m.radius) {
+          this.minedAccum += this.collectRate * mult * (m.special === 'giant' ? 4 : 1) * dt
           const whole = Math.min(Math.floor(this.minedAccum), m.amount, gameState.mineralsCap - gameState.minerals)
           if (whole > 0) {
             this.minedAccum -= whole

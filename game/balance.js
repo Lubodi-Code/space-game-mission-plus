@@ -1,5 +1,6 @@
 import { DIFFICULTY } from './appState.js'
 import { EnemyType } from './enemies/EnemyType.js'
+import { RENDER_SCALE as R } from './quality.js'
 
 export const BUILD = {
   overlapRadius: 18
@@ -48,13 +49,15 @@ export const FX = {
 
 export const WORLD = { width: 10800, height: 7200 }
 
+// El canvas de Phaser se renderiza a RENDER_SCALE píxeles por píxel CSS (nitidez en pantallas
+// de alta densidad), así que zoom y umbrales en píxeles se escalan por R: la vista queda igual.
 export const CAMERA = {
-  minZoom: 0.25,
-  maxZoom: 1.0,
-  startZoom: 0.55,
-  zoomStep: 0.05,
+  minZoom: 0.25 * R,
+  maxZoom: 1.0 * R,
+  startZoom: 0.55 * R,
+  zoomStep: 0.05 * R,
   keyPanSpeed: 1500,
-  dragThreshold: 4,
+  dragThreshold: 4 * R,
 }
 
 export const METEOR = {
@@ -224,6 +227,49 @@ export const STRUCTURES = [
     energyDrain: 6,
     buildTime: 5000,
     desc: 'Dispara una tanda de misiles guiados de largo alcance.'
+  },
+  // ================= Arsenal (se desbloquean en la tienda: arsenal.scrap + arsenal.level) =================
+  {
+    key: 'cryo', label: 'Criogénica', glyph: '❄', cost: 110, color: 0x9ae8ff, css: '#9ae8ff',
+    range: 110, sides: 8, size: 11, role: 'cryo', hp: 70, buildTime: 5000,
+    atkRange: 140, damage: 4, cooldown: 700, slowMs: 1400, slowFactor: 0.5, splash: 0, energyDrain: 2,
+    arsenal: { scrap: 200, level: 1 },
+    desc: 'Rayo helado que ralentiza a la horda. Ideal junto a torretas de daño.',
+  },
+  {
+    key: 'tesla', label: 'Bobina Tesla', glyph: 'ϟ', cost: 130, color: 0x7a9bff, css: '#7a9bff',
+    range: 110, sides: 4, size: 11, role: 'tesla', hp: 65, buildTime: 5000,
+    atkRange: 170, damage: 12, cooldown: 1300, chains: 2, chainRange: 110, slowMs: 0, energyDrain: 3,
+    arsenal: { scrap: 250, level: 2 },
+    desc: 'Descarga eléctrica que salta entre varios enemigos cercanos.',
+  },
+  {
+    key: 'flak', label: 'Flak', glyph: '✱', cost: 140, color: 0xff9a3d, css: '#ff9a3d',
+    range: 110, sides: 6, size: 11, role: 'flak', hp: 90, buildTime: 5000,
+    atkRange: 115, damage: 9, cooldown: 850, coneDeg: 60, pellets: 5, energyDrain: 2,
+    arsenal: { scrap: 300, level: 3 },
+    desc: 'Metralla en cono a corta distancia. Destroza enjambres que se acercan.',
+  },
+  {
+    key: 'shield', label: 'Escudo', glyph: '◌', cost: 160, color: 0x6cffe0, css: '#6cffe0',
+    range: 110, sides: 8, size: 11, role: 'shield', hp: 120, buildTime: 5000,
+    shieldRange: 180, shieldReduce: 0.3, energyDrain: 2,
+    arsenal: { scrap: 350, level: 3 },
+    desc: 'Domo que reduce el daño que reciben las estructuras cercanas.',
+  },
+  {
+    key: 'railgun', label: 'Cañón de riel', glyph: '═', cost: 200, color: 0xffe066, css: '#ffe066',
+    range: 110, sides: 3, size: 12, role: 'railgun', hp: 55, buildTime: 5000,
+    atkRange: 520, damage: 90, cooldown: 3200, pierce: 2, energyDrain: 6,
+    arsenal: { scrap: 400, level: 4 },
+    desc: 'Francotirador de muy largo alcance: su disparo atraviesa varias naves en línea.',
+  },
+  {
+    key: 'mortar', label: 'Mortero', glyph: '⬤', cost: 220, color: 0xff5e3d, css: '#ff5e3d',
+    range: 110, sides: 5, size: 12, role: 'mortar', hp: 70, buildTime: 5000,
+    atkRange: 900, damage: 40, splash: 70, cooldown: 4200, projSpeed: 170, shells: 1, energyDrain: 5,
+    arsenal: { scrap: 450, level: 5 },
+    desc: 'Proyectiles lentos de gran área a larga distancia. Castiga a los grupos.',
   },
 ]
 

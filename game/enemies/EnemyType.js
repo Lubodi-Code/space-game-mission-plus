@@ -18,7 +18,7 @@ export const ROLE_GROUPS = {
   INFRA: (s) => ['collector', 'battery', 'healer', 'relay'].includes(s.role),
   GENERATOR: (s) => s.role === 'collector',
   SUPPLY: (s) => ['collector', 'battery'].includes(s.role),
-  DEFENSE: (s) => ['turret', 'missile'].includes(s.role),
+  DEFENSE: (s) => ['turret', 'missile', 'tesla', 'cryo', 'railgun', 'flak', 'mortar', 'shield'].includes(s.role),
   NODE: (s) => s.role === 'relay',
 }
 
