@@ -588,7 +588,7 @@ export class GameScene extends Phaser.Scene {
   // -------------------------------------------------------------------- fx
   // Lógica en render/fx.js. Wrapper conservado porque Structure.js / General.js /
   // EnemyProjectiles.js llaman this.scene.explosion().
-  explosion(x, y, color, radius) { explosionFx(this, x, y, color, radius) }
+  explosion(x, y, color, radius, kind) { explosionFx(this, x, y, color, radius, kind) }
 
   // ----------------------------------------------------------------- states
   gameOver() {

@@ -719,7 +719,7 @@ function polyPoints(sides, radius) {
         <b class="text-amber-200">Meteorito gigante</b>
         <span class="block text-[10px] text-amber-100/70">Solo el comandante lo mina · x4 · {{ gameState.event.timeLeft }}s</span>
       </span>
-      <button v-if="!gameState.event.mining" class="event-go" @click="goToEvent">Ir</button>
+      <button v-if="!gameState.event.mining && !gameState.event.remote" class="event-go" @click="goToEvent">Ir</button>
       <span v-else class="text-[10px] text-emerald-200 font-bold">Minando…</span>
     </div>
     <div v-if="eventArrow && gameState.status === 'playing'" class="event-arrow" :style="eventArrow">➤</div>

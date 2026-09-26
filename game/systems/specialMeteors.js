@@ -43,8 +43,7 @@ function detonate(scene, m) {
   m.special = null
   m.depleted = true
   m.container?.destroy()
-  scene.explosion(m.x, m.y, 0xff3d2e, EXPLOSIVE.blastR * 0.6)
-  scene.three?.explode(m.x, m.y, 0xff8a3d, EXPLOSIVE.blastR * 0.5, 'meteor')
+  scene.explosion(m.x, m.y, 0xff3d2e, EXPLOSIVE.blastR * 0.6, 'meteor')
   scene.cam.shake(220, 0.004)
   for (const s of [...scene.structures]) {
     if (s.dead) continue
@@ -114,9 +113,10 @@ export function updateSpecialMeteors(scene, d) {
     }
   }
 
-  // --- Desactivar explosivos: el comandante, sin enemigos en rango, les dispara.
-  const g = scene.general
-  if (g?.alive) {
+  // --- Desactivar explosivos: cualquier comandante (host o cliente), sin enemigos en rango, les dispara.
+  const armed = new Set()
+  for (const g of scene.generals?.values?.() || []) {
+    if (!g.alive) continue
     let busy = false
     for (const e of scene.enemies) {
       if (!e.dead && Math.hypot(e.x - g.x, e.y - g.y) - e.radius < g.atkRange) { busy = true; break }
@@ -128,8 +128,8 @@ export function updateSpecialMeteors(scene, d) {
         if (Math.hypot(m.x - g.x, m.y - g.y) - m.radius <= g.atkRange) { target = m; break }
       }
     }
-    for (const m of scene.meteorites) if (m.special === 'explosive' && m !== target) m.defuse = Math.max(0, m.defuse - d * 0.5)
-    if (target) {
+    if (target && !armed.has(target)) {
+      armed.add(target)
       target.defuse += d
       const k = Math.min(1, target.defuse / EXPLOSIVE.defuseMs)
       const bg = scene.beamGraphics
@@ -145,6 +145,8 @@ export function updateSpecialMeteors(scene, d) {
       }
     }
   }
+  // Lo que nadie está desactivando pierde progreso de a poco.
+  for (const m of scene.meteorites) if (m.special === 'explosive' && !armed.has(m)) m.defuse = Math.max(0, m.defuse - d * 0.5)
 }
 
 // Envía al comandante a minar el gigante (botón del HUD).
@@ -152,5 +154,7 @@ export function goToGiant(scene) {
   const m = scene.giant
   if (!m || !scene.general?.alive) return
   scene.general.setTarget(m.x, m.y, scene)
+  scene.general.mineTarget = m // aunque haya otra roca superpuesta, el objetivo es el gigante
+  scene.general.minedAccum = 0
   scene.cam.pan(m.x, m.y, 500, 'Sine.inOut')
 }

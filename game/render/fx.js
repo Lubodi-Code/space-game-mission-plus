@@ -112,10 +112,10 @@ export function hitFlash(scene, x, y) {
   }
 }
 
-export function explosion(scene, x, y, color, radius) {
+export function explosion(scene, x, y, color, radius, kind) {
   if (net.isHost && scene._explQueue) scene._explQueue.push([Math.round(x), Math.round(y), color, Math.round(radius)])
   sfxImpact(x, y, radius / 14)
-  if (scene.three) scene.three.explode(x, y, color, radius)
+  if (scene.three) scene.three.explode(x, y, color, radius, kind)
 
   // Camera shake on zoom or proximity to action (noticeable intensity)
   const cam = scene.cameras?.main

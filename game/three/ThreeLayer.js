@@ -708,7 +708,7 @@ export class ThreeLayer {
 
     root.add(glow, body, edges, ring, inner)
     this.scene.add(root)
-    this.nexus = { root, body, ring, inner, glow }
+    this.nexus = { root, body, ring, inner, glow, hue: !scene.remote && equipped('nexus')?.anim === 'hue' }
     this.nexusCore = core
 
     // Ocultar el core 2D de la cámara principal (sigue vivo para lógica/minimapa)
@@ -727,6 +727,12 @@ export class ThreeLayer {
     n.inner.rotation.z += dt * 1.2
     n.inner.rotation.x += dt * 0.7
     n.glow.material.opacity = 0.45 + 0.15 * Math.sin(t * 1.8)
+    if (n.hue) {
+      const c = (this._hueColor ||= new THREE.Color()).setHSL((t / 2.4) % 1, 0.8, 0.6)
+      n.body.material.emissive.copy(c)
+      n.ring.material.emissive?.copy(c)
+      n.glow.material.color.copy(c)
+    }
   }
 
   // Carga la malla OBJ + texturas PBR una vez; la geometría se normaliza a radio 1 (la escala por
