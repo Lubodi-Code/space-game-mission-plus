@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { gameState } from '~/game/gameState.js'
 
 export const ATTACK = {
   LIGHT_LASER: (enemy, world, dt) => {
@@ -142,5 +143,47 @@ export const ATTACK = {
     }
 
     enemy.atkTimer = enemy.def.spawnInterval || 8000
+  },
+
+  // Kamikaze: al llegar al blanco detona, daña en área a las estructuras y muere.
+  KAMIKAZE: (enemy, world) => {
+    const t = enemy.target
+    if (!t) return
+    const d = Phaser.Math.Distance.Between(enemy.x, enemy.y, t.x, t.y)
+    if (d > t.radius + 14) return
+    const r = enemy.def.splash || 60
+    for (const s of world.structures) {
+      if (s.dead) continue
+      if (Phaser.Math.Distance.Between(enemy.x, enemy.y, s.x, s.y) <= r + s.radius) world.damageStructure(s, enemy.damage)
+    }
+    world.killEnemy(enemy)
+  },
+
+  // Warden: láser ligero + cada `auraInterval` repara a los aliados cercanos.
+  SHIELD_AURA: (enemy, world, dt) => {
+    enemy.auraTimer = (enemy.auraTimer ?? 0) - dt * 1000
+    if (enemy.auraTimer <= 0 && world.enemyGrid) {
+      const r = enemy.def.auraRadius || 140
+      const frac = enemy.def.auraHeal || 0.04
+      world.enemyGrid.forEachNear(enemy.x, enemy.y, r, (e) => {
+        if (e.dead || e === enemy || e.hp >= e.maxHp) return
+        e.hp = Math.min(e.maxHp, e.hp + e.maxHp * frac)
+      })
+      enemy.auraTimer = enemy.def.auraInterval || 1000
+    }
+    ATTACK.LIGHT_LASER(enemy, world, dt)
+  },
+
+  // Leech: cuerpo a cuerpo que además roba energía de la red.
+  DRAIN: (enemy, world, dt) => {
+    const t = enemy.target
+    if (!t) return
+    const d = Phaser.Math.Distance.Between(enemy.x, enemy.y, t.x, t.y)
+    if (d > t.radius + 16) return
+    enemy.atkTimer -= dt * 1000
+    if (enemy.atkTimer > 0) return
+    world.damageStructure(t, enemy.damage)
+    gameState.energy = Math.max(0, gameState.energy - (enemy.def.drain || 6))
+    enemy.atkTimer = enemy.def.atkCooldown
   },
 }

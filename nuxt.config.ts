@@ -13,6 +13,19 @@ export default defineNuxtConfig({
 
   css: ['~/style.css'],
 
+  // Secretos: solo servidor. Se cargan de .env / variables de Vercel (NUXT_*).
+  runtimeConfig: {
+    onvoSecretKey: '',        // NUXT_ONVO_SECRET_KEY
+    onvoWebhookSecret: '',    // NUXT_ONVO_WEBHOOK_SECRET
+    onvoAmountMultiplier: 100, // NUXT_ONVO_AMOUNT_MULTIPLIER — verificar en test mode (ver server/utils/onvo.ts)
+    supabaseServiceKey: '',   // NUXT_SUPABASE_SERVICE_KEY
+    public: {
+      onvoPublishableKey: '', // NUXT_PUBLIC_ONVO_PUBLISHABLE_KEY
+      supabaseUrl: '',        // NUXT_PUBLIC_SUPABASE_URL
+      supabaseAnonKey: '',    // NUXT_PUBLIC_SUPABASE_ANON_KEY
+    },
+  },
+
   vite: {
     optimizeDeps: {
       include: [
@@ -37,12 +50,12 @@ export default defineNuxtConfig({
         { name: 'twitter:card', content: 'summary_large_image' },
         { name: 'twitter:title', content: 'Space Game Mission Plus' },
         { name: 'twitter:description', content: 'Tower defense espacial: red de energía, torretas láser/misiles y oleadas. Solo o cooperativo.' },
-        { name: 'twitter:image', content: 'https://space-game-mission-plus.vercel.app/assets/icon/Gemini_Generated_Image_wh42b6wh42b6wh42.png' },
+        { name: 'twitter:image', content: 'https://space-game-mission-plus.vercel.app/assets/art/og.jpg' },
         { property: 'og:type', content: 'website' },
         { property: 'og:title', content: 'Space Game Mission Plus' },
         { property: 'og:description', content: 'Tower defense espacial: red de energía, torretas láser/misiles y oleadas. Solo o cooperativo.' },
         { property: 'og:url', content: 'https://space-game-mission-plus.vercel.app/' },
-        { property: 'og:image', content: 'https://space-game-mission-plus.vercel.app/assets/icon/Gemini_Generated_Image_wh42b6wh42b6wh42.png' },
+        { property: 'og:image', content: 'https://space-game-mission-plus.vercel.app/assets/art/og.jpg' },
         { property: 'og:locale', content: 'es_ES' },
       ],
       link: [

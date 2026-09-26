@@ -58,6 +58,15 @@ export class Enemy {
   update(dt, world, time) {
     if (this.dead) return
 
+    // Parálisis (Pulso EMP): no se mueve ni ataca; parpadea.
+    if (this.stunMs > 0) {
+      this.stunMs -= dt * 1000
+      this.glow.setAlpha(0.1 + Math.random() * 0.25)
+      this.sprite.setTint(this.stunMs > 0 ? 0x8be9fd : 0xffffff)
+      if (this.stunMs <= 0) this.sprite.clearTint()
+      return
+    }
+
     this.retargetTimer -= dt * 1000
     if (!this.target || this.target.dead || this.retargetTimer <= 0) {
       this.target = resolveTarget(this, world)

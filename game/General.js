@@ -3,6 +3,7 @@ import { GENERAL } from './balance.js'
 import { gameState } from './gameState.js'
 import { spawnFloatingText } from './render/fx.js'
 import { sfxGeneralShot } from './sound.js'
+import { equippedBeam } from './meta/cosmetics.js'
 
 // Tinte por jugador (pid): 0 = host, 1..3 = clientes. Mismo orden en host y cliente
 // para que cada general se vea igual en ambas pantallas.
@@ -183,12 +184,13 @@ export class General {
         best.hp -= this.damage
         if (best.hp <= 0) world.killEnemy(best)
         this.atkTimer = this.cooldown / mult
-        this.scene.beamGraphics.lineStyle(2, this.tint, 0.95)
+        const bc = this.beamSkin ? equippedBeam().color : this.tint
+        this.scene.beamGraphics.lineStyle(2, bc, 0.95)
         this.scene.beamGraphics.lineBetween(this.x, this.y, best.x, best.y)
-        this.scene.beamGraphics.fillStyle(this.tint, 0.8)
+        this.scene.beamGraphics.fillStyle(bc, 0.8)
         this.scene.beamGraphics.fillCircle(best.x, best.y, 3)
         if (this.scene.netHost && this.scene._beamQueue) {
-          this.scene._beamQueue.push([Math.round(this.x), Math.round(this.y), Math.round(best.x), Math.round(best.y), this.tint, 2, 90, 90])
+          this.scene._beamQueue.push([Math.round(this.x), Math.round(this.y), Math.round(best.x), Math.round(best.y), bc, 2, 90, 90])
         }
       }
     }

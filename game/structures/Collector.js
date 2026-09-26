@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { gameState } from '~/game/gameState.js'
 import { Structure } from './Structure.js'
 import { sfxMine } from '~/game/sound.js'
+import { currentMode } from '~/game/modes/index.js'
 
 const MINERAL_GREEN = 0x49e07a
 
@@ -9,6 +10,16 @@ export class Collector extends Structure {
   constructor(def, x, y, scene) {
     super(def, x, y, scene, false)
     this.miningRange = def.miningRange
+    this.rate = def.rate * currentMode().economyMult
+    this.energyRate = def.energyRate || 0
+    this.upgrades = []
+  }
+
+  applyUpgrade(upg) {
+    if (upg.mineRate) this.rate *= upg.mineRate
+    if (upg.miningRange) this.miningRange = Math.round(this.miningRange * upg.miningRange)
+    if (upg.energyMult) this.energyRate *= upg.energyMult
+    this.upgrades.push(upg.id)
   }
 
   update(dt, world, time) {
@@ -20,7 +31,7 @@ export class Collector extends Structure {
     if (!m) return
 
     // Genera energía mientras tiene un meteorito que minar.
-    const eRate = this.def.energyRate || 0
+    const eRate = this.energyRate
     if (eRate > 0) {
       gameState.energy = Math.min(gameState.energyMax, gameState.energy + eRate * (dt / 1000))
     }
@@ -36,7 +47,7 @@ export class Collector extends Structure {
     g.fillStyle(MINERAL_GREEN, pulse)
     g.fillCircle(m.x, m.y, 4)
 
-    this.acc += this.def.rate * (dt / 1000) // dt en ms; rate es por segundo
+    this.acc += this.rate * (dt / 1000) // dt en ms; rate es por segundo
     const whole = Math.floor(this.acc)
     if (whole > 0) {
       this.acc -= whole

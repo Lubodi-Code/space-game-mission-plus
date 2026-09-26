@@ -2,20 +2,30 @@ import Phaser from 'phaser'
 import { appState, DIFFICULTY } from '~/game/appState.js'
 import { gameState } from '~/game/gameState.js'
 import { buildWaves, FIRST_WAVE_MS, WORLD } from '~/game/balance.js'
-import { MODES, DEFAULT_MODE } from '../modes/index.js'
+import { currentMode } from '../modes/index.js'
+import { sectorByN } from '../meta/sectors.js'
 import { Enemy } from '~/game/enemies/Enemy.js'
 import { spawnMarker } from '~/game/render/fx.js'
 
 // Estado en la escena: scene.mode (modo elegido), scene.waves (lista construida),
 // scene.wave (FSM), scene._enemySeq, scene.enemies.
 
+// Multiplicadores de HP/daño de un enemigo recién creado: dificultad × sector.
+export function enemyStatMult() {
+  const diff = DIFFICULTY[appState.difficulty] || DIFFICULTY.normal
+  const sec = sectorByN(appState.sector)
+  return { hp: diff.hpMult * sec.hpMult, dmg: diff.dmgMult * sec.dmgMult }
+}
+
 export function initWaves(scene) {
-  scene.mode = MODES[appState.mode] || MODES[DEFAULT_MODE]
-  scene.waves = buildWaves(appState.difficulty, scene.mode.waveCount)
-  scene.wave = { index: 0, queue: [], spawnTimer: 0, gap: 0, dirs: [], spawnDirIndex: 0, state: 'intermission', timer: FIRST_WAVE_MS }
+  scene.mode = currentMode()
+  scene.sector = sectorByN(appState.sector)
+  scene.waves = buildWaves(appState.difficulty, scene.mode.waveCount, { countScale: scene.mode.countScale, sector: scene.sector })
+  const first = scene.mode.firstWaveMs ?? FIRST_WAVE_MS
+  scene.wave = { index: 0, queue: [], spawnTimer: 0, gap: 0, dirs: [], spawnDirIndex: 0, state: 'intermission', timer: first, elapsed: 0 }
   gameState.wave = 0
   gameState.waveTotal = scene.mode.waveCount
-  gameState.nextWaveIn = Math.ceil(FIRST_WAVE_MS / 1000)
+  gameState.nextWaveIn = Math.ceil(first / 1000)
   gameState.nextWave = null
   gameState.waveDirs = []
 }
@@ -38,6 +48,7 @@ export function updateWaves(scene, delta) {
     if (w.timer <= 0) startNextWave(scene)
   } else if (w.state === 'spawning') {
     gameState.nextWaveIn = 0
+    w.elapsed += delta
     w.spawnTimer -= delta
     if (w.spawnTimer <= 0 && w.queue.length) {
       spawnEnemy(scene, w.queue.shift())
@@ -45,6 +56,15 @@ export function updateWaves(scene, delta) {
     }
     if (w.queue.length === 0) w.state = 'clearing'
   } else if (w.state === 'clearing') {
+    w.elapsed += delta
+    // Presupuesto de tiempo por oleada: si la horda no se limpió a tiempo, entra la
+    // siguiente igual (acota la duración total del modo). La última se debe limpiar.
+    const budget = scene.mode.waveBudgetMs
+    if (budget && w.index < scene.mode.waveCount && w.elapsed >= budget) {
+      startNextWave(scene)
+      return
+    }
+    gameState.waveTimeLeft = budget ? Math.max(0, Math.ceil((budget - w.elapsed) / 1000)) : 0
     if (scene.enemies.length === 0) {
       if (w.index >= scene.mode.waveCount) scene.victory()
       else {
@@ -66,6 +86,7 @@ export function startNextWave(scene) {
   w.spawnTimer = 0
   w.dirs = def.dirs || [Math.random() * Math.PI * 2]
   w.spawnDirIndex = 0
+  w.elapsed = 0
   w.state = 'spawning'
   gameState.bossWave = def.hasBoss || false
   gameState.waveDirs = [...w.dirs]
@@ -87,11 +108,21 @@ export function spawnEnemy(scene, type) {
 
   spawnMarker(scene, x, y)
 
-  const mult = DIFFICULTY[appState.difficulty] || DIFFICULTY.normal
+  const mult = enemyStatMult()
   const enemy = new Enemy(type, x, y, scene)
   enemy.id = ++scene._enemySeq
-  enemy.hp = Math.round(enemy.def.hp * mult.hpMult)
+  enemy.hp = Math.round(enemy.def.hp * mult.hp)
   enemy.maxHp = enemy.hp
-  enemy.damage = enemy.def.damage * mult.dmgMult
+  enemy.damage = enemy.def.damage * mult.dmg
   scene.enemies.push(enemy)
+}
+
+// "¡Oleada ya!": salta el intermedio y paga un bono proporcional al tiempo ahorrado.
+export function callWaveEarly(scene) {
+  const w = scene.wave
+  if (!w || w.state !== 'intermission' || w.index >= scene.mode.waveCount) return 0
+  const bonus = Math.round(Math.max(0, w.timer) / 1000 * 4)
+  gameState.minerals = Math.min(gameState.mineralsCap, gameState.minerals + bonus)
+  startNextWave(scene)
+  return bonus
 }

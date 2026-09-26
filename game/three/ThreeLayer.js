@@ -1,4 +1,7 @@
 import * as THREE from 'three'
+import { createCommanderShip } from './shipModel.js'
+import { createSectorBackdrop } from './sectorBackdrop.js'
+import { appState } from '~/game/appState.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { WORLD } from '~/game/balance.js'
 import { LOW_GFX } from '~/game/quality.js'
@@ -25,6 +28,10 @@ const ASSET = {
     enemy_skirmisher: 'assets/ships/ship_skirmisher.svg',
     enemy_artillery: 'assets/ships/ship_artillery.svg',
     enemy_mothership: 'assets/ships/ship_mothership.svg',
+    enemy_kamikaze: 'assets/ships/ship_kamikaze.svg',
+    enemy_warden: 'assets/ships/ship_warden.svg',
+    enemy_leech: 'assets/ships/ship_leech.svg',
+    enemy_bomber: 'assets/ships/ship_bomber.svg',
   },
 }
 
@@ -168,6 +175,10 @@ export class ThreeLayer {
     this.bgCamera.position.set(0, 0, 600)
 
     this.bgGroups = []
+
+    // Fondo animado propio del sector (shader). Va detrás de todo lo demás.
+    this.backdrop = createSectorBackdrop(appState.sector || 1, LOW_GFX)
+    this.bgScene.add(this.backdrop.mesh)
 
     // Fondo: nube procedural (canvas, sin PNG externo), oscura y muy tenue — solo textura,
     // el negro real lo aporta el clearColor del renderer.
@@ -389,6 +400,8 @@ export class ThreeLayer {
     atmo.userData.bx = -900; atmo.userData.by = 520
     this.bgScene.add(atmo)
     this.bgGroups.push(atmo)
+    // El planeta azul es del sector 1; los demás traen su propio elemento en el backdrop.
+    planet.visible = atmo.visible = this.backdrop.mode === 0
 
     // Sistema de estrellas fugaces (timer en render)
     this.shootingStars = []
@@ -438,6 +451,7 @@ export class ThreeLayer {
   // por meteorito vivo y la encoge/elimina cuando se agota (depleted) o su container muere.
   sync(scene) {
     this._syncNexus(scene)
+    this._syncGenerals(scene)
     if (!this.meteorGeo || !scene?.meteorites) return
     for (const m of scene.meteorites) {
       let e = this.meteors.get(m)
@@ -466,6 +480,40 @@ export class ThreeLayer {
         this.meteors.set(m, e)
       }
       if (dead) e.dying = true
+    }
+  }
+
+  // ------------------------------------------------------------- generales 3D
+  // Misma nave que la vitrina de la tienda (shipModel.js). El sprite 2D se oculta de la
+  // cámara principal pero sigue en el minimapa. Solo host/solo (scene.generals).
+  _syncGenerals(scene) {
+    if (!scene?.generals) return
+    this.gens ||= new Map()
+    for (const [g, e] of this.gens) {
+      if (![...scene.generals.values()].includes(g)) { this.scene.remove(e.root); e.root.userData.dispose(); this.gens.delete(g) }
+    }
+    for (const g of scene.generals.values()) {
+      let e = this.gens.get(g)
+      if (!e) {
+        const root = createCommanderShip(g.tint)
+        root.scale.setScalar(0.62)
+        this.scene.add(root)
+        scene.cam?.ignore(g.sprite)
+        e = { root, tint: g.tint }
+        this.gens.set(g, e)
+      }
+      if (e.tint !== g.tint) { e.root.userData.setTint(g.tint); e.tint = g.tint }
+      e.root.visible = g.alive
+      e.root.position.set(g.x, g.y, 20)
+      const rot = g.sprite.rotation
+      e.root.rotation.set(0, 0, rot)
+      // Alabeo al girar: se nota el volumen 3D.
+      const turn = rot - (e.lastRot ?? rot)
+      e.lastRot = rot
+      e.bank = (e.bank || 0) * 0.9 + Math.max(-0.5, Math.min(0.5, turn * 8))
+      e.root.rotateX(e.bank)
+      const pulse = 0.8 + 0.25 * Math.sin(performance.now() * 0.02)
+      e.root.userData.engine.scale.setScalar(pulse)
     }
   }
 
@@ -790,6 +838,7 @@ export class ThreeLayer {
       p.position.y = (p.userData.by || 0) + oy * p.userData.factor
       p.rotation.z += (p.userData.drift || 0) * dt * 60
     }
+    this.backdrop.update(now * 0.001, ox, oy)
     this.stars.position.x = -ox * this.stars.userData.factor
     this.stars.position.y = oy * this.stars.userData.factor
 
@@ -804,6 +853,7 @@ export class ThreeLayer {
     this.renderer.setSize(w, h, false)
     this.bgCamera.aspect = w / h
     this.bgCamera.updateProjectionMatrix()
+    this.backdrop?.fit(this.bgCamera)
   }
 
   // Crear una estrella fugaz (línea additiva blanca)
@@ -882,6 +932,7 @@ export class ThreeLayer {
       this.bgScene.remove(this.vignette)
     }
     this.nebulaAlpha?.dispose()
+    this.backdrop?.dispose()
     this.glowTex?.dispose()
     this.sparkTex?.dispose()
     this.renderer.domElement.remove()

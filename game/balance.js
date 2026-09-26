@@ -239,10 +239,14 @@ export const ENEMY_TYPES = {
   purple: { key: 'purple', hp: 440, speed: 18, damage: 30, atkCooldown: 900, color: 0xc08bff, scale: 2.7, reward: 160, boss: true },
 }
 
-export function buildWaves(difficultyKey = 'normal', waveCount = WAVE_TOTAL) {
+// opts.countScale: multiplicador del modo (Rápido/Clásico); opts.sector: meta/sectors.js
+// (multiplica la cantidad y decide qué tipos nuevos entran).
+export function buildWaves(difficultyKey = 'normal', waveCount = WAVE_TOTAL, opts = {}) {
   const diff = DIFFICULTY[difficultyKey] || DIFFICULTY.normal
-  const countMult = diff.countMult ?? 1
+  const sector = opts.sector
+  const countMult = (diff.countMult ?? 1) * (opts.countScale ?? 1) * (sector?.countMult ?? 1)
   const gapMult = diff.gapMult ?? 1
+  const allowed = (type) => !sector || sector.roster.includes(type)
 
   const waves = []
   for (let i = 1; i <= waveCount; i++) {
@@ -251,7 +255,8 @@ export function buildWaves(difficultyKey = 'normal', waveCount = WAVE_TOTAL) {
     // grunts a cientos y tapaba la variedad). Cada tipo crece a su ritmo y mantiene una cuota
     // sana en oleadas altas → variedad real (~30% grunt, 23% runner, 18% skirmisher, etc.).
     const push = (type, n) => {
-      const count = Math.round(n * countMult)
+      if (!allowed(type)) return
+      const count = Math.max(1, Math.round(n * countMult))
       for (let k = 0; k < count; k++) list.push(type)
     }
 
@@ -274,6 +279,11 @@ export function buildWaves(difficultyKey = 'normal', waveCount = WAVE_TOTAL) {
     }
     // MOTHERSHIP: naves madre (portanaves) en oleadas muy altas
     if (i >= 7) push(EnemyType.MOTHERSHIP, 1 + Math.floor((i - 7) / 2))
+    // Tipos de sector (solo si el sector los habilita).
+    if (i >= 2) push(EnemyType.KAMIKAZE, 1 + (i - 1) * 1.2)
+    if (i >= 3) push(EnemyType.LEECH, 1 + (i - 2))
+    if (i >= 4) push(EnemyType.WARDEN, 0.4 + (i - 4) * 0.25)
+    if (i >= 5) push(EnemyType.BOMBER, 0.5 + (i - 5) * 0.4)
 
     shuffle(list)
 
