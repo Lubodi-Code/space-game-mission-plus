@@ -384,7 +384,7 @@ export class GameScene extends Phaser.Scene {
       else cancelPlacement(this)
     })
     this.input.keyboard?.on('keydown-SPACE', () => {
-      if (this.core) this.cam.pan(this.core.x, this.core.y, 300, 'Sine.inOut')
+      if (this.core) this.cam.pan(this.core.x, this.core.y, 300, 'Sine.easeInOut')
     })
 
     this.busOff = [

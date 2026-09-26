@@ -156,5 +156,5 @@ export function goToGiant(scene) {
   scene.general.setTarget(m.x, m.y, scene)
   scene.general.mineTarget = m // aunque haya otra roca superpuesta, el objetivo es el gigante
   scene.general.minedAccum = 0
-  scene.cam.pan(m.x, m.y, 500, 'Sine.inOut')
+  scene.cam.pan(m.x, m.y, 500, 'Sine.easeInOut')
 }
