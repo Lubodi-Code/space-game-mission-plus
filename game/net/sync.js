@@ -298,15 +298,12 @@ export function applySnapshot(scene, snap) {
 
 export function setupRemoteInput(scene) {
   scene.input.mouse?.disableContextMenu()
-  scene._pinchUsed = false
-  scene._cameraDrag = null
   scene.cursors = scene.input.keyboard?.createCursorKeys()
   scene.wasdKeys = scene.input.keyboard?.addKeys('W,A,S,D')
   scene.ghost = scene.add.graphics().setDepth(40).setVisible(false)
 
   scene.input.on('pointerdown', (p) => {
-    scene.anchorCameraDrag(p)
-    scene.startCameraPinch()
+    if (p.wasTouch) { scene._downX = p.x; scene._downY = p.y; scene._dragging = false } else scene.beginMouseDrag(p)
     if (p.rightButtonDown()) {
       if (gameState.generalMode === 'selected') gameState.generalMode = null
       else { scene.placementKey = null; gameState.activeBuild = null; scene.ghost.setVisible(false) }
@@ -314,8 +311,15 @@ export function setupRemoteInput(scene) {
   })
 
   scene.input.on('pointermove', (p) => {
-    if (scene._pinching) scene.moveCameraPinch()
-    else scene.moveCameraDrag(p)
+    if (p.isDown && !p.wasTouch) scene.moveMouseDrag(p)
+    else if (p.isDown) {
+      const dist = Math.hypot(p.x - scene._downX, p.y - scene._downY)
+      if (dist > CAMERA.dragThreshold) {
+        scene._dragging = true
+        scene.cam.scrollX -= (p.x - p.prevPosition.x) / scene.cam.zoom
+        scene.cam.scrollY -= (p.y - p.prevPosition.y) / scene.cam.zoom
+      }
+    }
     if (scene.placementKey && gameState.generalMode !== 'selected') drawRemoteGhost(scene, p.worldX, p.worldY)
     // Cursor propio hacia el host (throttle ~80 ms, mismo ritmo que el snapshot).
     const now = performance.now()
@@ -326,7 +330,6 @@ export function setupRemoteInput(scene) {
   })
 
   scene.input.on('pointerup', (p) => {
-    if (scene.endCameraPointer(p)) return
     if (!scene._dragging) {
       if (scene.placementKey && gameState.generalMode !== 'selected') {
         net.send({ t: 'build', key: scene.placementKey, x: p.worldX, y: p.worldY })
@@ -337,7 +340,10 @@ export function setupRemoteInput(scene) {
     scene._dragging = false
   })
 
-  scene.input.on('wheel', (p, _o, _dx, dy) => scene.wheelZoom(p, dy))
+  scene.input.on('wheel', (_p, _o, _dx, dy) => {
+    const step = dy > 0 ? -CAMERA.zoomStep : CAMERA.zoomStep
+    scene.cam.setZoom(Phaser.Math.Clamp(scene.cam.zoom + step, CAMERA.minZoom, CAMERA.maxZoom))
+  })
 
   scene.busOff = [
     bus.on('build', (key) => { scene.placementKey = key; gameState.activeBuild = key; gameState.generalMode = null }),

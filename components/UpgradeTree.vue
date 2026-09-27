@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { gameState } from '~/game/gameState'
 import { buildUpgradeTree } from '~/game/structures/upgrades'
+import GameIcon from './GameIcon.vue'
 import '~/game/meta/research' // registra el hook de investigación antes de evaluar el árbol
 
 // Árbol de mejoras propio de un edificio (o del General). Dos ramas lado a lado; cada nodo
@@ -30,6 +31,30 @@ const STATE_HINT: Record<string, string> = {
 function hex(n: number) {
   return '#' + (n >>> 0).toString(16).padStart(6, '0')
 }
+
+const EFFECT_ICONS: [RegExp, string][] = [
+  [/daño|blanco|objetivo|perdigones|misiles|proyectiles|disparo|cono/i, 'damage'],
+  [/cadencia|más seguido/i, 'fireRate'],
+  [/alcance|radio|red|aura/i, 'range'],
+  [/explosión|área|detonación/i, 'splash'],
+  [/velocidad|vel\./i, 'speed'],
+  [/recolección|minería|minado/i, 'mining'],
+  [/energía/i, 'energy'],
+  [/esferas/i, 'spheres'],
+  [/cura|curación|repara/i, 'heal'],
+  [/vida|HP/i, 'hp'],
+  [/frío|congela|ralentiza/i, 'cryo'],
+  [/salto|rayo/i, 'chain'],
+  [/perfor|atraviesa/i, 'pierce'],
+  [/domo|reducción/i, 'shield'],
+  [/mineral/i, 'minerals'],
+]
+function effectChip(fx: string) {
+  const icon = EFFECT_ICONS.find(([pattern]) => pattern.test(fx))?.[1] || 'xp'
+  const value = fx.match(/[+−-]?\d+(?:[.,]\d+)?\s*%|[+−-]?\d+(?:[.,]\d+)?\s*(?:HP\/s|\/s|s)?|x\d+/i)?.[0]
+    || (fx.includes('perforantes') ? 'perfora' : fx.includes('congela') ? 'congela' : fx.includes('más fuerte') ? 'más fuerte' : 'activo')
+  return { icon, value, title: fx }
+}
 </script>
 
 <template>
@@ -52,14 +77,18 @@ function hex(n: number) {
             <div class="flex items-start justify-between gap-1">
               <span class="text-[10px] leading-tight font-semibold">
                 <span v-if="n.state === 'owned'">✓ </span>
-                <span v-else-if="n.state === 'research'">🔬 </span>
-                <span v-else-if="n.state !== 'available'">🔒 </span>{{ n.label }}
+                <GameIcon v-else-if="n.state === 'research'" name="research" :size="11" title="Investigación" />
+                <GameIcon v-else-if="n.state === 'excluded'" name="excluded" :size="11" title="Rama excluida" />
+                <GameIcon v-else-if="n.state === 'locked'" name="lock" :size="11" title="Bloqueado" />
+                {{ n.label }}
               </span>
-              <span v-if="n.state !== 'owned'" class="text-[9px] tabular-nums text-amber-300/80 shrink-0">{{ n.cost }}</span>
+              <span v-if="n.state !== 'owned'" class="text-[9px] tabular-nums text-amber-300/80 shrink-0 inline-flex items-center gap-0.5" title="Costo en minerales"><GameIcon name="minerals" :size="10" title="Minerales" />{{ n.cost }}</span>
             </div>
-            <ul class="mt-0.5 space-y-px">
-              <li v-for="fx in n.effects" :key="fx" class="text-[9px] leading-tight opacity-75">{{ fx }}</li>
-            </ul>
+            <div class="mt-1 flex flex-wrap gap-0.5">
+              <span v-for="fx in n.effects" :key="fx" class="effect-chip" :title="fx">
+                <GameIcon :name="effectChip(fx).icon" :size="11" :title="fx" />{{ effectChip(fx).value }}
+              </span>
+            </div>
             <button
               v-if="n.state === 'available'"
               class="upg-buy"
@@ -93,4 +122,5 @@ function hex(n: number) {
   @apply mt-1 w-full px-1 py-1 rounded text-[10px] font-semibold bg-emerald-400/15 text-emerald-200
          hover:bg-emerald-400/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed;
 }
+.effect-chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 3px; border-radius: 4px; background: rgba(139,233,253,.09); font-size: 9px; line-height: 1.1; white-space: nowrap; text-decoration: none; }
 </style>

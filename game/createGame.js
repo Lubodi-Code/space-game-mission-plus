@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
 import { BootScene } from './scenes/BootScene.js'
 import { GameScene } from './scenes/GameScene.js'
-import { IS_TOUCH, LOW_GFX, RENDER_SCALE } from './quality.js'
+import { RENDER_SCALE } from './quality.js'
 import { phaserHeightFor } from './three/tilt.js'
 
 /** Configuración de Phaser para el tamaño actual del contenedor. */
@@ -28,16 +28,11 @@ export function createGameConfig(parent) {
     input: {
       activePointers: 3, // multi-touch support
     },
-    fps: {
-      target: 60,
-      smoothStep: true,
-    },
     render: {
-      antialias: !IS_TOUCH && !LOW_GFX,
+      antialias: true,
       roundPixels: false,
-      powerPreference: 'high-performance',
-      batchSize: IS_TOUCH || LOW_GFX ? 2048 : 4096,
-      preserveDrawingBuffer: true,
+      // Sin preserveDrawingBuffer: el canvas ya no se copia a una textura de Three cada frame.
+      preserveDrawingBuffer: false,
     },
     scene: [BootScene, GameScene],
   }
@@ -47,10 +42,10 @@ export function createGameConfig(parent) {
 export function createGame(parent) {
   const game = new Phaser.Game(createGameConfig(parent))
   const fitCanvas = () => {
-    // Phaser conserva su alto físico extendido; el canvas invisible ocupa la pantalla.
+    // Phaser conserva su alto físico extendido y el CSS lo comprime a la pantalla: esa compresión
+    // vertical (cos 30°) es exactamente la proyección ortográfica del tablero inclinado.
     game.canvas.style.width = '100%'
     game.canvas.style.height = '100%'
-    game.canvas.style.opacity = '0'
   }
   fitCanvas()
   const ro = new ResizeObserver(() => {
