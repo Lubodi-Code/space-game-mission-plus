@@ -16,6 +16,17 @@ import { sfxWaveStart, sfxCoreAlarm, sfxVictory, sfxDefeat } from '~/game/sound'
 import Settings from './Settings.vue'
 
 const settingsOpen = ref(false)
+const coreExpanded = ref(false)
+const buildbarExpanded = ref(true)
+
+function toggleCore() {
+  if (IS_TOUCH || window.innerWidth <= 700) coreExpanded.value = !coreExpanded.value
+}
+
+function toggleBuildbar() {
+  buildbarExpanded.value = !buildbarExpanded.value
+  try { localStorage.setItem('sgmp_buildbar', buildbarExpanded.value ? 'open' : 'closed') } catch { /* storage unavailable */ }
+}
 
 // Mapeo de tipos de enemigos a nombres legibles
 const ENEMY_LABELS = {
@@ -259,11 +270,19 @@ const sheetOpen = computed(() => !!selectedStructure.value || gameState.generalM
 // Aviso de orientación: en vertical el mapa se ve muy chico. Descartable.
 const portrait = ref(false)
 const portraitDismissed = ref(false)
+let portraitTimer = null
 function checkOrientation() {
   portrait.value = window.innerHeight > window.innerWidth && window.innerWidth < 700
+  if (portrait.value && !portraitDismissed.value && !portraitTimer) {
+    portraitTimer = setTimeout(() => { portraitDismissed.value = true; portraitTimer = null }, 5000)
+  }
 }
-onMounted(() => { checkOrientation(); window.addEventListener('resize', checkOrientation) })
-onUnmounted(() => window.removeEventListener('resize', checkOrientation))
+onMounted(() => {
+  try { buildbarExpanded.value = localStorage.getItem('sgmp_buildbar') !== 'closed' } catch { /* storage unavailable */ }
+  checkOrientation()
+  window.addEventListener('resize', checkOrientation)
+})
+onUnmounted(() => { window.removeEventListener('resize', checkOrientation); if (portraitTimer) clearTimeout(portraitTimer) })
 
 const sectorInfo = computed(() => sectorByN(appState.sector))
 const levelInfo = computed(() => levelFromXp(profile.xp))
@@ -354,20 +373,21 @@ function polyPoints(sides, radius) {
           title="P pausa/reanuda · , más lenta · . más rápida"
           @click="setSpeed(sp.value)"
         >
-          {{ sp.label }}
+          <span class="speed-label">{{ sp.label }}</span>
+          <span class="speed-icon hidden" aria-hidden="true">{{ sp.value === 0 ? '⏸' : sp.value > 1 ? '⏩' : '▶' }}</span>
         </button>
       </div>
 
       <div class="ml-auto flex items-center gap-5 text-sm">
         <span class="text-cyan-300/80">
-          Tiempo <span class="text-white font-semibold tabular-nums">{{ timeLabel }}</span>
+          <span class="topbar-label">Tiempo</span> <span class="text-white font-semibold tabular-nums">{{ timeLabel }}</span>
         </span>
         <span class="text-emerald-300/80">
-          Minerales
+          <span class="topbar-label">Minerales</span><span class="topbar-mobile-label hidden" aria-hidden="true">◆</span>
           <span class="text-emerald-200 font-semibold tabular-nums">{{ gameState.minerals }}</span>
         </span>
         <span class="text-fuchsia-300/80">
-          Oleada
+          <span class="topbar-label">Oleada</span><span class="topbar-mobile-label hidden" aria-hidden="true">O</span>
           <span class="text-fuchsia-200 font-semibold">{{ gameState.wave }}/{{ gameState.waveTotal }}</span>
         </span>
         <button class="hud-btn shrink-0" aria-label="Ajustes" title="Ajustes" @click="settingsOpen = true">⚙ <span class="hidden sm:inline">Ajustes</span></button>
@@ -388,7 +408,8 @@ function polyPoints(sides, radius) {
     </div>
 
     <!-- Core integrity + wave status (top-left) -->
-    <div class="hud-core absolute top-14 left-3 w-56 space-y-1.5 p-2.5 rounded-xl bg-[#0a0f1c]/60 backdrop-blur-sm ring-1 ring-cyan-400/20">
+    <div class="hud-core absolute top-14 left-3 w-56 space-y-1.5 p-2.5 rounded-xl bg-[#0a0f1c]/60 backdrop-blur-sm ring-1 ring-cyan-400/20"
+      :class="{ 'hud-core--expanded': coreExpanded }" @click="toggleCore">
       <div class="flex items-center gap-2">
         <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24">
           <polygon
@@ -401,7 +422,7 @@ function polyPoints(sides, radius) {
         </svg>
         <div class="flex-1">
           <div class="flex items-center justify-between text-[11px]">
-            <span class="text-cyan-300/80 font-semibold tracking-wide">Nexo</span>
+            <span class="core-name text-cyan-300/80 font-semibold tracking-wide">Nexo</span>
             <span class="tabular-nums font-bold" :class="coreHpPct > 30 ? 'text-cyan-200' : 'text-red-400'">{{ coreHpPct }}%</span>
           </div>
           <div class="h-2.5 rounded-full bg-white/10 overflow-hidden ring-1 ring-cyan-400/30 mt-1">
@@ -414,29 +435,31 @@ function polyPoints(sides, radius) {
         </div>
       </div>
       <div
-        class="mt-1 inline-block px-2 py-0.5 rounded text-[11px]"
+        class="core-wave mt-1 inline-block px-2 py-0.5 rounded text-[11px]"
         :class="waveStatus.kind === 'countdown' ? 'bg-fuchsia-500/15 text-fuchsia-200' : 'bg-red-500/15 text-red-200'"
       >
-        {{ waveStatus.text }}
+        <span class="core-wave-full">{{ waveStatus.text }}</span>
+        <span class="core-wave-short hidden" aria-hidden="true">{{ waveStatus.kind === 'countdown' ? `O${gameState.wave + 1} ${gameState.nextWaveIn}s` : `O${gameState.wave} · ${gameState.enemiesAlive}` }}</span>
       </div>
       <button
         v-if="waveStatus.kind === 'countdown' && gameState.status === 'playing' && appState.mp.role !== 'client'"
-        class="mt-1 ml-1 inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-400/20 text-amber-100 ring-1 ring-amber-300/40 hover:bg-amber-400/30 pointer-events-auto"
+        class="core-call-wave mt-1 ml-1 inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-400/20 text-amber-100 ring-1 ring-amber-300/40 hover:bg-amber-400/30 pointer-events-auto"
         title="N — salta la espera y gana minerales por el tiempo ahorrado"
-        @click="callWave"
+        @click.stop="callWave"
       >
-        ¡Oleada ya! +{{ gameState.nextWaveIn * 4 }} <span class="opacity-50">N</span>
+        ¡Oleada ya! <span class="core-wave-bonus">+{{ gameState.nextWaveIn * 4 }} <span class="opacity-50">N</span></span>
       </button>
       <div class="hud-sector text-[10px] text-cyan-400/50">Sector {{ sectorInfo.n }} · {{ sectorInfo.name }}</div>
 
       <!-- General status (below wave) -->
-      <div v-if="gameState.general.alive" class="mt-1 text-xs flex items-center gap-1 text-cyan-300/80">
+      <div v-if="gameState.general.alive" class="hud-general mt-1 text-xs flex items-center gap-1 text-cyan-300/80"
+        :class="{ 'hud-general--healthy': gameState.general.hp >= gameState.general.hpMax }">
         <span>General</span>
         <span class="tabular-nums" :class="gameState.general.hp > 40 ? 'text-cyan-200' : 'text-red-400'">
           {{ gameState.general.hp }}/{{ gameState.general.hpMax }}
         </span>
       </div>
-      <div v-else class="mt-1 text-xs text-red-400/90 animate-pulse">
+      <div v-else class="hud-general mt-1 text-xs text-red-400/90 animate-pulse">
         ⚠ General caído — reaparece en {{ gameState.general.respawnIn }}s
       </div>
     </div>
@@ -745,23 +768,24 @@ function polyPoints(sides, radius) {
     <button v-if="cancelable" class="cancel-fab pointer-events-auto" @click="cancelAll">✕ Cancelar</button>
 
     <!-- Aviso de orientación vertical -->
-    <div v-if="portrait && !portraitDismissed" class="portrait-hint pointer-events-auto">
+    <div v-if="portrait && !portraitDismissed" class="portrait-hint pointer-events-none">
       <span class="text-2xl">⟳</span>
       <span>Girá el celular para ver más mapa</span>
-      <button class="underline opacity-70" @click="portraitDismissed = true">Seguir así</button>
+      <button class="portrait-close pointer-events-auto" aria-label="Cerrar aviso" @click="portraitDismissed = true">✕</button>
     </div>
 
     <!-- Bottom build bar -->
     <div
-      :class="{ 'hud-buildbar--sheet': sheetOpen }"
+      :class="{ 'hud-buildbar--sheet': sheetOpen, 'hud-buildbar--collapsed': !buildbarExpanded }"
       class="hud-buildbar absolute bottom-0 left-1/2 -translate-x-1/2 mb-3 flex gap-2
              px-3 py-2 rounded-xl bg-black/55 backdrop-blur-sm
              ring-1 ring-cyan-400/20 pointer-events-auto max-w-[98vw] overflow-x-auto"
     >
+      <button class="buildbar-toggle hidden" type="button" :aria-expanded="buildbarExpanded" aria-label="Mostrar u ocultar construcción" @click="toggleBuildbar">🔨</button>
       <button
         v-for="(s, i) in structures"
         :key="s.key"
-        class="build-btn group"
+        class="build-btn hud-build-item group"
         :class="{
           'build-btn--active': gameState.activeBuild === s.key,
           'build-btn--disabled': gameState.minerals < s.cost,
@@ -782,15 +806,15 @@ function polyPoints(sides, radius) {
           />
         </svg>
         <span class="build-btn-label text-[10px] text-cyan-200/70 group-hover:text-cyan-100">{{ s.label }}</span>
-        <span class="text-[10px] tabular-nums" :class="gameState.minerals < s.cost ? 'text-red-400/80' : 'text-emerald-300/80'">
+        <span class="build-cost text-[10px] tabular-nums" :class="gameState.minerals < s.cost ? 'text-red-400/80' : 'text-emerald-300/80'">
           {{ s.cost }}
         </span>
       </button>
 
-      <div class="w-px h-10 bg-cyan-400/20 mx-1"></div>
+      <div class="hud-build-item build-divider w-px h-10 bg-cyan-400/20 mx-1"></div>
 
       <button
-        class="build-btn group"
+        class="build-btn hud-build-item group"
         :class="{ 'build-btn--active': gameState.generalMode === 'selected' }"
         @mouseenter="showTooltip(generalTooltip, $event)"
         @mousemove="(e) => { tooltipPos.x = e.clientX; tooltipPos.y = e.clientY - 8 }"
@@ -800,7 +824,7 @@ function polyPoints(sides, radius) {
         <span class="key-badge">G</span>
         <span class="text-2xl leading-none" style="color: #8be9fd">✦</span>
         <span class="build-btn-label text-[10px] text-cyan-200/70 group-hover:text-cyan-100">General</span>
-        <span class="text-[10px] tabular-nums text-emerald-300/80">Comandante</span>
+        <span class="build-cost text-[10px] tabular-nums text-emerald-300/80">Comandante</span>
       </button>
     </div>
 
@@ -928,11 +952,27 @@ function polyPoints(sides, radius) {
 
 /* Celular (vertical u horizontal angosto): paneles como hoja inferior, HUD compacto. */
 @media (max-width: 700px), (pointer: coarse) and (max-height: 520px) {
-  .hud-topbar { gap: 0.5rem; padding-left: 0.5rem; padding-right: 0.5rem; font-size: 0.7rem; }
-  .hud-topbar .hud-btn { padding: 0.35rem 0.55rem; font-size: 0.7rem; }
-  .hud-topbar .ml-auto { gap: 0.6rem; }
+  .hud-topbar { gap: 0.3rem; padding: max(0.2rem, env(safe-area-inset-top)) calc(0.4rem + env(safe-area-inset-right)) 0.2rem calc(0.4rem + env(safe-area-inset-left)); background: linear-gradient(to bottom, rgba(0,0,0,0.38), transparent); }
+  .hud-topbar .hud-btn { padding: 0.2rem 0.35rem; min-width: 1.7rem; font-size: 11px; }
+  .hud-topbar .ml-auto { gap: 0.45rem; font-size: 11px; white-space: nowrap; }
+  .hud-topbar .speed-label, .hud-topbar .topbar-label { display: none; }
+  .hud-topbar .speed-icon, .hud-topbar .topbar-mobile-label { display: inline; }
   .hud-resources { display: none; }
-  .hud-core { width: 10.5rem; padding: 0.4rem; left: 0.5rem; top: 2.75rem; }
+  .hud-core { width: max-content; max-width: calc(100vw - 1rem); padding: 0.25rem 0.4rem; left: calc(0.5rem + env(safe-area-inset-left)); top: calc(2rem + env(safe-area-inset-top)); background: rgba(10,15,28,0.38); cursor: pointer; pointer-events: auto; }
+  .hud-core > * + * { margin-top: 0; }
+  .hud-core > .flex { gap: 0.3rem; }
+  .hud-core > .flex > svg { width: 0.9rem; height: 0.9rem; }
+  .hud-core .core-name { display: none; }
+  .hud-core > .flex > div { display: flex; align-items: center; gap: 0.35rem; }
+  .hud-core > .flex > div > div:first-child { order: 2; font-size: 10px; }
+  .hud-core > .flex > div > div:nth-child(2) { order: 1; width: 3.5rem; height: 0.3rem; margin-top: 0; }
+  .hud-core { white-space: nowrap; }
+  .core-wave, .core-call-wave { margin: 0; padding: 0.1rem 0.3rem; font-size: 9px; line-height: 1.1; }
+  .core-wave-full { display: none; }
+  .core-wave-short { display: inline; }
+  .core-wave-bonus { display: none; }
+  .hud-core:not(.hud-core--expanded) .hud-general--healthy { display: none; }
+  .hud-general { margin-top: 0.15rem; font-size: 10px; }
   .hud-wave-analysis { display: none; }
   .hud-sheet {
     top: auto !important; left: 0 !important; right: 0 !important; bottom: 0;
@@ -941,19 +981,26 @@ function polyPoints(sides, radius) {
     padding-bottom: max(0.9rem, env(safe-area-inset-bottom));
     animation: sheetUp 0.18s ease-out;
   }
-  .hud-buildbar { max-width: calc(100vw - 1rem); }
+  .hud-buildbar { max-width: calc(100vw - 0.75rem - env(safe-area-inset-left) - env(safe-area-inset-right)); margin-bottom: calc(0.25rem + env(safe-area-inset-bottom)); padding: 0.2rem; gap: 0.2rem; background: rgba(0,0,0,0.32); }
   .hud-buildbar--sheet { display: none; }
-  .build-btn { width: 3.3rem; height: 3.3rem; }
-  .cancel-fab { bottom: calc(5.25rem + env(safe-area-inset-bottom)); }
+  .build-btn { width: 2.6rem; height: 2.6rem; flex: 0 0 2.6rem; gap: 0; }
+  .build-btn svg { width: 1.2rem; height: 1.2rem; }
+  .build-btn-label, .key-badge { display: none; }
+  .build-cost { font-size: 9px; line-height: 1; }
+  .build-divider { height: 2rem; margin: 0 0.1rem; }
+  .buildbar-toggle { display: flex; flex: 0 0 2.6rem; width: 2.6rem; height: 2.6rem; align-items: center; justify-content: center; border-radius: 0.5rem; background: rgba(139,233,253,0.12); font-size: 1.25rem; }
+  .hud-buildbar--collapsed .hud-build-item { display: none; }
+  .cancel-fab { bottom: calc(3.7rem + env(safe-area-inset-bottom)); padding: 0.35rem 0.75rem; font-size: 11px; }
+  .portrait-hint { top: auto; bottom: calc(5.25rem + env(safe-area-inset-bottom)); left: 50%; right: auto; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 1rem - env(safe-area-inset-left) - env(safe-area-inset-right)); flex-direction: row; gap: 0.35rem; padding: 0.25rem 0.5rem; border-radius: 999px; font-size: 10px; background: rgba(10,15,28,0.55); }
+  .portrait-hint > span:first-child { font-size: 13px; }
+  .portrait-close { margin-left: 0.2rem; font-size: 14px; }
   .hud-hint {
     top: auto; bottom: calc(8.25rem + env(safe-area-inset-bottom));
     width: max-content; max-width: 92vw; text-align: center; font-size: 10px; border-radius: 0.75rem;
   }
   :deep(.ability-under-sheet) { display: none; }
   .hud-hint, .hud-sector { display: none; }
-}
-@media (max-width: 700px) {
-  .hud-topbar .ml-auto > span:first-child { display: none; } /* tiempo: poco espacio */
+  :global(#nuxt-devtools-anchor) { display: none !important; }
 }
 @keyframes sheetUp {
   from { transform: translateY(24px); opacity: 0; }

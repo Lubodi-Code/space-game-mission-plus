@@ -88,4 +88,11 @@ function ring(frac: number) {
   .ability-bar { bottom: 4.5rem; gap: 0.35rem; }
   .ability-btn { width: 3.25rem; height: 3.25rem; }
 }
+@media (max-width: 700px), (pointer: coarse) and (max-height: 520px) {
+  .ability-bar { right: calc(0.4rem + env(safe-area-inset-right)); bottom: calc(3.5rem + env(safe-area-inset-bottom)); gap: 0.3rem; }
+  .ability-btn { width: 3rem; height: 3rem; border-radius: 0.8rem; }
+  .ability-icon { font-size: 1.5rem; }
+  .ability-label, .ability-key { display: none; }
+  .ability-hint { max-width: 9rem; text-align: right; }
+}
 </style>

@@ -20,6 +20,7 @@ import { populateMeteorites } from '~/game/systems/worldgen.js'
 import { initWaves, updateWaves, enemyStatMult, callWaveEarly } from '~/game/systems/waves.js'
 import { recomputeNetwork as recomputeNetworkSys } from '~/game/systems/energyNet.js'
 import { ThreeLayer } from '~/game/three/ThreeLayer.js'
+import { IS_TOUCH } from '~/game/quality.js'
 import { installTiltInput } from '~/game/input/tiltInput.js'
 import { explosion as explosionFx, drawFx, drawPlayerCursor, upgradeBurst } from '~/game/render/fx.js'
 import { updateProjectiles } from '~/game/systems/projectiles.js'
@@ -75,7 +76,7 @@ export class GameScene extends Phaser.Scene {
 
     this.cam = this.cameras.main
     this.cam.setBounds(0, 0, WORLD.width, WORLD.height)
-    this.cam.setZoom(CAMERA.startZoom)
+    this.cam.setZoom(IS_TOUCH ? Phaser.Math.Clamp(CAMERA.startZoom * 1.35, CAMERA.minZoom, CAMERA.maxZoom) : CAMERA.startZoom)
 
     this.nebulae = [] // (el fondo lo dibuja ThreeLayer; ref vacía para minimap.ignore)
 
@@ -214,8 +215,41 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ---------------------------------------------------------------- input
+  touchScreenPoint(p) {
+    const event = p.event
+    const touch = [...(event?.changedTouches || []), ...(event?.touches || [])]
+      .find((item) => item.identifier === p.identifier)
+    if (!touch) return null
+    const canvas = this.game.canvas
+    const rect = canvas.getBoundingClientRect()
+    return {
+      x: (touch.clientX - rect.left) * canvas.width / rect.width,
+      y: (touch.clientY - rect.top) * canvas.height / rect.height,
+    }
+  }
+
+  touchWorldPoint(point) {
+    const cam = this.cam
+    return {
+      x: cam.scrollX + cam.width / 2 + (point.x - cam.width / 2) / cam.zoom,
+      y: cam.scrollY + cam.height / 2 + (point.y - cam.height / 2) / cam.zoom,
+    }
+  }
+
+  anchorTouchCamera(world, point) {
+    const cam = this.cam
+    cam.scrollX = world.x - cam.width / 2 - (point.x - cam.width / 2) / cam.zoom
+    cam.scrollY = world.y - cam.height / 2 - (point.y - cam.height / 2) / cam.zoom
+  }
+
   setupInput() {
     this.input.mouse?.disableContextMenu()
+    this.game.canvas.style.touchAction = 'none'
+    this._touchPoints = new Map()
+    this._touchPinchUsed = false
+    this._touchAnchor = null
+    this._touchMotion = []
+    this._touchInertia = null
 
     this.rangePreview = this.add.graphics().setDepth(5).setVisible(false)
 
@@ -225,6 +259,34 @@ export class GameScene extends Phaser.Scene {
     this.input.on('pointermove', (p) => {
       updateGhost(this, p.worldX, p.worldY)
       updateRangePreview(this, p.worldX, p.worldY)
+
+      if (p.wasTouch) {
+        const point = this.touchScreenPoint(p)
+        if (!point || !this._touchPoints.has(p.id)) return
+        this._touchPoints.set(p.id, point)
+        if (this._touchPoints.size >= 2) {
+          const [a, b] = [...this._touchPoints.values()]
+          const dist = Math.hypot(a.x - b.x, a.y - b.y)
+          const midpoint = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+          if (this._touchPinch && this._touchPinch.dist > 0 && dist > 0) {
+            const anchor = this.touchWorldPoint(this._touchPinch.midpoint)
+            this.cam.setZoom(Phaser.Math.Clamp(this.cam.zoom * dist / this._touchPinch.dist, CAMERA.minZoom, CAMERA.maxZoom))
+            this.anchorTouchCamera(anchor, midpoint)
+          }
+          this._touchPinch = { dist, midpoint }
+        } else if (this._touchAnchor) {
+          const start = this._touchAnchor.start
+          if (this._dragging || Math.hypot(point.x - start.x, point.y - start.y) > CAMERA.dragThreshold) {
+            this._dragging = true
+            const oldX = this.cam.scrollX; const oldY = this.cam.scrollY
+            this.anchorTouchCamera(this._touchAnchor.world, point)
+            const now = performance.now()
+            this._touchMotion.push({ time: now, dx: this.cam.scrollX - oldX, dy: this.cam.scrollY - oldY })
+            this._touchMotion = this._touchMotion.filter((sample) => now - sample.time <= 80)
+          }
+        }
+        return
+      }
 
       if (p.isDown && !this._pinching) {
         const dx = p.x - p.prevPosition.x
@@ -239,6 +301,31 @@ export class GameScene extends Phaser.Scene {
     })
 
     this.input.on('pointerdown', (p) => {
+      if (p.wasTouch) {
+        const point = this.touchScreenPoint(p)
+        if (!point) return
+        this._touchInertia = null
+        this._touchMotion = []
+        // Un dedo levantado sobre el HUD (o touchcancel) no emite pointerup: purgar los que ya no están abajo.
+        const down = new Set(this.input.manager.pointers.filter((q) => q.isDown).map((q) => q.id))
+        for (const id of this._touchPoints.keys()) if (!down.has(id)) this._touchPoints.delete(id)
+        if (!this._touchPoints.size) this._touchPinchUsed = false
+        this._touchPoints.set(p.id, point)
+        if (this._touchPoints.size >= 2) {
+          const [a, b] = [...this._touchPoints.values()]
+          this._touchPinch = {
+            dist: Math.hypot(a.x - b.x, a.y - b.y),
+            midpoint: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+          }
+          this._touchPinchUsed = true
+          this._dragging = true
+          this._touchAnchor = null
+        } else {
+          this._touchAnchor = { start: point, world: this.touchWorldPoint(point) }
+          this._dragging = false
+        }
+        return
+      }
       this._downX = p.x
       this._downY = p.y
       this._dragging = false
@@ -251,6 +338,28 @@ export class GameScene extends Phaser.Scene {
     })
 
     this.input.on('pointerup', (p) => {
+      if (p.wasTouch) {
+        this._touchPoints.delete(p.id)
+        if (this._touchPinchUsed) {
+          this._touchPinch = null
+          this._touchMotion = []
+          const remaining = this._touchPoints.values().next().value
+          this._touchAnchor = remaining ? { start: remaining, world: this.touchWorldPoint(remaining) } : null
+          if (!remaining) { this._touchPinchUsed = false; this._dragging = false }
+          return
+        }
+        if (this._dragging && this._touchMotion.length > 1 && performance.now() - this._touchMotion.at(-1).time <= 80) {
+          const samples = this._touchMotion
+          const elapsed = samples.at(-1).time - samples[0].time
+          if (elapsed > 0) {
+            const dx = samples.slice(1).reduce((sum, sample) => sum + sample.dx, 0)
+            const dy = samples.slice(1).reduce((sum, sample) => sum + sample.dy, 0)
+            this._touchInertia = { x: dx / elapsed, y: dy / elapsed }
+          }
+        }
+        this._touchAnchor = null
+        this._touchMotion = []
+      }
       // Habilidad apuntando: el clic elige el objetivo; clic derecho la cancela.
       if (gameState.abilityTargeting) {
         if (this._rightDown) cancelTargeting()
@@ -353,7 +462,18 @@ export class GameScene extends Phaser.Scene {
       this.cam.scrollY += (wy - newWy) * newZoom
     })
 
+    this.input.on('pointerupoutside', (p) => {
+      if (!p.wasTouch) return
+      this._touchPoints.delete(p.id)
+      this._touchPinch = null
+      this._touchMotion = []
+      const remaining = this._touchPoints.values().next().value
+      this._touchAnchor = remaining ? { start: remaining, world: this.touchWorldPoint(remaining) } : null
+      if (!remaining) { this._touchPinchUsed = false; this._dragging = false }
+    })
+
     this.input.on('pointerdown', (p) => {
+      if (p.wasTouch) return
       if (this.input.pointer1?.isDown && this.input.pointer2?.isDown) {
         this._pinching = true
         this._lastPinchDist = Phaser.Math.Distance.Between(
@@ -364,6 +484,7 @@ export class GameScene extends Phaser.Scene {
     })
 
     this.input.on('pointermove', () => {
+      if (this._touchPoints.size) return
       if (this._pinching && this.input.pointer1?.isDown && this.input.pointer2?.isDown) {
         const dist = Phaser.Math.Distance.Between(
           this.input.pointer1.x, this.input.pointer1.y,
@@ -378,6 +499,7 @@ export class GameScene extends Phaser.Scene {
     })
 
     this.input.on('pointerup', () => {
+      if (this._touchPoints.size) return
       if (!this.input.pointer1?.isDown || !this.input.pointer2?.isDown) {
         this._pinching = false
       }
@@ -474,6 +596,16 @@ export class GameScene extends Phaser.Scene {
   // ------------------------------------------------------------------ loop
   update(time, delta) {
     const d = delta * (this.speed ?? 1)
+
+    if (this._touchInertia) {
+      const step = Math.min(delta, 50)
+      this.cam.scrollX += this._touchInertia.x * step
+      this.cam.scrollY += this._touchInertia.y * step
+      const friction = Math.exp(-step / 220)
+      this._touchInertia.x *= friction
+      this._touchInertia.y *= friction
+      if (Math.hypot(this._touchInertia.x, this._touchInertia.y) < 0.005) this._touchInertia = null
+    }
 
     // keyboard pan
     if (this.cursors && this.wasdKeys) {

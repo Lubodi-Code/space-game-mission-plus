@@ -8,7 +8,7 @@ import { nexusColor, equipped } from '~/game/meta/cosmetics.js'
 import { appState } from '~/game/appState.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { WORLD } from '~/game/balance.js'
-import { LOW_GFX, RENDER_SCALE } from '~/game/quality.js'
+import { IS_TOUCH, LOW_GFX, RENDER_SCALE } from '~/game/quality.js'
 import { REGISTRY } from '~/game/enemies/EnemyType.js'
 import { updateTiltCamera } from './tilt.js'
 
@@ -109,7 +109,7 @@ export class ThreeLayer {
     this.tickPrev = performance.now()
     this.viewCenter = { x: WORLD.width / 2, y: WORLD.height / 2 }
 
-    const renderer = new THREE.WebGLRenderer({ antialias: RENDER_SCALE < 2, alpha: false, powerPreference: 'high-performance' })
+    const renderer = new THREE.WebGLRenderer({ antialias: !IS_TOUCH && RENDER_SCALE < 2, alpha: false, powerPreference: 'high-performance' })
     // En móvil renderizar a 1x: el DPR 2-3x de los celulares multiplica los píxeles x4-9 y hunde los FPS.
     // resize() usa el ancho físico de Phaser y el alto físico visible del contenedor.
     renderer.setPixelRatio(1)
