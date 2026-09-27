@@ -6,11 +6,11 @@ import { equippedBeam } from '~/game/meta/cosmetics.js'
 import { drawBeam, spawnFloatingText } from '~/game/render/fx.js'
 import { sfxCharge, sfxMegaBeam, sfxEmp, sfxRepair, sfxStrike, sfxUi } from '~/game/sound.js'
 
-// Habilidades activas del comandante (General). Solo host/single-player.
+// Habilidades activas de cada comandante; el host ejecuta también las del invitado.
 // - target 'enemy': espera clic sobre una unidad enemiga (Mega Rayo)
 // - target 'point': espera clic en el mapa (Bombardeo)
 // - target 'self' : se lanza al instante alrededor del General
-// Estado en la escena: scene.abilityCd (id → ms restantes), scene.abilityFx (efectos vivos).
+// Estado en la escena: scene.abilityCd (pid → {id → ms restantes}), scene.abilityFx.
 // Todos los tiempos en MS (se llama con el `d` del loop).
 
 export const ABILITIES = {
@@ -39,7 +39,7 @@ export const ABILITIES = {
 export const ABILITY_ORDER = ['megalaser', 'emp', 'repair', 'strike']
 
 export function initAbilities(scene) {
-  scene.abilityCd = {}
+  scene.abilityCd = new Map([[0, {}]])
   scene.abilityFx = []
   scene.abilityGfx = scene.add.graphics().setDepth(32).setBlendMode(Phaser.BlendModes.ADD)
   const b = runBonuses()
@@ -51,12 +51,20 @@ function cooldownOf(scene, def) {
   return def.id === 'megalaser' ? def.cooldownMs * scene.abilityMods.megaCd : def.cooldownMs
 }
 
+export function abilityCooldownsFor(scene, pid) {
+  const cds = scene.abilityCd?.get(pid) || {}
+  return ABILITY_ORDER.map((id) => ({
+    id,
+    frac: Math.max(0, cds[id] || 0) / cooldownOf(scene, ABILITIES[id]),
+  }))
+}
+
 // Publica el estado para el HUD (ready/cd). Barato: pocos campos.
 function publish(scene) {
   const out = {}
   for (const id of ABILITY_ORDER) {
     const def = ABILITIES[id]
-    const cdLeft = Math.max(0, scene.abilityCd[id] || 0)
+    const cdLeft = Math.max(0, scene.abilityCd.get(0)?.[id] || 0)
     out[id] = {
       unlocked: abilityUnlocked(id),
       ready: cdLeft <= 0,
@@ -68,12 +76,29 @@ function publish(scene) {
 }
 
 // Desde el HUD (bus 'ability'). Las 'self' se lanzan ya; las otras entran en modo apuntado.
-export function requestAbility(scene, id) {
+export function requestAbility(scene, id, pid = 0, target = null) {
   const def = ABILITIES[id]
-  const g = scene.general
-  if (!def || !abilityUnlocked(id) || !g?.alive) { sfxUi('error'); return }
-  if ((scene.abilityCd[id] || 0) > 0) { sfxUi('error'); return }
-  if (def.target === 'self') { cast(scene, def, null); return }
+  const g = pid === 0 ? scene.general : scene.generals.get(pid)
+  if (!def || !abilityUnlocked(id) || !g?.alive) { if (pid === 0) sfxUi('error'); return }
+  if ((scene.abilityCd.get(pid)?.[id] || 0) > 0) { if (pid === 0) sfxUi('error'); return }
+  if (def.target === 'self') { cast(scene, def, null, g); return }
+  if (pid !== 0) {
+    if (def.target === 'point') {
+      if (Number.isFinite(target?.x) && Number.isFinite(target?.y)) cast(scene, def, target, g)
+    } else if (def.target === 'enemy') {
+      let enemy = scene.enemies.find((e) => !e.dead && e.id === target?.targetId)
+      if (!enemy && Number.isFinite(target?.x) && Number.isFinite(target?.y)) {
+        let bestD = 60
+        for (const e of scene.enemies) {
+          if (e.dead) continue
+          const d = Math.hypot(e.x - target.x, e.y - target.y)
+          if (d <= bestD) { bestD = d; enemy = e }
+        }
+      }
+      if (enemy) cast(scene, def, enemy, g)
+    }
+    return
+  }
   gameState.abilityTargeting = gameState.abilityTargeting === id ? null : id
 }
 
@@ -96,20 +121,22 @@ export function handleTargetClick(scene, wx, wy) {
       if (d < tol && d < bestD) { bestD = d; best = e }
     }
     if (!best) { sfxUi('error'); return true } // sigue apuntando
-    cast(scene, def, best)
+    cast(scene, def, best, scene.general)
   } else {
-    cast(scene, def, { x: wx, y: wy })
+    cast(scene, def, { x: wx, y: wy }, scene.general)
   }
   gameState.abilityTargeting = null
   return true
 }
 
-function cast(scene, def, target) {
-  const g = scene.general
-  scene.abilityCd[def.id] = cooldownOf(scene, def)
+function cast(scene, def, target, general) {
+  const g = general
+  const cds = scene.abilityCd.get(g.pid) || {}
+  cds[def.id] = cooldownOf(scene, def)
+  scene.abilityCd.set(g.pid, cds)
   if (def.id === 'megalaser') {
     sfxCharge(g.x, g.y, def.chargeMs)
-    scene.abilityFx.push({ kind: 'charge', t: 0, dur: def.chargeMs, def, target })
+    scene.abilityFx.push({ kind: 'charge', t: 0, dur: def.chargeMs, def, target, general: g })
   } else if (def.id === 'emp') {
     sfxEmp(g.x, g.y)
     for (const e of scene.enemies) {
@@ -158,7 +185,9 @@ function damageAlongSegment(scene, x1, y1, x2, y2, halfW, dmg) {
 }
 
 export function updateAbilities(scene, d) {
-  for (const id of ABILITY_ORDER) if (scene.abilityCd[id] > 0) scene.abilityCd[id] -= d
+  for (const cds of scene.abilityCd.values()) {
+    for (const id of ABILITY_ORDER) if (cds[id] > 0) cds[id] = Math.max(0, cds[id] - d)
+  }
   const g = scene.general
   const gfx = scene.abilityGfx
   gfx.clear()
@@ -175,6 +204,7 @@ export function updateAbilities(scene, d) {
     fx.t += d
     const k = Math.min(1, fx.t / fx.dur)
     if (fx.kind === 'charge') {
+      const g = fx.general
       const tgt = fx.target
       if (!g.alive || tgt.dead) { scene.abilityFx.splice(i, 1); continue } // se canceló: no reembolsa
       gfx.lineStyle(2, beam.color, 0.3 + 0.6 * k).strokeCircle(g.x, g.y, 40 * (1 - k) + 8)
