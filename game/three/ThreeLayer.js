@@ -8,7 +8,7 @@ import { nexusColor, equipped } from '~/game/meta/cosmetics.js'
 import { appState } from '~/game/appState.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { WORLD } from '~/game/balance.js'
-import { LOW_GFX, RENDER_SCALE } from '~/game/quality.js'
+import { IS_TOUCH, LOW_GFX, RENDER_SCALE } from '~/game/quality.js'
 import { REGISTRY } from '~/game/enemies/EnemyType.js'
 import { updateTiltCamera } from './tilt.js'
 
@@ -109,9 +109,8 @@ export class ThreeLayer {
     this.tickPrev = performance.now()
     this.viewCenter = { x: WORLD.width / 2, y: WORLD.height / 2 }
 
-    const renderer = new THREE.WebGLRenderer({ antialias: RENDER_SCALE < 2, alpha: false, powerPreference: 'high-performance' })
-    // En móvil renderizar a 1x: el DPR 2-3x de los celulares multiplica los píxeles x4-9 y hunde los FPS.
-    // resize() usa el ancho físico de Phaser y el alto físico visible del contenedor.
+    const renderer = new THREE.WebGLRenderer({ antialias: !IS_TOUCH && !LOW_GFX && RENDER_SCALE < 2, alpha: false, powerPreference: 'high-performance' })
+    // Phaser ya limita el DPR; resize() usa sus píxeles físicos para alinear ambas capas.
     renderer.setPixelRatio(1)
     renderer.autoClear = false
     renderer.setClearColor(0x010104, 1)
@@ -141,6 +140,10 @@ export class ThreeLayer {
     if (phaserCanvas) {
       this.boardTexture = new THREE.CanvasTexture(phaserCanvas)
       this.boardTexture.colorSpace = THREE.SRGBColorSpace
+      this.boardTexture.generateMipmaps = false
+      this.boardTexture.minFilter = THREE.LinearFilter
+      this.boardTexture.magFilter = THREE.LinearFilter
+      this.boardTexture.anisotropy = 1
       this.board = new THREE.Mesh(
         new THREE.PlaneGeometry(1, 1),
         new THREE.MeshBasicMaterial({
@@ -157,6 +160,11 @@ export class ThreeLayer {
     this.enemyModels = new Map() // Enemy host o sprite remoto -> nave 3D
     this.meteors = new Map()  // meteorito de juego -> { mesh, baseScale, spin, axis, dying, dieT }
     this.explosions = []
+    this._fpsEnabled = (() => {
+      try { return localStorage.getItem('sgmp_fps') === '1' } catch { return false }
+    })()
+    this._fpsStart = performance.now()
+    this._fpsFrames = 0
     this.nexus = null         // núcleo 3D (se crea en sync cuando existe el core)
     this._loadMeteor()
 
@@ -518,17 +526,13 @@ export class ThreeLayer {
   // la última mejora en 3D y animación al mejorar. El núcleo sigue con _syncNexus. Las formas 2D
   // de Phaser se ocultan de la cámara principal; barras de vida/construcción siguen en 2D.
   _syncStructures(scene) {
-    const structures = scene?.remote ? [...(scene.sById?.values() || [])] : scene?.structures
+    const structures = scene?.remote ? scene.sById?.values() : scene?.structures
     if (!structures) return
     this.structs ||= new Map()
     const now = performance.now()
     const dt = Math.min(0.05, (now - (this._structPrev || now)) / 1000)
     this._structPrev = now
-    for (const [s, e] of this.structs) {
-      if (s.dead || !structures.includes(s)) {
-        this.scene.remove(e.root); e.root.userData.dispose(); this.structs.delete(s)
-      }
-    }
+    const syncFrame = (this._structSyncFrame = (this._structSyncFrame || 0) + 1)
     for (const s of structures) {
       if (s.isCore || s.dead) continue
       let e = this.structs.get(s)
@@ -540,6 +544,7 @@ export class ThreeLayer {
         e = { root, color: null, decorN: 0, powered: null }
         this.structs.set(s, e)
       }
+      e.syncFrame = syncFrame
       e.root.position.set(s.x, s.y, 4)
       const u = e.root.userData
       if (s._accent && !e.accentHidden) { scene.cam?.ignore(s._accent); e.accentHidden = true }
@@ -558,19 +563,23 @@ export class ThreeLayer {
       if (s.aimAngle != null) u.setAim(s.aimAngle)
       u.update(dt, now)
     }
+    for (const [s, e] of this.structs) {
+      if (e.syncFrame !== syncFrame) {
+        this.scene.remove(e.root); e.root.userData.dispose(); this.structs.delete(s)
+      }
+    }
   }
 
   // Naves enemigas 3D: el simulador sigue siendo Phaser, pero el cuerpo visible vive aquí.
   // El mismo reconciliador sirve para host y cliente remoto (que expone sprites interpolados).
   _syncEnemies(scene) {
-    const enemies = scene?.remote ? [...(scene.eById?.values() || [])] : scene?.enemies
+    const enemies = scene?.remote ? scene.eById?.values() : scene?.enemies
     if (!enemies) return
-    const live = new Set()
+    const syncFrame = (this._enemySyncFrame = (this._enemySyncFrame || 0) + 1)
     for (const enemy of enemies) {
       if (!enemy || enemy.dead || (scene.remote && enemy.visible === false)) continue
       const def = scene.remote ? REGISTRY[enemy.type] : enemy.def
       if (!def) continue
-      live.add(enemy)
       let entry = this.enemyModels.get(enemy)
       if (!entry) {
         const radius = scene.remote
@@ -590,6 +599,7 @@ export class ThreeLayer {
         entry = { root, halo, radius, lastHeading: null, bank: 0 }
         this.enemyModels.set(enemy, entry)
       }
+      entry.syncFrame = syncFrame
       const x = scene.remote ? enemy.x : enemy.x
       const y = scene.remote ? enemy.y : enemy.y
       const heading = Number.isFinite(enemy.heading) ? enemy.heading : 0
@@ -607,7 +617,7 @@ export class ThreeLayer {
       if (entry.root.userData.engine) entry.root.userData.engine.material.color.setHex(stun ? 0x8be9fd : def.color)
     }
     for (const [enemy, entry] of this.enemyModels) {
-      if (!live.has(enemy)) {
+      if (entry.syncFrame !== syncFrame) {
         this._dispose(entry)
         this.enemyModels.delete(enemy)
       }
@@ -1058,6 +1068,7 @@ export class ThreeLayer {
 
   // -------------------------------------------------------------------- render
   render(timeMs) {
+    if (document.hidden) { this.pendingRender = false; return }
     if (this.game) {
       this.pendingRender = true
       return
@@ -1068,11 +1079,16 @@ export class ThreeLayer {
   _onPostRender() {
     if (!this.pendingRender) return
     this.pendingRender = false
+    if (document.hidden) return
     this._renderFrame()
   }
 
   _renderFrame() {
     const now = performance.now()
+    if (now - this.tickPrev > 1000) {
+      this._fpsStart = now
+      this._fpsFrames = 0
+    }
     const dt = Math.min(0.05, (now - this.tickPrev) / 1000)
     this.tickPrev = now
 
@@ -1109,6 +1125,15 @@ export class ThreeLayer {
     r.clearDepth()
     if (this.boardTexture) this.boardTexture.needsUpdate = true
     r.render(this.scene, this.camera)
+    if (this._fpsEnabled) {
+      this._fpsFrames++
+      const elapsed = now - this._fpsStart
+      if (elapsed >= 1000) {
+        window.__sgmpFps = this._fpsFrames * 1000 / elapsed
+        this._fpsFrames = 0
+        this._fpsStart = now
+      }
+    }
   }
 
   resize(w, _phaserHeight) {

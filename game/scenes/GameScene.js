@@ -214,8 +214,108 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ---------------------------------------------------------------- input
+  cameraScreenPoint(p) {
+    const event = p.event
+    const touch = event?.touches && Array.from(event.touches).find((t) => t.identifier === p.identifier)
+      || event?.changedTouches && Array.from(event.changedTouches).find((t) => t.identifier === p.identifier)
+    const source = touch || event
+    const rect = this.game.canvas.getBoundingClientRect()
+    return {
+      x: (source.clientX - rect.left) * this.game.canvas.width / rect.width,
+      y: (source.clientY - rect.top) * this.game.canvas.height / rect.height,
+    }
+  }
+
+  cameraWorldAt(x, y) {
+    return {
+      x: this.cam.scrollX + this.cam.width / 2 + (x - this.cam.width / 2) / this.cam.zoom,
+      y: this.cam.scrollY + this.cam.height / 2 + (y - this.cam.height / 2) / this.cam.zoom,
+    }
+  }
+
+  zoomAt(newZoom, worldX, worldY) {
+    const oldZoom = this.cam.zoom
+    const zoom = Phaser.Math.Clamp(newZoom, CAMERA.minZoom, CAMERA.maxZoom)
+    if (zoom === oldZoom) return
+    const centerX = this.cam.scrollX + this.cam.width / 2
+    const centerY = this.cam.scrollY + this.cam.height / 2
+    this.cam.setZoom(zoom)
+    this.cam.scrollX = worldX - (worldX - centerX) * oldZoom / zoom - this.cam.width / 2
+    this.cam.scrollY = worldY - (worldY - centerY) * oldZoom / zoom - this.cam.height / 2
+  }
+
+  wheelZoom(p, dy) {
+    if (!dy) return
+    const point = this.cameraScreenPoint(p)
+    const anchor = this.cameraWorldAt(point.x, point.y)
+    const factor = Math.exp(Phaser.Math.Clamp(-dy * 0.0015, -0.35, 0.35))
+    this.zoomAt(this.cam.zoom * factor, anchor.x, anchor.y)
+  }
+
+  anchorCameraDrag(p) {
+    const point = this.cameraScreenPoint(p)
+    const world = this.cameraWorldAt(point.x, point.y)
+    this._cameraDrag = { pointer: p, x: point.x, y: point.y, worldX: world.x, worldY: world.y }
+    this._dragging = false
+  }
+
+  moveCameraDrag(p) {
+    if (!p.isDown || this._pinching || this._cameraDrag?.pointer !== p) return
+    const point = this.cameraScreenPoint(p)
+    const drag = this._cameraDrag
+    if (Math.hypot(point.x - drag.x, point.y - drag.y) <= CAMERA.dragThreshold && !this._dragging) return
+    this._dragging = true
+    const world = this.cameraWorldAt(point.x, point.y)
+    this.cam.scrollX += drag.worldX - world.x
+    this.cam.scrollY += drag.worldY - world.y
+  }
+
+  startCameraPinch() {
+    const a = this.input.pointer1
+    const b = this.input.pointer2
+    if (!a?.isDown || !b?.isDown) return
+    const pa = this.cameraScreenPoint(a)
+    const pb = this.cameraScreenPoint(b)
+    this._pinching = true
+    this._pinchUsed = true
+    this._lastPinchDist = Math.hypot(pa.x - pb.x, pa.y - pb.y)
+    this._pinchAnchor = this.cameraWorldAt((pa.x + pb.x) / 2, (pa.y + pb.y) / 2)
+  }
+
+  moveCameraPinch() {
+    if (!this._pinching) return
+    const a = this.input.pointer1
+    const b = this.input.pointer2
+    if (!a?.isDown || !b?.isDown) return
+    const pa = this.cameraScreenPoint(a)
+    const pb = this.cameraScreenPoint(b)
+    const dist = Math.hypot(pa.x - pb.x, pa.y - pb.y)
+    const midpoint = this.cameraWorldAt((pa.x + pb.x) / 2, (pa.y + pb.y) / 2)
+    this.cam.scrollX += this._pinchAnchor.x - midpoint.x
+    this.cam.scrollY += this._pinchAnchor.y - midpoint.y
+    if (this._lastPinchDist > 0 && dist > 0) {
+      this.zoomAt(this.cam.zoom * dist / this._lastPinchDist, this._pinchAnchor.x, this._pinchAnchor.y)
+    }
+    this._lastPinchDist = dist
+  }
+
+  endCameraPointer(p) {
+    if (this._pinchUsed) {
+      this._pinching = false
+      const remaining = [this.input.pointer1, this.input.pointer2].find((other) => other !== p && other?.isDown)
+      if (remaining) this.anchorCameraDrag(remaining)
+      else { this._cameraDrag = null; this._pinchUsed = false }
+      this._dragging = false
+      return true
+    }
+    this._cameraDrag = null
+    return false
+  }
+
   setupInput() {
     this.input.mouse?.disableContextMenu()
+    this._pinchUsed = false
+    this._cameraDrag = null
 
     this.rangePreview = this.add.graphics().setDepth(5).setVisible(false)
 
@@ -226,22 +326,13 @@ export class GameScene extends Phaser.Scene {
       updateGhost(this, p.worldX, p.worldY)
       updateRangePreview(this, p.worldX, p.worldY)
 
-      if (p.isDown && !this._pinching) {
-        const dx = p.x - p.prevPosition.x
-        const dy = p.y - p.prevPosition.y
-        const dist = Math.hypot(p.x - this._downX, p.y - this._downY)
-        if (dist > CAMERA.dragThreshold) {
-          this._dragging = true
-          this.cam.scrollX -= dx / this.cam.zoom
-          this.cam.scrollY -= dy / this.cam.zoom
-        }
-      }
+      if (this._pinching) this.moveCameraPinch()
+      else this.moveCameraDrag(p)
     })
 
     this.input.on('pointerdown', (p) => {
-      this._downX = p.x
-      this._downY = p.y
-      this._dragging = false
+      this.anchorCameraDrag(p)
+      this.startCameraPinch()
       if (p.rightButtonDown()) {
         this._rightDown = true
         cancelPlacement(this)
@@ -251,6 +342,7 @@ export class GameScene extends Phaser.Scene {
     })
 
     this.input.on('pointerup', (p) => {
+      if (this.endCameraPointer(p)) return
       // Habilidad apuntando: el clic elige el objetivo; clic derecho la cancela.
       if (gameState.abilityTargeting) {
         if (this._rightDown) cancelTargeting()
@@ -340,48 +432,7 @@ export class GameScene extends Phaser.Scene {
       this._rightDown = false
     })
 
-    this.input.on('wheel', (_pointer, _over, _dx, dy) => {
-      const step = dy > 0 ? -CAMERA.zoomStep : CAMERA.zoomStep
-      const newZoom = Phaser.Math.Clamp(this.cam.zoom + step, CAMERA.minZoom, CAMERA.maxZoom)
-      const pointer = this.input.activePointer
-      const wx = (pointer.x + this.cam.scrollX * this.cam.zoom) / this.cam.zoom
-      const wy = (pointer.y + this.cam.scrollY * this.cam.zoom) / this.cam.zoom
-      this.cam.setZoom(newZoom)
-      const newWx = (pointer.x + this.cam.scrollX * newZoom) / newZoom
-      const newWy = (pointer.y + this.cam.scrollY * newZoom) / newZoom
-      this.cam.scrollX += (wx - newWx) * newZoom
-      this.cam.scrollY += (wy - newWy) * newZoom
-    })
-
-    this.input.on('pointerdown', (p) => {
-      if (this.input.pointer1?.isDown && this.input.pointer2?.isDown) {
-        this._pinching = true
-        this._lastPinchDist = Phaser.Math.Distance.Between(
-          this.input.pointer1.x, this.input.pointer1.y,
-          this.input.pointer2.x, this.input.pointer2.y,
-        )
-      }
-    })
-
-    this.input.on('pointermove', () => {
-      if (this._pinching && this.input.pointer1?.isDown && this.input.pointer2?.isDown) {
-        const dist = Phaser.Math.Distance.Between(
-          this.input.pointer1.x, this.input.pointer1.y,
-          this.input.pointer2.x, this.input.pointer2.y,
-        )
-        const delta = dist - this._lastPinchDist
-        const step = delta * 0.005
-        this._lastPinchDist = dist
-        const newZoom = Phaser.Math.Clamp(this.cam.zoom + step, CAMERA.minZoom, CAMERA.maxZoom)
-        this.cam.setZoom(newZoom)
-      }
-    })
-
-    this.input.on('pointerup', () => {
-      if (!this.input.pointer1?.isDown || !this.input.pointer2?.isDown) {
-        this._pinching = false
-      }
-    })
+    this.input.on('wheel', (p, _over, _dx, dy) => this.wheelZoom(p, dy))
 
     this.input.keyboard?.on('keydown-ESC', () => {
       if (gameState.abilityTargeting) cancelTargeting()
