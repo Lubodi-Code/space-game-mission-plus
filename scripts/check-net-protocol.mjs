@@ -52,4 +52,5 @@ assert.equal(parseHostMessage({ t: 'snap', structs: 'x' }), null)
 assert.deepEqual(parseHostMessage({ t: 'snap' }).enemies, [])
 const huge = {}; for (let i = 0; i < 100000; i++) huge['k' + i] = 'v'
 assert.equal(Object.keys(parseIntent({ t: 'hello', equipped: huge }).equipped).length <= 12, true)
+assert.deepEqual(parseIntent({ t: 'ready', ready: 'yes' }), { t: 'ready', ready: false })
 console.log('OK net protocol')

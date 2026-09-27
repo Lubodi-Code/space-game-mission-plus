@@ -62,6 +62,8 @@ const INTENTS = {
     v: Number.isInteger(d.v) ? d.v : 0,
   }),
   heartbeat: () => ({ t: 'heartbeat' }),
+  ready: (d) => ({ t: 'ready', ready: d.ready === true }), // sala: invitado listo / no listo
+  bye: () => ({ t: 'bye' }), // el invitado sale a propósito (no reintentar ni esperar rejoin)
   cursor: (d) => (inWorld(d.x, d.y) ? { t: 'cursor', x: d.x, y: d.y } : null),
   build: (d) => (isKey(d.key) && inWorld(d.x, d.y) ? { t: 'build', key: d.key, x: d.x, y: d.y } : null),
   // 'general' (legado) y 'move' son lo mismo: mover el comandante propio.

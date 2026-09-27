@@ -31,7 +31,7 @@ export function onIntent(scene, d, nc) {
     scene.placementKey = k
   } else if (d.t === 'cursor') {
     scene.remoteCursors?.set(nc.pid, { x: d.x, y: d.y })
-  } else if (d.t === 'general') {
+  } else if (d.t === 'move' || d.t === 'general') { // parseIntent normaliza 'general' → 'move'
     scene.generals.get(nc.pid)?.setTarget(d.x, d.y, scene)
   } else if (d.t === 'hello') {
     nc.name = d.name || nc.name
