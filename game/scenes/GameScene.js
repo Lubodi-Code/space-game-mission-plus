@@ -192,17 +192,35 @@ export class GameScene extends Phaser.Scene {
     gameState.status = 'playing'
 
     if (net.isHost) {
-      net.onData = (d, nc) => onIntent(this, d, nc)
+      this.disconnectedGenerals = new Map()
+      net.onData = (d, nc) => {
+        if (d.t === 'ready' || d.t === 'bye') return
+        onIntent(this, d, nc)
+      }
       net.onOpen = (nc) => this.addClientGeneral(nc)
-      net.onDisconnect = (nc) => this.remoteCursors.delete(nc.pid)
-      for (const nc of net.conns) if (nc.open) this.addClientGeneral(nc)
+      net.onDisconnect = (nc) => this.disconnectClientGeneral(nc)
+      for (const nc of net.conns) if (nc.open && nc.authenticated) this.addClientGeneral(nc)
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+        for (const timer of this.disconnectedGenerals.values()) clearTimeout(timer)
+        this.disconnectedGenerals.clear()
+      })
     }
   }
 
   // Un general por cliente conectado (host-authoritative). Idempotente por pid.
   addClientGeneral(nc) {
-    net.sendTo(nc.pid, { t: 'welcome', pid: nc.pid }) // el cliente filtra su propio cursor
-    if (this.generals.has(nc.pid)) return
+    const timer = this.disconnectedGenerals?.get(nc.pid)
+    if (timer) clearTimeout(timer)
+    this.disconnectedGenerals?.delete(nc.pid)
+    const existing = this.generals.get(nc.pid)
+    if (existing && nc.rejoined) {
+      existing.setLabel(nc.name || ('Aliado ' + nc.pid))
+      return
+    }
+    if (existing) {
+      existing.destroy()
+      this.generals.delete(nc.pid)
+    }
     const g = new General(this, this.core.x - 60, this.core.y, GEN_TINTS[nc.pid % GEN_TINTS.length])
     g.pid = nc.pid
     g.setLabel(nc.name || ('Aliado ' + nc.pid))
@@ -212,6 +230,30 @@ export class GameScene extends Phaser.Scene {
       if (u) g.applyUpgrade(u)
     }
     this.generals.set(nc.pid, g)
+  }
+
+  disconnectClientGeneral(nc) {
+    this.remoteCursors.delete(nc.pid)
+    const g = this.generals.get(nc.pid)
+    if (!g) return
+    if (nc.intentional) {
+      g.destroy()
+      this.generals.delete(nc.pid)
+      return
+    }
+    g.setLabel((nc.name || ('Aliado ' + nc.pid)) + ' (desconectado)')
+    g.mineTarget = null
+    g.tx = g.x
+    g.ty = g.y
+    const previous = this.disconnectedGenerals.get(nc.pid)
+    if (previous) clearTimeout(previous)
+    const timer = setTimeout(() => {
+      if (this.disconnectedGenerals.get(nc.pid) !== timer) return
+      this.disconnectedGenerals.delete(nc.pid)
+      this.generals.get(nc.pid)?.destroy()
+      this.generals.delete(nc.pid)
+    }, 60000)
+    this.disconnectedGenerals.set(nc.pid, timer)
   }
 
   // ---------------------------------------------------------------- input

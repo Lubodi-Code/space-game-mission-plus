@@ -111,7 +111,7 @@ export function createRemote(scene) {
   scene.eMissiles = new Map() // id -> sprite 'star' (misiles enemigos)
   scene._fx = null
   scene._snap = null
-  scene.myPid = -1 // llega en 'welcome'; hasta entonces no se filtra ningún cursor
+  scene.myPid = net.myPid ?? -1 // el 'welcome' suele llegar en el lobby; si llega después, lo toma onData
   scene.orbSprites = [] // pool de sprites para las esferas sanadoras
   scene.rCursors = new Map() // pid -> {x,y,tx,ty} interpolado
   net.onData = (d) => {
