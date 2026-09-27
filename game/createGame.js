@@ -31,7 +31,8 @@ export function createGameConfig(parent) {
     render: {
       antialias: true,
       roundPixels: false,
-      preserveDrawingBuffer: true,
+      // Sin preserveDrawingBuffer: el canvas ya no se copia a una textura de Three cada frame.
+      preserveDrawingBuffer: false,
     },
     scene: [BootScene, GameScene],
   }
@@ -41,10 +42,10 @@ export function createGameConfig(parent) {
 export function createGame(parent) {
   const game = new Phaser.Game(createGameConfig(parent))
   const fitCanvas = () => {
-    // Phaser conserva su alto físico extendido; el canvas invisible ocupa la pantalla.
+    // Phaser conserva su alto físico extendido y el CSS lo comprime a la pantalla: esa compresión
+    // vertical (cos 30°) es exactamente la proyección ortográfica del tablero inclinado.
     game.canvas.style.width = '100%'
     game.canvas.style.height = '100%'
-    game.canvas.style.opacity = '0'
   }
   fitCanvas()
   const ro = new ResizeObserver(() => {

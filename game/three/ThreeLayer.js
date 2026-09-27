@@ -118,15 +118,16 @@ export class ThreeLayer {
     const cv = renderer.domElement
     cv.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;z-index:0;pointer-events:none'
     parent.insertBefore(cv, parent.firstChild)
-    // Canvas de Phaser invisible ENCIMA de Three para recibir input. El HUD de Vue debe tener un
-    // z-index mayor para seguir recibiendo clics por encima del juego.
+    // Canvas de Phaser (transparente) ENCIMA de Three: dibuja la capa 2D del tablero y recibe el
+    // input. Antes se subía cada frame como textura a un quad inclinado; con cámara ortográfica ese
+    // quad coincidía con el canvas comprimido por CSS, así que la copia (cara en GPUs móviles) sobraba.
+    // El HUD de Vue debe tener un z-index mayor para seguir recibiendo clics por encima del juego.
     if (phaserCanvas) {
       phaserCanvas.style.position = 'absolute'
       phaserCanvas.style.zIndex = '1'
       phaserCanvas.style.background = 'transparent'
       phaserCanvas.style.width = '100%'
       phaserCanvas.style.height = '100%'
-      phaserCanvas.style.opacity = '0'
     }
     this.renderer = renderer
 
@@ -138,19 +139,6 @@ export class ThreeLayer {
     this._loader = new THREE.TextureLoader()
 
     this._buildGameScene()
-    if (phaserCanvas) {
-      this.boardTexture = new THREE.CanvasTexture(phaserCanvas)
-      this.boardTexture.colorSpace = THREE.SRGBColorSpace
-      this.board = new THREE.Mesh(
-        new THREE.PlaneGeometry(1, 1),
-        new THREE.MeshBasicMaterial({
-          map: this.boardTexture, transparent: true, premultipliedAlpha: true,
-          depthTest: false, depthWrite: false, side: THREE.DoubleSide,
-        }),
-      )
-      this.board.renderOrder = 10000
-      this.scene.add(this.board)
-    }
     this._buildBackground()
 
     this.meshes = new Map()   // objeto de juego -> { root, ... }
@@ -464,11 +452,6 @@ export class ThreeLayer {
     const view = { x: wv.x - ox, y: wv.y - oy, width: wv.width, height: wv.height }
     const canvas = this.renderer.domElement
     updateTiltCamera(this.camera, view, { w: canvas.width, h: canvas.height })
-    if (this.board) {
-      this.board.position.set(view.x + view.width / 2, view.y + view.height / 2, 0)
-      // PlaneGeometry tiene UV superior en +Y; el mundo de Phaser crece hacia abajo.
-      this.board.scale.set(view.width, -view.height, 1)
-    }
     this.viewCenter.x = wv.x + wv.width / 2
     this.viewCenter.y = wv.y + wv.height / 2
   }
@@ -1107,7 +1090,6 @@ export class ThreeLayer {
     r.clear()
     r.render(this.bgScene, this.bgCamera)
     r.clearDepth()
-    if (this.boardTexture) this.boardTexture.needsUpdate = true
     r.render(this.scene, this.camera)
   }
 
@@ -1177,12 +1159,6 @@ export class ThreeLayer {
 
   dispose() {
     this.game?.events.off('postrender', this._onPostRender, this)
-    if (this.board) {
-      this.scene.remove(this.board)
-      this.board.geometry.dispose()
-      this.board.material.dispose()
-      this.boardTexture.dispose()
-    }
     if (this.nexus) { this._dispose(this.nexus); this.nexus = null; this.nexusCore = null }
     for (const [, e] of this.meshes) this._dispose(e)
     this.meshes.clear()
