@@ -19,7 +19,8 @@ export const QUALITY_PREF = pref
 
 export const LOW_GFX = pref === 'low' || pref === 'medium' || (pref === 'auto' && IS_TOUCH)
 
-const maxScale = { high: 2, medium: 1.5, low: 1 }[pref] ?? (WEAK_DEVICE ? 1.5 : 2)
+const maxScale = { high: 2, medium: 1.5, low: 1 }[pref] ??
+  (IS_TOUCH ? (WEAK_DEVICE ? 1.25 : 1.5) : 2)
 export const RENDER_SCALE = hasWindow
   ? Math.max(1, Math.min(window.devicePixelRatio || 1, maxScale))
   : 1

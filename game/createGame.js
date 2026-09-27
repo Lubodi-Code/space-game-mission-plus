@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
 import { BootScene } from './scenes/BootScene.js'
 import { GameScene } from './scenes/GameScene.js'
-import { RENDER_SCALE } from './quality.js'
+import { IS_TOUCH, LOW_GFX, RENDER_SCALE } from './quality.js'
 import { phaserHeightFor } from './three/tilt.js'
 
 /** Configuración de Phaser para el tamaño actual del contenedor. */
@@ -28,9 +28,15 @@ export function createGameConfig(parent) {
     input: {
       activePointers: 3, // multi-touch support
     },
+    fps: {
+      target: 60,
+      smoothStep: true,
+    },
     render: {
-      antialias: true,
+      antialias: !IS_TOUCH && !LOW_GFX,
       roundPixels: false,
+      powerPreference: 'high-performance',
+      batchSize: IS_TOUCH || LOW_GFX ? 2048 : 4096,
       preserveDrawingBuffer: true,
     },
     scene: [BootScene, GameScene],
