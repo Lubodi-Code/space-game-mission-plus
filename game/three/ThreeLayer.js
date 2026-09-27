@@ -604,9 +604,10 @@ export class ThreeLayer {
     const now = performance.now()
     const dt = Math.min(0.05, (now - (this._misPrev || now)) / 1000)
     this._misPrev = now
-    const live = new Set(scene.projectiles)
+    const stamp = this._missileStamp = (this._missileStamp || 0) + 1
+    for (const p of scene.projectiles) p._threeStamp = stamp
     for (const [p, m] of this.missiles) {
-      if (!live.has(p)) { this.scene.remove(m); m.userData.dispose(); this.missiles.delete(p) }
+      if (p._threeStamp !== stamp) { this.scene.remove(m); m.userData.dispose(); this.missiles.delete(p) }
     }
     for (const p of scene.projectiles) {
       let m = this.missiles.get(p)
@@ -937,7 +938,7 @@ export class ThreeLayer {
   explode(x, y, color, radius, kind) {
     kind ||= radius >= 110 ? 'boss' : radius >= 45 ? 'big' : 'small'
     this.fx ||= []
-    if (this.fx.length >= (LOW_GFX ? 18 : 40)) return // tope: en oleadas grandes no se apilan cientos
+    if (this.fx.length >= (LOW_GFX ? 10 : 24)) this.fx.shift().dispose()
     this.fx.push(createExplosion(this.scene, { x, y, color, radius, kind }))
   }
 

@@ -14,6 +14,7 @@ import { IS_TOUCH } from '~/game/quality'
 import { EnemyType, REGISTRY } from '~/game/enemies/EnemyType'
 import { sfxWaveStart, sfxCoreAlarm, sfxVictory, sfxDefeat } from '~/game/sound'
 import Settings from './Settings.vue'
+import GameIcon from './GameIcon.vue'
 
 const settingsOpen = ref(false)
 const coreExpanded = ref(false)
@@ -95,6 +96,45 @@ watch(() => gameState.status, (status, previous) => {
 
 const energyLabel = computed(() => `${Math.round(gameState.energy)} / ${gameState.energyMax}`)
 const brownout = computed(() => gameState.energy < 1)
+
+// Escala compartida: máximos base de balance.js, con margen para las mejoras.
+const REF = { hp: 250, damage: 180, atkRange: 1800, fireRate: 3, energyDrain: 8,
+  rate: 35, energyRate: 20, miningRange: 300, healRate: 32, spheres: 10,
+  energyCap: 240, capBonus: 1600, range: 500, splash: 120 }
+const pctOf = (value, max) => `${Math.min(100, Math.max(0, Number(value) / max * 100))}%`
+const hpColor = (value, max) => value / (max || 1) > .5 ? '#50fa7b' : value / (max || 1) > .25 ? '#ffcc55' : '#ff5566'
+const statRow = (icon, title, value, max, suffix = '') => ({ icon, title, value: `${value}${suffix}`, width: pctOf(value, max) })
+
+const structureRows = computed(() => {
+  const s = selectedStructure.value
+  if (!s) return []
+  const st = s.stats || {}
+  const rows = []
+  if (s.hp !== undefined) rows.push({ icon: 'hp', title: 'HP', value: `${Math.round(s.hp)}/${s.maxHp}`, width: pctOf(s.hp, s.maxHp), color: hpColor(s.hp, s.maxHp) })
+  if (st.damage != null) rows.push(statRow('damage', 'Daño', st.damage, REF.damage))
+  if (st.splash > 0) rows.push(statRow('splash', 'Área de efecto', st.splash, REF.splash))
+  if (st.atkRange != null) rows.push(statRow('range', 'Alcance de ataque', st.atkRange, REF.atkRange))
+  if (st.cooldown > 0) rows.push(statRow('fireRate', 'Disparos por segundo', +(1000 / st.cooldown).toFixed(1), REF.fireRate, '/s'))
+  if (st.energyDrain > 0) rows.push(statRow('energyDrain', 'Energía por disparo o segundo', st.energyDrain, REF.energyDrain))
+  if (st.rate != null) rows.push(statRow('mining', 'Minería por segundo', st.rate, REF.rate, '/s'))
+  if (st.energyRate != null) rows.push(statRow('energy', 'Energía generada por segundo', st.energyRate, REF.energyRate, '/s'))
+  if (st.miningRange != null) rows.push(statRow('range', 'Rango de minería', st.miningRange, REF.miningRange))
+  if (st.healRate != null) rows.push(statRow('heal', 'Curación por segundo', st.healRate, REF.healRate, '/s'))
+  if (st.maxSpheres != null) rows.push(statRow('spheres', 'Esferas', st.maxSpheres, REF.spheres))
+  if (st.energyCap != null) rows.push(statRow('battery', 'Capacidad extra de energía', st.energyCap, REF.energyCap))
+  if (st.capBonus != null) rows.push(statRow('minerals', 'Capacidad extra de minerales', st.capBonus, REF.capBonus))
+  if (st.range != null) rows.push(statRow('range', 'Alcance de red', st.range, REF.range))
+  return rows
+})
+const generalRows = computed(() => {
+  const g = gameState.general
+  return [
+    { icon: 'hp', title: 'HP', value: `${Math.round(g.hp)}/${g.hpMax}`, width: pctOf(g.hp, g.hpMax), color: hpColor(g.hp, g.hpMax) },
+    statRow('damage', 'Daño', g.damage || 8, REF.damage),
+    statRow('range', 'Alcance de ataque', g.atkRange || 160, REF.atkRange),
+    statRow('mining', 'Recolección por segundo', +(g.collectRate || 18).toFixed(1), REF.rate, '/s'),
+  ]
+})
 
 const waveStatus = computed(() => {
   if (gameState.nextWaveIn > 0) {
@@ -346,15 +386,6 @@ function onKey(e) {
 onMounted(() => window.addEventListener('keydown', onKey))
 onUnmounted(() => window.removeEventListener('keydown', onKey))
 
-// Puntos de un polígono regular para el icono SVG de cada estructura.
-function polyPoints(sides, radius) {
-  const pts = []
-  for (let i = 0; i < sides; i++) {
-    const a = (i / sides) * Math.PI * 2 - Math.PI / 2
-    pts.push(`${12 + Math.cos(a) * radius},${12 + Math.sin(a) * radius}`)
-  }
-  return pts.join(' ')
-}
 </script>
 
 <template>
@@ -379,16 +410,22 @@ function polyPoints(sides, radius) {
       </div>
 
       <div class="ml-auto flex items-center gap-5 text-sm">
-        <span class="text-cyan-300/80">
-          <span class="topbar-label">Tiempo</span> <span class="text-white font-semibold tabular-nums">{{ timeLabel }}</span>
+        <span class="text-cyan-300/80 flex items-center gap-1" title="Tiempo">
+          <GameIcon name="time" :size="15" title="Tiempo" /> <span class="text-white font-semibold tabular-nums">{{ timeLabel }}</span>
         </span>
-        <span class="text-emerald-300/80">
-          <span class="topbar-label">Minerales</span><span class="topbar-mobile-label hidden" aria-hidden="true">◆</span>
+        <span class="text-emerald-300/80 flex items-center gap-1" title="Minerales">
+          <GameIcon name="minerals" :size="15" title="Minerales" />
           <span class="text-emerald-200 font-semibold tabular-nums">{{ gameState.minerals }}</span>
         </span>
-        <span class="text-fuchsia-300/80">
-          <span class="topbar-label">Oleada</span><span class="topbar-mobile-label hidden" aria-hidden="true">O</span>
+        <span class="text-fuchsia-300/80 flex items-center gap-1" title="Oleada">
+          <GameIcon name="wave" :size="15" title="Oleada" />
           <span class="text-fuchsia-200 font-semibold">{{ gameState.wave }}/{{ gameState.waveTotal }}</span>
+        </span>
+        <span class="meta-currency text-amber-300/80 flex items-center gap-1" title="Chatarra">
+          <GameIcon name="scrap" :size="15" title="Chatarra" /><span class="tabular-nums">{{ profile.scrap }}</span>
+        </span>
+        <span class="meta-currency text-cyan-300/80 flex items-center gap-1" title="Cristales">
+          <GameIcon name="crystals" :size="15" title="Cristales" /><span class="tabular-nums">{{ profile.crystals }}</span>
         </span>
         <button class="hud-btn shrink-0" aria-label="Ajustes" title="Ajustes" @click="settingsOpen = true">⚙ <span class="hidden sm:inline">Ajustes</span></button>
       </div>
@@ -396,11 +433,11 @@ function polyPoints(sides, radius) {
 
     <!-- Resources panel (top-right under bar) -->
     <div class="hud-resources absolute top-14 right-3 text-right text-xs space-y-0.5">
-      <div class="text-emerald-300/90 tabular-nums">
-        {{ gameState.minerals }} / {{ gameState.mineralsCap }} minerales
+      <div class="text-emerald-300/90 tabular-nums flex justify-end items-center gap-1" title="Minerales / capacidad">
+        <GameIcon name="minerals" :size="13" title="Minerales" /> {{ gameState.minerals }} / {{ gameState.mineralsCap }}
       </div>
-      <div class="tabular-nums" :class="brownout ? 'text-red-400 font-semibold' : 'text-amber-300/90'">
-        {{ energyLabel }} energía
+      <div class="tabular-nums flex justify-end items-center gap-1" :class="brownout ? 'text-red-400 font-semibold' : 'text-amber-300/90'" title="Energía">
+        <GameIcon name="energy" :size="13" title="Energía" /> {{ energyLabel }}
       </div>
       <div v-if="brownout" class="text-red-400 font-semibold animate-pulse">
         ⚠ SIN ENERGÍA — torretas apagadas
@@ -411,15 +448,7 @@ function polyPoints(sides, radius) {
     <div class="hud-core absolute top-14 left-3 w-56 space-y-1.5 p-2.5 rounded-xl bg-[#0a0f1c]/60 backdrop-blur-sm ring-1 ring-cyan-400/20"
       :class="{ 'hud-core--expanded': coreExpanded }" @click="toggleCore">
       <div class="flex items-center gap-2">
-        <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24">
-          <polygon
-            :points="polyPoints(6, 10)"
-            fill="#8be9fd"
-            stroke="rgba(255,255,255,0.9)"
-            stroke-width="1.2"
-            :class="coreHpPct <= 25 ? 'animate-pulse' : ''"
-          />
-        </svg>
+        <GameIcon name="node" :size="20" title="Nexo" :class="coreHpPct <= 25 ? 'animate-pulse' : ''" />
         <div class="flex-1">
           <div class="flex items-center justify-between text-[11px]">
             <span class="core-name text-cyan-300/80 font-semibold tracking-wide">Nexo</span>
@@ -428,7 +457,7 @@ function polyPoints(sides, radius) {
           <div class="h-2.5 rounded-full bg-white/10 overflow-hidden ring-1 ring-cyan-400/30 mt-1">
             <div
               class="h-full rounded-full transition-[width] duration-200"
-              :class="coreHpPct > 50 ? 'bg-cyan-400 shadow-[0_0_10px_rgba(139,233,253,0.5)]' : coreHpPct > 25 ? 'bg-amber-400' : 'bg-red-500 animate-pulse'"
+              :class="coreHpPct > 50 ? 'bg-[#50fa7b] shadow-[0_0_10px_rgba(80,250,123,0.5)]' : coreHpPct > 25 ? 'bg-amber-400' : 'bg-red-500 animate-pulse'"
               :style="{ width: coreHpPct + '%' }"
             ></div>
           </div>
@@ -438,8 +467,7 @@ function polyPoints(sides, radius) {
         class="core-wave mt-1 inline-block px-2 py-0.5 rounded text-[11px]"
         :class="waveStatus.kind === 'countdown' ? 'bg-fuchsia-500/15 text-fuchsia-200' : 'bg-red-500/15 text-red-200'"
       >
-        <span class="core-wave-full">{{ waveStatus.text }}</span>
-        <span class="core-wave-short hidden" aria-hidden="true">{{ waveStatus.kind === 'countdown' ? `O${gameState.wave + 1} ${gameState.nextWaveIn}s` : `O${gameState.wave} · ${gameState.enemiesAlive}` }}</span>
+        <span class="inline-flex items-center gap-1" :title="waveStatus.text"><GameIcon name="wave" :size="12" title="Oleada" /><span>{{ waveStatus.kind === 'countdown' ? `${gameState.wave + 1} · ${gameState.nextWaveIn}s` : `${gameState.wave} · ${gameState.enemiesAlive}` }}</span></span>
       </div>
       <button
         v-if="waveStatus.kind === 'countdown' && gameState.status === 'playing' && appState.mp.role !== 'client'"
@@ -454,7 +482,7 @@ function polyPoints(sides, radius) {
       <!-- General status (below wave) -->
       <div v-if="gameState.general.alive" class="hud-general mt-1 text-xs flex items-center gap-1 text-cyan-300/80"
         :class="{ 'hud-general--healthy': gameState.general.hp >= gameState.general.hpMax }">
-        <span>General</span>
+        <GameIcon name="commander" :size="13" title="General" />
         <span class="tabular-nums" :class="gameState.general.hp > 40 ? 'text-cyan-200' : 'text-red-400'">
           {{ gameState.general.hp }}/{{ gameState.general.hpMax }}
         </span>
@@ -534,8 +562,8 @@ function polyPoints(sides, radius) {
         </p>
         <div v-if="gameState.runRewards" class="mb-6 space-y-2">
           <div class="flex justify-center gap-3 text-sm">
-            <span class="px-3 py-1 rounded-lg bg-cyan-400/10 ring-1 ring-cyan-300/30 text-cyan-100">+{{ gameState.runRewards.xp }} XP</span>
-            <span class="px-3 py-1 rounded-lg bg-amber-400/10 ring-1 ring-amber-300/30 text-amber-100">+{{ gameState.runRewards.scrap }} Chatarra</span>
+            <span class="px-3 py-1 rounded-lg bg-cyan-400/10 ring-1 ring-cyan-300/30 text-cyan-100 inline-flex items-center gap-1" title="Experiencia"><GameIcon name="xp" :size="15" title="Experiencia" /> +{{ gameState.runRewards.xp }}</span>
+            <span class="px-3 py-1 rounded-lg bg-amber-400/10 ring-1 ring-amber-300/30 text-amber-100 inline-flex items-center gap-1" title="Chatarra"><GameIcon name="scrap" :size="15" title="Chatarra" /> +{{ gameState.runRewards.scrap }}</span>
           </div>
           <div class="mx-auto w-64">
             <div class="flex justify-between text-[10px] text-cyan-300/70">
@@ -641,43 +669,11 @@ function polyPoints(sides, radius) {
       <div v-else-if="!selectedStructure.powered" class="text-red-400/70">Sin señal</div>
 
       <!-- Stats contextuales -->
-      <div class="text-cyan-200/70 space-y-0.5">
-        <div v-if="selectedStructure.stats.hp !== null || selectedStructure.hp !== undefined">
-          HP: {{ Math.round(selectedStructure.hp || 0) }} / {{ selectedStructure.maxHp }}
-        </div>
-        <div v-if="selectedStructure.stats.damage !== null">
-          Daño: {{ selectedStructure.stats.damage }}
-          <span v-if="selectedStructure.stats.splash">· Área: {{ selectedStructure.stats.splash }}</span>
-        </div>
-        <div v-if="selectedStructure.stats.atkRange !== null">
-          Alcance: {{ selectedStructure.stats.atkRange }}
-        </div>
-        <div v-if="selectedStructure.stats.cooldown !== null">
-          Velocidad: {{ (1000 / selectedStructure.stats.cooldown).toFixed(1) }}/s
-        </div>
-        <div v-if="selectedStructure.stats.energyDrain !== null && selectedStructure.stats.energyDrain > 0">
-          Energía/disparo: {{ selectedStructure.stats.energyDrain }}
-        </div>
-        <div v-if="selectedStructure.stats.rate !== null">
-          Tasa mina: {{ selectedStructure.stats.rate }}/s
-        </div>
-        <div v-if="selectedStructure.stats.energyRate !== null">
-          Energía/s: {{ selectedStructure.stats.energyRate }}
-        </div>
-        <div v-if="selectedStructure.stats.miningRange !== null">
-          Rango mina: {{ selectedStructure.stats.miningRange }}
-        </div>
-        <div v-if="selectedStructure.stats.healRate !== null">
-          Cura: {{ selectedStructure.stats.healRate }}/s · {{ selectedStructure.stats.maxSpheres }} esferas
-        </div>
-        <div v-if="selectedStructure.stats.energyCap !== null">
-          Cap energía extra: {{ selectedStructure.stats.energyCap }}
-        </div>
-        <div v-if="selectedStructure.stats.capBonus !== null">
-          Cap mineral extra: {{ selectedStructure.stats.capBonus }}
-        </div>
-        <div v-if="selectedStructure.stats.range !== null">
-          Alcance red: {{ selectedStructure.stats.range }}
+      <div class="space-y-1" aria-label="Estadísticas de la estructura">
+        <div v-for="row in structureRows" :key="row.title" class="stat-row" :title="row.title">
+          <GameIcon :name="row.icon" :size="15" :title="row.title" />
+          <div class="stat-track"><div class="stat-fill" :style="{ width: row.width, backgroundColor: row.color || '#8be9fd' }" /></div>
+          <span class="stat-value">{{ row.value }}</span>
         </div>
       </div>
 
@@ -737,11 +733,12 @@ function polyPoints(sides, radius) {
         <div class="font-bold text-sm" style="color: #8be9fd">General</div>
         <button class="sheet-close" aria-label="Cerrar" @click="cancelAll">✕</button>
       </div>
-      <div class="text-cyan-200/70 space-y-0.5">
-        <div>HP: {{ gameState.general.hp }}/{{ gameState.general.hpMax }}</div>
-        <div>Daño: {{ gameState.general.damage || 8 }}</div>
-        <div>Alcance: {{ gameState.general.atkRange || 160 }}</div>
-        <div>Recolección: {{ Math.round((gameState.general.collectRate || 18) * 10) / 10 }}/s</div>
+      <div class="space-y-1" aria-label="Estadísticas del General">
+        <div v-for="row in generalRows" :key="row.title" class="stat-row" :title="row.title">
+          <GameIcon :name="row.icon" :size="15" :title="row.title" />
+          <div class="stat-track"><div class="stat-fill" :style="{ width: row.width, backgroundColor: row.color || '#8be9fd' }" /></div>
+          <span class="stat-value">{{ row.value }}</span>
+        </div>
       </div>
 
       <div class="pt-1 border-t border-cyan-400/10 space-y-1">
@@ -796,18 +793,10 @@ function polyPoints(sides, radius) {
         @click="pick(s)"
       >
         <span class="key-badge">{{ i < 9 ? i + 1 : i === 9 ? 0 : '' }}</span>
-        <svg class="w-6 h-6" viewBox="0 0 24 24">
-          <polygon
-            :points="polyPoints(s.sides, s.size)"
-            :fill="s.css"
-            stroke="rgba(255,255,255,0.85)"
-            stroke-width="1.2"
-            opacity="0.95"
-          />
-        </svg>
-        <span class="build-btn-label text-[10px] text-cyan-200/70 group-hover:text-cyan-100">{{ s.label }}</span>
-        <span class="build-cost text-[10px] tabular-nums" :class="gameState.minerals < s.cost ? 'text-red-400/80' : 'text-emerald-300/80'">
-          {{ s.cost }}
+        <GameIcon :name="s.key" :size="24" :title="s.label" :style="{ color: s.css }" />
+        <span class="build-btn-label text-[9px] leading-none text-cyan-200/70 group-hover:text-cyan-100 truncate max-w-full px-1">{{ s.label }}</span>
+        <span class="build-cost inline-flex items-center gap-0.5 text-[10px] tabular-nums" :class="gameState.minerals < s.cost ? 'text-red-400/80' : 'text-emerald-300/80'">
+          <GameIcon name="minerals" :size="10" title="Minerales" /> {{ s.cost }}
         </span>
       </button>
 
@@ -822,9 +811,8 @@ function polyPoints(sides, radius) {
         @click="pickGeneral"
       >
         <span class="key-badge">G</span>
-        <span class="text-2xl leading-none" style="color: #8be9fd">✦</span>
+        <GameIcon name="commander" :size="24" title="General" style="color: #8be9fd" />
         <span class="build-btn-label text-[10px] text-cyan-200/70 group-hover:text-cyan-100">General</span>
-        <span class="build-cost text-[10px] tabular-nums text-emerald-300/80">Comandante</span>
       </button>
     </div>
 
@@ -903,6 +891,10 @@ function polyPoints(sides, radius) {
 .build-btn--disabled {
   @apply opacity-40 cursor-not-allowed hover:bg-white/5 hover:ring-cyan-400/20;
 }
+.stat-row { display: flex; align-items: center; gap: 0.4rem; min-height: 1rem; color: #8be9fd; }
+.stat-track { flex: 1; height: 0.32rem; min-width: 1.5rem; border-radius: 999px; background: rgba(255,255,255,.1); overflow: hidden; }
+.stat-fill { height: 100%; border-radius: inherit; transition: width .2s ease; box-shadow: 0 0 5px currentColor; }
+.stat-value { min-width: 3.5rem; text-align: right; font-size: 10px; line-height: 1; font-variant-numeric: tabular-nums; color: #e0faff; }
 
 /* Móvil horizontal: poco alto de viewport, comprimir el HUD para dejar sitio al juego. */
 @media (max-height: 520px) {
@@ -956,6 +948,7 @@ function polyPoints(sides, radius) {
   .hud-topbar .hud-btn { padding: 0.2rem 0.35rem; min-width: 1.7rem; font-size: 11px; }
   .hud-topbar .ml-auto { gap: 0.45rem; font-size: 11px; white-space: nowrap; }
   .hud-topbar .speed-label, .hud-topbar .topbar-label { display: none; }
+  .hud-topbar .meta-currency { display: none; }
   .hud-topbar .speed-icon, .hud-topbar .topbar-mobile-label { display: inline; }
   .hud-resources { display: none; }
   .hud-core { width: max-content; max-width: calc(100vw - 1rem); padding: 0.25rem 0.4rem; left: calc(0.5rem + env(safe-area-inset-left)); top: calc(2rem + env(safe-area-inset-top)); background: rgba(10,15,28,0.38); cursor: pointer; pointer-events: auto; }

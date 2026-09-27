@@ -140,31 +140,17 @@ export function explosion(scene, x, y, color, radius, kind) {
     }
   }
 
-  // El Graphics debe estar EN (x,y) y dibujar en (0,0): un Graphics en el origen que dibuja en
-  // (x,y) y luego tweenea `scale` escala desde el origen del MUNDO → el círculo sale disparado
-  // en diagonal (el "rayo" fantasma de las explosiones).
-  const ring = scene.add.graphics().setDepth(28).setBlendMode(Phaser.BlendModes.ADD).setPosition(x, y)
-  ring.fillStyle(color, 0.5).fillCircle(0, 0, radius * 0.6)
-  ring.lineStyle(2, color, 0.9).strokeCircle(0, 0, radius * 0.6)
-  scene.tweens.add({
-    targets: ring, scale: 2.2, alpha: 0,
-    duration: FX.explosionMs, ease: 'Quad.out',
-    onComplete: () => ring.destroy(),
-  })
-
-  const burst = scene.add.particles(x, y, 'star', {
-    speed: { min: 40, max: 40 + radius * 6 },
-    angle: { min: 0, max: 360 },
-    lifespan: 380,
-    scale: { start: Math.max(0.5, radius / 24), end: 0 },
-    alpha: { start: 1, end: 0 },
-    blendMode: 'ADD',
-    tint: color,
-    quantity: Math.min(LOW_GFX ? 10 : 24, 8 + Math.round(radius / 3)),
-    emitting: false,
-  }).setDepth(29)
-  burst.explode()
-  scene.time.delayedCall(450, () => burst.destroy())
+  // Three ya dibuja fuego, anillo y partículas. Solo el fallback sin capa 3D
+  // necesita una señal visual en Phaser.
+  if (!scene.three) {
+    const ring = scene.add.graphics().setDepth(28).setBlendMode(Phaser.BlendModes.ADD).setPosition(x, y)
+    ring.lineStyle(2, color, 0.8).strokeCircle(0, 0, radius * 0.6)
+    scene.tweens.add({
+      targets: ring, scale: 2.2, alpha: 0,
+      duration: FX.explosionMs, ease: 'Quad.out',
+      onComplete: () => ring.destroy(),
+    })
+  }
 }
 
 // Aura de plasma: anillo translúcido que se expande y desvanece en el punto de impacto.
