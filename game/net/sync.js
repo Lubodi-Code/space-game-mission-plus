@@ -303,7 +303,7 @@ export function setupRemoteInput(scene) {
   scene.ghost = scene.add.graphics().setDepth(40).setVisible(false)
 
   scene.input.on('pointerdown', (p) => {
-    scene._downX = p.x; scene._downY = p.y; scene._dragging = false
+    if (p.wasTouch) { scene._downX = p.x; scene._downY = p.y; scene._dragging = false } else scene.beginMouseDrag(p)
     if (p.rightButtonDown()) {
       if (gameState.generalMode === 'selected') gameState.generalMode = null
       else { scene.placementKey = null; gameState.activeBuild = null; scene.ghost.setVisible(false) }
@@ -311,7 +311,8 @@ export function setupRemoteInput(scene) {
   })
 
   scene.input.on('pointermove', (p) => {
-    if (p.isDown) {
+    if (p.isDown && !p.wasTouch) scene.moveMouseDrag(p)
+    else if (p.isDown) {
       const dist = Math.hypot(p.x - scene._downX, p.y - scene._downY)
       if (dist > CAMERA.dragThreshold) {
         scene._dragging = true

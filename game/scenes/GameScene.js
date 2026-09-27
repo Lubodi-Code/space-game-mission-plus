@@ -236,6 +236,36 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // Arrastre con mouse anclado en mundo. No usa p.x - p.prevPosition.x: con el tablero inclinado
+  // tiltInput calcula p.x con la cámara actual, así que al mover la cámara el delta se realimentaba
+  // y la vista temblaba. El punto de pantalla se lee del evento DOM, que no depende de la cámara.
+  mouseScreenPoint(p) {
+    const e = p.event
+    if (!e || e.clientX == null) return null
+    const canvas = this.game.canvas
+    const rect = canvas.getBoundingClientRect()
+    return {
+      x: (e.clientX - rect.left) * canvas.width / rect.width,
+      y: (e.clientY - rect.top) * canvas.height / rect.height,
+    }
+  }
+
+  beginMouseDrag(p) {
+    const point = this.mouseScreenPoint(p)
+    this._mouseDrag = point ? { start: point, world: this.touchWorldPoint(point) } : null
+    this._dragging = false
+  }
+
+  moveMouseDrag(p) {
+    if (!p.isDown || !this._mouseDrag) return
+    const point = this.mouseScreenPoint(p)
+    if (!point) return
+    const start = this._mouseDrag.start
+    if (!this._dragging && Math.hypot(point.x - start.x, point.y - start.y) <= CAMERA.dragThreshold) return
+    this._dragging = true
+    this.anchorTouchCamera(this._mouseDrag.world, point)
+  }
+
   anchorTouchCamera(world, point) {
     const cam = this.cam
     cam.scrollX = world.x - cam.width / 2 - (point.x - cam.width / 2) / cam.zoom
@@ -288,16 +318,7 @@ export class GameScene extends Phaser.Scene {
         return
       }
 
-      if (p.isDown && !this._pinching) {
-        const dx = p.x - p.prevPosition.x
-        const dy = p.y - p.prevPosition.y
-        const dist = Math.hypot(p.x - this._downX, p.y - this._downY)
-        if (dist > CAMERA.dragThreshold) {
-          this._dragging = true
-          this.cam.scrollX -= dx / this.cam.zoom
-          this.cam.scrollY -= dy / this.cam.zoom
-        }
-      }
+      if (!this._pinching) this.moveMouseDrag(p)
     })
 
     this.input.on('pointerdown', (p) => {
@@ -326,9 +347,7 @@ export class GameScene extends Phaser.Scene {
         }
         return
       }
-      this._downX = p.x
-      this._downY = p.y
-      this._dragging = false
+      this.beginMouseDrag(p)
       if (p.rightButtonDown()) {
         this._rightDown = true
         cancelPlacement(this)
@@ -578,6 +597,10 @@ export class GameScene extends Phaser.Scene {
   // Sincroniza y dibuja la capa Three.js tras cada update (corre aun en pausa/game over).
   render3D(time) {
     if (!this.three) return
+    // worldView solo se recalcula en cam.preRender (al dibujar). Sin esto Three leía la vista del
+    // frame anterior y, al desplazarse, el 3D iba un frame detrás del 2D: la imagen vibraba.
+    // preRender es idempotente aquí (no hay startFollow): Phaser lo repite al dibujar con igual resultado.
+    this.cam.preRender()
     this.three.syncCamera(this.cam)
     this.three.sync(this)
     this.three.render(time)
