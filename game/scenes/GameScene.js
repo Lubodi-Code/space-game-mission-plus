@@ -399,7 +399,7 @@ export class GameScene extends Phaser.Scene {
             this.deselectGeneral()
             selectStructure(this, hit)
           } else {
-            this.general.setTarget(wx, wy, this)
+            this.commandGeneral(wx, wy)
           }
         } else if (this._rightDown) {
           this.deselectGeneral()
@@ -460,8 +460,10 @@ export class GameScene extends Phaser.Scene {
             this.multiSel.clear()
             gameState.multiSelCount = 0
           }
-        } else {
+        } else if (this.selectedStructure) {
           deselectStructure(this)
+        } else {
+          this.commandGeneral(wx, wy)
         }
       }
       this._dragging = false
@@ -552,6 +554,18 @@ export class GameScene extends Phaser.Scene {
       bus.on('callWave', () => { if (!this.remote) callWaveEarly(this) }),
       bus.on('gotoEvent', () => { if (!this.remote) goToGiant(this) }),
     ]
+  }
+
+  commandGeneral(x, y) {
+    if (!this.general?.alive) return
+    this.general.setTarget(x, y, this)
+    const marker = this.add.graphics().setDepth(14).setPosition(x, y)
+    marker.lineStyle(2, 0x8be9fd, 0.9).strokeCircle(0, 0, 12)
+    marker.fillStyle(0x8be9fd, 0.18).fillCircle(0, 0, 12)
+    this.tweens.add({
+      targets: marker, alpha: 0, scale: 1.8, duration: 500, ease: 'Quad.out',
+      onComplete: () => marker.destroy(),
+    })
   }
 
 

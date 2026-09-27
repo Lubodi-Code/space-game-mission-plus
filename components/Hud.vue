@@ -288,10 +288,16 @@ const cancelable = computed(() => !!(activeLabel.value || gameState.generalMode 
 function goToEvent() {
   bus.emit('gotoEvent')
 }
+const eventDismissed = ref(false)
+watch(() => [gameState.event?.kind, gameState.event?.timeLeft], ([kind, timeLeft], [oldKind, oldTimeLeft]) => {
+  if (kind !== oldKind || (kind && oldTimeLeft != null && timeLeft > oldTimeLeft + 1)) {
+    eventDismissed.value = false
+  }
+})
 // Flecha al borde de la pantalla hacia el evento cuando no está a la vista.
 const eventArrow = computed(() => {
   const ev = gameState.event
-  if (!ev || ev.onScreen) return null
+  if (!ev || ev.onScreen || eventDismissed.value) return null
   const a = ev.angle
   const x = 50 + Math.cos(a) * 44
   const y = 50 + Math.sin(a) * 40
@@ -750,7 +756,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
     <AbilityBar v-if="gameState.status === 'playing'" :class="{ 'ability-under-sheet': sheetOpen }" />
 
     <!-- Evento: meteorito gigante (systems/specialMeteors.js) -->
-    <div v-if="gameState.event?.kind === 'giant' && gameState.status === 'playing'" class="event-card pointer-events-auto">
+    <div v-if="gameState.event?.kind === 'giant' && gameState.status === 'playing' && !eventDismissed" class="event-card pointer-events-auto">
       <span class="text-lg">☄</span>
       <span class="leading-tight">
         <b class="text-amber-200">Meteorito gigante</b>
@@ -758,6 +764,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
       </span>
       <button v-if="!gameState.event.mining && !gameState.event.remote" class="event-go" @click="goToEvent">Ir</button>
       <span v-else class="text-[10px] text-emerald-200 font-bold">Minando…</span>
+      <button class="event-close pointer-events-auto" aria-label="Descartar aviso" @click="eventDismissed = true">✕</button>
     </div>
     <div v-if="eventArrow && gameState.status === 'playing'" class="event-arrow" :style="eventArrow">➤</div>
 
@@ -917,6 +924,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 }
 .event-go {
   @apply px-3 py-1 rounded-full font-bold text-[#05070f] bg-amber-300 active:scale-95;
+}
+.event-close {
+  @apply w-8 h-8 flex shrink-0 items-center justify-center rounded-full text-amber-100/80 hover:bg-white/15 active:scale-95;
 }
 .event-arrow {
   @apply absolute text-2xl text-amber-300 pointer-events-none;
