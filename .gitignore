@@ -15,3 +15,5 @@ assets-src
 .env
 .env.*
 !.env.example
+
+.vercel

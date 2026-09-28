@@ -1,4 +1,4 @@
-import { reactive } from 'vue'
+import { computed, reactive } from 'vue'
 import { createClient } from '@supabase/supabase-js'
 import { useRuntimeConfig } from '#imports'
 import { profile } from './profile.js'
@@ -7,6 +7,13 @@ import { premium, setPremium, clearPremium } from './premium.js'
 // Cuenta del jugador (Supabase Auth). Solo hace falta para lo premium: Cristales y cosméticos
 // canjeados viven en el servidor; XP/Chatarra/investigación siguen locales.
 export const account = reactive({ ready: false, configured: false, user: null, busy: false, error: '' })
+
+export function displayName(user) {
+  const name = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || ''
+  return String(name).trim().slice(0, 16)
+}
+
+export const isGuest = computed(() => !account.user)
 
 let sb = null
 

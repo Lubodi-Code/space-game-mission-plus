@@ -1,4 +1,5 @@
 import Peer from 'peerjs'
+import { appState } from './appState.js'
 import {
   parseIntent, parseHostMessage, createRateLimiter, MAX_INTENT_BYTES,
   HEARTBEAT_MS, TIMEOUT_MS, newSessionToken, PROTOCOL_VERSION,
@@ -66,25 +67,30 @@ export const net = {
   onReconnecting: () => {},
   onReconnected: () => {},
   onHostLost: () => {},
+  onSolo: () => {},
 
   async host(code, name = '') {
-    this.close()
+    this.close(false)
     const generation = this._generation
     this.isHost = true
     this.myName = name
     this._sessions = new Map()
+    this._hadGuest = false
     this._limiter = createRateLimiter()
     const servers = await iceServers()
     if (generation !== this._generation) return
     const peer = new Peer(ROOM(code), { config: { iceServers: servers } })
     this.peer = peer
-    peer.on('connection', (conn) => this._accept(conn))
-    peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect() })
-    peer.on('error', (err) => this.onError(err))
+    peer.on('connection', (conn) => {
+      if (this.peer !== peer) { conn.close(); return }
+      this._accept(conn)
+    })
+    peer.on('disconnected', () => { if (this.peer === peer && !peer.destroyed) peer.reconnect() })
+    peer.on('error', (err) => { if (this.peer === peer) this.onError(err) })
   },
 
   async join(code, name = '') {
-    this.close()
+    this.close(false)
     const generation = this._generation
     this.isHost = false
     this.myName = name
@@ -97,9 +103,10 @@ export const net = {
     if (generation !== this._generation) return
     const peer = new Peer({ config: { iceServers: servers } })
     this.peer = peer
-    peer.on('open', () => this._connect())
-    peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect() })
+    peer.on('open', () => { if (this.peer === peer) this._connect() })
+    peer.on('disconnected', () => { if (this.peer === peer && !peer.destroyed) peer.reconnect() })
     peer.on('error', () => {
+      if (this.peer !== peer) return
       const nc = this.conns[0]
       if (nc) { nc.conn.close(); this._closed(nc) }
       else this._retry()
@@ -112,7 +119,12 @@ export const net = {
     this.conns.push(nc)
     this._wire(nc)
     this._openWatchdog(nc)
-    conn.on('open', () => { nc.open = true; clearTimeout(nc.openTimer); this._heartbeat(nc) })
+    conn.on('open', () => {
+      if (nc.done) return
+      nc.open = true
+      clearTimeout(nc.openTimer)
+      this._heartbeat(nc)
+    })
   },
 
   _connect() {
@@ -123,6 +135,7 @@ export const net = {
     this._wire(nc)
     this._openWatchdog(nc)
     conn.on('open', () => {
+      if (nc.done) return
       nc.open = true
       clearTimeout(nc.openTimer)
       this._heartbeat(nc)
@@ -151,6 +164,7 @@ export const net = {
 
   _wire(nc) {
     nc.conn.on('data', (raw) => {
+      if (nc.done) return
       nc.lastReceived = performance.now()
       if (this.isHost) {
         let size
@@ -226,6 +240,9 @@ export const net = {
     nc.pid = pid
     nc.name = session.name || msg.name
     nc.authenticated = true
+    this._hadGuest = true
+    clearTimeout(this._emptyTimer)
+    this._emptyTimer = null
     nc.send({ t: 'welcome', pid, token: session.token, v: PROTOCOL_VERSION })
     this.onData({ ...msg, name: nc.name }, nc)
     this.onOpen(nc)
@@ -249,6 +266,7 @@ export const net = {
         session.disconnectedAt = performance.now()
       }
       this.onDisconnect(nc)
+      this._finishHostIfEmpty()
     } else {
       this.onDisconnect(nc)
       this._retry()
@@ -271,18 +289,37 @@ export const net = {
   },
 
   _hostLost(reason) {
+    const onHostLost = this.onHostLost
     this.close()
-    this.onHostLost(reason)
+    onHostLost(reason)
+  },
+
+  _finishHostIfEmpty() {
+    if (!this.isHost || !this._hadGuest || appState.view !== 'game' ||
+        this.conns.some((nc) => nc.authenticated && !nc.done)) return
+    clearTimeout(this._emptyTimer)
+    const now = performance.now()
+    const grace = Math.max(0, ...[...this._sessions.values()]
+      .map((session) => session.disconnectedAt ? REJOIN_MS - (now - session.disconnectedAt) : 0))
+    if (grace > 0) {
+      this._emptyTimer = setTimeout(() => this._finishHostIfEmpty(), grace)
+      return
+    }
+    const onSolo = this.onSolo
+    this.close()
+    onSolo()
   },
 
   send(obj) { for (const nc of this.conns) nc.send(obj) },
   sendTo(pid, obj) { this.conns.find((nc) => nc.pid === pid)?.send(obj) },
   leave() { this.send({ t: 'bye' }); this.close() },
-  close() {
+  close(resetHandlers = true) {
     this._closing = true
     this._generation = (this._generation || 0) + 1
     clearTimeout(this._retryTimer)
+    clearTimeout(this._emptyTimer)
     this._retryTimer = null
+    this._emptyTimer = null
     for (const nc of this.conns) {
       nc.done = true
       clearTimeout(nc.openTimer)
@@ -292,8 +329,23 @@ export const net = {
     this.conns = []
     this.peer?.destroy()
     this.peer = null
+    this.isHost = false
     this._reconnecting = false
     this._attempt = 0
+    this._sessions = null
+    this._limiter = null
+    this._hadGuest = false
     this._closing = false
+    if (resetHandlers) {
+      for (const key of ['onOpen', 'onData', 'onDisconnect', 'onError', 'onReconnecting', 'onReconnected', 'onHostLost', 'onSolo']) {
+        this[key] = () => {}
+      }
+    }
   },
+}
+
+if (typeof window !== 'undefined') {
+  const leaveOnPageExit = () => net.leave()
+  window.addEventListener('pagehide', leaveOnPageExit)
+  window.addEventListener('beforeunload', leaveOnPageExit)
 }

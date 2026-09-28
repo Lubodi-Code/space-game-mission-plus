@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { startGame, DIFFICULTY, appState } from '~/game/appState'
 import { MODES, DEFAULT_MODE } from '~/game/modes/index'
 import { SECTORS } from '~/game/meta/sectors'
@@ -8,6 +8,8 @@ import { net } from '~/game/net'
 import { playerColor } from '~/game/net/protocol'
 import { initUiSound, sfxUi } from '~/game/sound'
 import Settings from './Settings.vue'
+import AccountPanel from './AccountPanel.vue'
+import { account, displayName, initAccount } from '~/game/meta/account'
 
 const settingsOpen = ref(false)
 const difficulty = ref(appState.difficulty || 'normal')
@@ -30,6 +32,12 @@ function openView(v) {
 
 const joinCode = ref(new URLSearchParams(location.search).get('join')?.toUpperCase() || '')
 const playerName = ref(localStorage.getItem('sgmp_name') || 'Comandante')
+onMounted(() => initAccount())
+watch(() => account.user, (user) => {
+  if (user && (!playerName.value.trim() || playerName.value === 'Comandante')) {
+    playerName.value = displayName(user) || 'Comandante'
+  }
+}, { immediate: true })
 const linkCopied = ref(false)
 const roomError = ref('')
 const forceStart = ref(false)
@@ -219,6 +227,8 @@ function toggleReady() {
         Expande tu red de energía desde el Núcleo, mina meteoritos, construye
         defensas y sobrevive a <b class="text-cyan-200">{{ MODES[mode].waveCount }} oleadas</b> de la horda.
       </p>
+
+      <AccountPanel class="mt-6 w-full max-w-md" />
 
       <!-- Nombre de jugador -->
       <div class="mt-6 w-full max-w-xs">

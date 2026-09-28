@@ -4,6 +4,7 @@ import { gameState } from '~/game/gameState'
 import { bus } from '~/game/bus'
 import { STRUCTURES, SPEED } from '~/game/constants'
 import { goToLobby } from '~/game/appState'
+import { net } from '~/game/net'
 import { buildUpgradeTree } from '~/game/structures/upgrades'
 import '~/game/meta/research'
 import { ABILITIES } from '~/game/systems/abilities'
@@ -17,6 +18,7 @@ import Settings from './Settings.vue'
 import GameIcon from './GameIcon.vue'
 
 const settingsOpen = ref(false)
+const exitOpen = ref(false)
 const coreExpanded = ref(false)
 const buildbarExpanded = ref(true)
 
@@ -65,7 +67,16 @@ function setSpeed(v) {
 }
 
 function mainMenu() {
+  const savedRun = appState.mp.role === 'solo' ? sessionStorage.getItem('sgmp_solo_run') : null
+  if (appState.mp.role !== 'solo') net.leave()
   goToLobby()
+  if (savedRun) sessionStorage.setItem('sgmp_solo_run', savedRun)
+  appState.mp.role = 'solo'
+  appState.mp.connected = false
+  appState.mp.players = []
+  appState.mp.status = 'idle'
+  appState.mp.code = null
+  appState.mp.attempt = 0
 }
 
 const timeLabel = computed(() => {
@@ -369,7 +380,7 @@ function onKey(e) {
   // Fin de partida: solo reinicio / menú.
   if (gameState.status === 'gameover' || gameState.status === 'victory') {
     if (e.key === 'r' || e.key === 'R' || e.key === 'Enter') restart()
-    else if (e.key === 'm' || e.key === 'M') mainMenu()
+    else if (e.key === 'm' || e.key === 'M') exitOpen.value = true
     return
   }
 
@@ -434,6 +445,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
           <GameIcon name="crystals" :size="15" title="Cristales" /><span class="tabular-nums">{{ profile.crystals }}</span>
         </span>
         <button class="hud-btn shrink-0" aria-label="Ajustes" title="Ajustes" @click="settingsOpen = true">⚙ <span class="hidden sm:inline">Ajustes</span></button>
+        <button class="hud-btn shrink-0" aria-label="Salir de la partida" title="Salir de la partida" @click="exitOpen = true">⏏ <span class="hidden sm:inline">Salir</span></button>
       </div>
     </div>
 
@@ -598,7 +610,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
           <button
             class="px-6 py-2 rounded-lg bg-white/5 ring-1 ring-cyan-400/20 text-cyan-200/80
                    hover:bg-cyan-400/10 hover:text-white transition-colors"
-            @click="mainMenu"
+            @click="exitOpen = true"
           >
             Menú principal <span class="opacity-50">(M)</span>
           </button>
@@ -864,6 +876,15 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
       </button>
     </div>
     <Settings v-if="settingsOpen" :open="settingsOpen" @close="settingsOpen = false" />
+    <div v-if="exitOpen" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 pointer-events-auto p-4" role="dialog" aria-modal="true" aria-label="Salir de la partida">
+      <div class="w-full max-w-xs rounded-xl bg-[#0a0f1c] p-5 text-center ring-1 ring-cyan-300/40 shadow-xl">
+        <p class="text-lg font-semibold">¿Salir de la partida?</p>
+        <div class="mt-5 flex justify-center gap-3">
+          <button class="hud-btn" @click="exitOpen = false">Cancelar</button>
+          <button class="rounded-md bg-red-500/80 px-4 py-2 text-sm font-bold text-white" @click="mainMenu">Sí, salir</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
