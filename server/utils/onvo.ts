@@ -10,12 +10,11 @@ export interface OnvoIntent {
   currency: string
 }
 
-// Único lugar de conversión colones → unidad de `amount` de ONVO. PENDIENTE de verificar en
-// test mode: la doc usa 500000 en su ejemplo (sugiere céntimos), pero el colón no se usa con
-// céntimos. Ajustar NUXT_ONVO_AMOUNT_MULTIPLIER (100 o 1) tras ver un intent de ₡1 000.
+// Único lugar de conversión colones → unidad de `amount` de ONVO. La doc de webhooks lo dice
+// explícito: "Los montos se envían como enteros en la unidad mínima de la moneda… 500000 representa
+// ₡5,000.00 en CRC". Fijo en 100 (no configurable): un multiplicador mal puesto cobraría ₡10 por ₡1 000.
 export function toOnvoAmount(crc: number): number {
-  const mult = Number(useRuntimeConfig().onvoAmountMultiplier) || 100
-  return Math.round(crc * mult)
+  return Math.round(crc * 100)
 }
 
 async function onvo<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {

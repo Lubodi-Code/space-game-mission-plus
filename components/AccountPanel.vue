@@ -24,6 +24,8 @@ const syncLabel = computed(() => {
 </script>
 
 <template>
+  <!-- Una sola raíz: así el class/estilo que pone el Lobby (ancho, centrado) se aplica al chip. -->
+  <div class="chip-root">
   <div class="chip" :class="{ 'chip--guest': isGuest }">
   <button type="button" class="chip-main" aria-label="Abrir perfil" @click="appState.view = 'profile'">
     <span class="chip-avatar">
@@ -46,6 +48,7 @@ const syncLabel = computed(() => {
   <button v-else type="button" class="chip-cta" @click="appState.view = 'profile'">Perfil ›</button>
   </div>
   <LoginSheet :open="sheet" @close="sheet = false" />
+  </div>
 
 </template>
 

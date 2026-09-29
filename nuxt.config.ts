@@ -22,7 +22,6 @@ export default defineNuxtConfig({
   runtimeConfig: {
     onvoSecretKey: '',        // NUXT_ONVO_SECRET_KEY
     onvoWebhookSecret: '',    // NUXT_ONVO_WEBHOOK_SECRET
-    onvoAmountMultiplier: 100, // NUXT_ONVO_AMOUNT_MULTIPLIER — verificar en test mode (ver server/utils/onvo.ts)
     supabaseServiceKey: '',   // NUXT_SUPABASE_SERVICE_KEY
     public: {
       onvoPublishableKey: '', // NUXT_PUBLIC_ONVO_PUBLISHABLE_KEY
