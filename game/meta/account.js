@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { useRuntimeConfig } from '#imports'
 import { profile } from './profile.js'
 import { premium, setPremium, clearPremium } from './premium.js'
+import { startCloud, stopCloud } from './cloudSave.js'
 
 // Cuenta del jugador (Supabase Auth). Solo hace falta para lo premium: Cristales y cosméticos
 // canjeados viven en el servidor; XP/Chatarra/investigación siguen locales.
@@ -15,7 +16,7 @@ export function displayName(user) {
 
 export const isGuest = computed(() => !account.user)
 
-let sb = null
+export let sb = null
 
 export function initAccount() {
   if (sb || typeof window === 'undefined') return sb
@@ -26,13 +27,14 @@ export function initAccount() {
   sb.auth.getSession().then(({ data }) => {
     account.user = data.session?.user || null
     account.ready = true
-    if (account.user) syncAccount()
+    if (account.user) { syncAccount(); startCloud(account.user) }
   })
   sb.auth.onAuthStateChange((_e, session) => {
     const was = account.user?.id
     account.user = session?.user || null
     if (account.user?.id !== was) { clearPremium(); profile.crystals = 0 }
-    if (account.user && account.user.id !== was) syncAccount()
+    if (account.user && account.user.id !== was) { syncAccount(); startCloud(account.user) }
+    if (!account.user) stopCloud()
   })
   return sb
 }

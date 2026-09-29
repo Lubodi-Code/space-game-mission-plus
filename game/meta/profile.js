@@ -25,7 +25,7 @@ function blank() {
     maxSectorWon: 0,
     bestWave: {}, // `${mode}:${sector}` → mejor oleada alcanzada
     cosmetics: { owned: ['beam_default', 'trail_none', 'hull_default'], equipped: { beam: 'beam_default', trail: 'trail_none', hull: 'hull_default', design: 'design_falcon', explosion: 'boom_default', nexus: 'nexus_default', turret: 'turret_default' } },
-    stats: { runs: 0, wins: 0, kills: 0 },
+    stats: { runs: 0, wins: 0, kills: 0, bosses: 0, playtimeMs: 0, bestWaveAll: 0, structuresBuilt: 0, abilitiesUsed: 0, coopRuns: 0, giantsMined: 0 },
   }
 }
 
@@ -68,7 +68,7 @@ export function hasResearch(id) {
 }
 
 // Recompensa de fin de partida. Devuelve el resumen para el overlay de fin.
-export function grantRunRewards({ mode, sector, wave, waveTotal, victory, kills, sectorReward }) {
+export function grantRunRewards({ mode, sector, wave, waveTotal, victory, kills, sectorReward, bosses = 0, playtimeMs = 0, structuresBuilt = 0, abilitiesUsed = 0, coop = false, giantsMined = 0 }) {
   const before = levelFromXp(profile.xp).level
   const modeMult = mode === 'quick' ? 0.7 : 1
   const xp = Math.round((wave * 30 + kills * 0.5 + (victory ? 250 : 0)) * (1 + 0.1 * (sector - 1)) * modeMult)
@@ -77,6 +77,13 @@ export function grantRunRewards({ mode, sector, wave, waveTotal, victory, kills,
   profile.scrap += scrap
   profile.stats.runs++
   profile.stats.kills += kills
+  profile.stats.bosses += bosses
+  profile.stats.playtimeMs += playtimeMs
+  profile.stats.bestWaveAll = Math.max(profile.stats.bestWaveAll, wave)
+  profile.stats.structuresBuilt += structuresBuilt
+  profile.stats.abilitiesUsed += abilitiesUsed
+  profile.stats.coopRuns += coop ? 1 : 0
+  profile.stats.giantsMined += giantsMined
   const key = `${mode}:${sector}`
   profile.bestWave[key] = Math.max(profile.bestWave[key] || 0, wave)
   let unlocked = null
@@ -86,5 +93,6 @@ export function grantRunRewards({ mode, sector, wave, waveTotal, victory, kills,
     if (sector >= profile.sectorUnlocked && sector < 10) { profile.sectorUnlocked = sector + 1; unlocked = sector + 1 }
   }
   const after = levelFromXp(profile.xp).level
+  import('./cloudSave.js').then(({ flushCloud }) => flushCloud()).catch(() => {})
   return { xp, scrap, levelUp: after > before ? after : null, sectorUnlocked: unlocked, waveTotal }
 }
