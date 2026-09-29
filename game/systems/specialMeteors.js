@@ -79,6 +79,7 @@ function expireGiant(scene) {
   const m = scene.giant
   scene.giant = null
   gameState.event = null
+  if (m?.amount <= 0 && scene.runStats?.giantsMined != null) scene.runStats.giantsMined++
   if (!m || m.depleted) return
   m.depleted = true
   scene.tweens.add({ targets: m.container, alpha: 0, duration: 400, onComplete: () => m.container.destroy() })

@@ -9,6 +9,7 @@ import { playerColor } from '~/game/net/protocol'
 import { initUiSound, sfxUi } from '~/game/sound'
 import Settings from './Settings.vue'
 import AccountPanel from './AccountPanel.vue'
+import { friends, dismissInvite } from '~/game/meta/friends'
 import { account, displayName, initAccount } from '~/game/meta/account'
 
 const settingsOpen = ref(false)
@@ -164,6 +165,15 @@ async function hostGame() {
   }
 }
 
+// Invitación de un amigo (Realtime): unirse usa el mismo flujo que escribir el código a mano.
+function acceptInvite() {
+  const inv = friends.invite
+  if (!inv) return
+  joinCode.value = inv.roomCode
+  dismissInvite()
+  void joinGame()
+}
+
 async function joinGame() {
   saveName()
   const code = joinCode.value.trim().toUpperCase()
@@ -229,6 +239,12 @@ function toggleReady() {
       </p>
 
       <AccountPanel class="mt-6 w-full max-w-md" />
+      <div v-if="friends.invite && appState.mp.role === 'solo'" class="invite mt-3 w-full max-w-md" role="status">
+        <img v-if="friends.invite.fromAvatar" :src="friends.invite.fromAvatar" alt="" referrerpolicy="no-referrer" class="invite-avatar" />
+        <span class="invite-text"><b>{{ friends.invite.fromName }}</b> te invita a su sala</span>
+        <button type="button" class="invite-go" @click="acceptInvite">Unirse</button>
+        <button type="button" class="invite-x" aria-label="Descartar invitación" @click="dismissInvite">✕</button>
+      </div>
 
       <!-- Nombre de jugador -->
       <div class="mt-6 w-full max-w-xs">
@@ -392,6 +408,17 @@ function toggleReady() {
 </template>
 
 <style scoped>
+.invite {
+  display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.6rem 0.55rem 0.75rem; border-radius: 0.9rem; text-align: left;
+  background: linear-gradient(135deg, rgba(80,250,123,0.14), rgba(10,15,28,0.9) 60%); box-shadow: inset 0 0 0 1px rgba(80,250,123,0.45);
+  animation: invite-in 0.3s ease-out;
+}
+.invite-avatar { width: 2rem; height: 2rem; border-radius: 999px; object-fit: cover; flex: none; }
+.invite-text { flex: 1; min-width: 0; font-size: 0.85rem; color: #cfe8ff; }
+.invite-text b { color: #fff; }
+.invite-go { min-height: 2.25rem; padding: 0 0.9rem; border-radius: 0.7rem; background: #50fa7b; color: #05070f; font-weight: 800; font-size: 0.8rem; }
+.invite-x { width: 2rem; height: 2rem; border-radius: 999px; color: rgba(207,232,255,0.6); }
+@keyframes invite-in { from { opacity: 0; transform: translateY(-6px); } }
 @reference 'tailwindcss';
 
 .lobby {

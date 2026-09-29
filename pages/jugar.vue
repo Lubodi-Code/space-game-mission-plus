@@ -44,6 +44,7 @@ useHead({
     <Lobby v-if="appState.view === 'lobby'" />
     <Research v-else-if="appState.view === 'research'" />
     <Shop v-else-if="appState.view === 'shop'" />
+    <Profile v-else-if="appState.view === 'profile'" />
 
     <template v-else>
       <!-- Phaser game canvas (WebGL) -->

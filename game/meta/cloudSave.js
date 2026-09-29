@@ -8,6 +8,7 @@ const FIELDS = ['v', 'xp', 'scrap', 'research', 'arsenal', 'sectorUnlocked', 'ma
 let user = null
 let generation = 0
 let initialized = false
+let mergedOnce = false // la fusión inicial (Chatarra con máximo) ya se aplicó en la nube esta sesión
 let revision = 0
 let pending = false
 let flight = null
@@ -75,14 +76,28 @@ async function syncLoop() {
       }
 
       const sentRevision = revision
+      const sentScrap = profile.scrap
+      const initial = !mergedOnce
       // p_initial: solo la primera fusión de la sesión junta la Chatarra con el máximo (progreso de
       // invitado + cuenta). Después manda el dispositivo, o gastar Chatarra no tendría efecto.
-      const { data, error } = await sb.rpc('merge_profile', { p: localPayload(), p_initial: !initialized })
+      const { data, error } = await sb.rpc('merge_profile', { p: localPayload(), p_initial: initial })
       if (current !== generation) return
       if (error) throw error
+      // La nube ya guardó la fusión inicial aunque descartemos esta respuesta por un cambio local:
+      // un reintento con p_initial devolvería la Chatarra gastada mientras tanto.
+      mergedOnce = true
       // Una partida puede terminar durante el RPC. Conservamos sus cambios y repetimos
       // la fusión antes de aplicar una respuesta basada en un perfil anterior.
-      if (sentRevision !== revision) { pending = true; continue }
+      if (sentRevision !== revision) {
+        // Tras la fusión inicial la nube puede tener MÁS Chatarra que lo enviado (la de la cuenta).
+        // El reintento va sin p_initial y mandaría solo la local: rebasamos lo ganado/gastado
+        // durante la espera sobre el saldo fusionado para no perder la de la cuenta.
+        if (initial && Number.isFinite(Number(data?.scrap))) {
+          profile.scrap = Math.max(0, Number(data.scrap) + (profile.scrap - sentScrap))
+        }
+        pending = true
+        continue
+      }
       applyMerged(data)
       initialized = true
       backoffMs = 1000
@@ -142,6 +157,7 @@ export function startCloud(nextUser) {
   stopCloud()
   user = nextUser
   initialized = false
+  mergedOnce = false
   pending = true
   cloud.status = 'syncing'
   stopWatching = watch(profile, () => {
@@ -163,6 +179,7 @@ export function stopCloud() {
   generation++
   user = null
   initialized = false
+  mergedOnce = false
   pending = false
   flight = null
   clearTimers()

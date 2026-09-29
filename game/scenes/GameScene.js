@@ -112,6 +112,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.remote) { createRemote(this); return }
 
+    this.runStats = { bosses: 0, structuresBuilt: 0, abilitiesUsed: 0, giantsMined: 0, playMs: 0 }
     this.epSystem = new EnemyProjectileSystem(this)
 
     populateMeteorites(this)
@@ -742,6 +743,7 @@ export class GameScene extends Phaser.Scene {
     if (gameState.status !== 'playing' || d === 0) return
 
     this.elapsedMs += d
+    this.runStats.playMs += d
     gameState.timeElapsed = Math.floor(this.elapsedMs / 1000)
 
     // Clear beam graphics before structures draw on them
@@ -838,6 +840,12 @@ export class GameScene extends Phaser.Scene {
       victory,
       kills: gameState.kills,
       sectorReward: this.sector?.reward || 0,
+      bosses: this.runStats.bosses,
+      playtimeMs: this.runStats.playMs,
+      structuresBuilt: this.runStats.structuresBuilt,
+      abilitiesUsed: this.runStats.abilitiesUsed,
+      giantsMined: this.runStats.giantsMined,
+      coop: net.conns.length > 0,
     })
     gameState.runRewards.newCosmetics = claimUnlocks().map((c) => c.name)
     if (gameState.runRewards.levelUp || gameState.runRewards.newCosmetics.length) sfxLevelUp()

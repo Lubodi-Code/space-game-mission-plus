@@ -131,6 +131,7 @@ export function handleTargetClick(scene, wx, wy) {
 
 function cast(scene, def, target, general) {
   const g = general
+  if (g.pid === 0 && scene.runStats?.abilitiesUsed != null) scene.runStats.abilitiesUsed++
   const cds = scene.abilityCd.get(g.pid) || {}
   cds[def.id] = cooldownOf(scene, def)
   scene.abilityCd.set(g.pid, cds)

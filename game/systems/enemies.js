@@ -52,6 +52,7 @@ export function killEnemy(scene, e) {
   if (e.dead) return
   e.dead = true
   gameState.kills++
+  if (e.def.boss && scene.runStats?.bosses != null) scene.runStats.bosses++
   gameState.minerals = Math.min(gameState.mineralsCap, gameState.minerals + e.def.reward)
   if (!IS_TOUCH || e.def.boss) spawnFloatingText(scene, e.x, e.y, `+${e.def.reward}`, '#49e07a') // móvil: solo jefes
   explosion(scene, e.x, e.y, explosionColor(e.def.color), 14 * e.def.scale)

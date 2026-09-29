@@ -51,6 +51,14 @@ if (hasStorage) {
   }, { deep: true })
 }
 
+// Vuelve el perfil local a uno de invitado nuevo (al cerrar sesión: el progreso queda en la cuenta
+// y no debe pasar a la próxima cuenta que entre en este dispositivo).
+export function resetProfile() {
+  const b = blank()
+  for (const k of Object.keys(profile)) if (!(k in b)) delete profile[k]
+  Object.assign(profile, b)
+}
+
 // XP necesaria para pasar del nivel L al L+1: 200, 300, 400, ...
 export function xpForLevel(level) {
   return 100 + level * 100

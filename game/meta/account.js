@@ -1,9 +1,10 @@
 import { computed, reactive } from 'vue'
 import { createClient } from '@supabase/supabase-js'
 import { useRuntimeConfig } from '#imports'
-import { profile } from './profile.js'
+import { profile, resetProfile } from './profile.js'
 import { premium, setPremium, clearPremium } from './premium.js'
-import { startCloud, stopCloud } from './cloudSave.js'
+import { startCloud, stopCloud, flushCloud, cloud } from './cloudSave.js'
+import { startFriends, stopFriends } from './friends.js'
 
 // Cuenta del jugador (Supabase Auth). Solo hace falta para lo premium: Cristales y cosméticos
 // canjeados viven en el servidor; XP/Chatarra/investigación siguen locales.
@@ -27,14 +28,14 @@ export function initAccount() {
   sb.auth.getSession().then(({ data }) => {
     account.user = data.session?.user || null
     account.ready = true
-    if (account.user) { syncAccount(); startCloud(account.user) }
+    if (account.user) { syncAccount(); startCloud(account.user); startFriends(account.user) }
   })
   sb.auth.onAuthStateChange((_e, session) => {
     const was = account.user?.id
     account.user = session?.user || null
     if (account.user?.id !== was) { clearPremium(); profile.crystals = 0 }
-    if (account.user && account.user.id !== was) { syncAccount(); startCloud(account.user) }
-    if (!account.user) stopCloud()
+    if (account.user && account.user.id !== was) { syncAccount(); startCloud(account.user); startFriends(account.user) }
+    if (!account.user) { stopCloud(); stopFriends() }
   })
   return sb
 }
@@ -91,7 +92,15 @@ export async function loginEmail(email) {
 }
 
 export async function logout() {
+  // Guardar lo pendiente y cortar la sincronización ANTES de vaciar el perfil local: si no, el
+  // perfil en blanco se subiría a la cuenta (y la Chatarra quedaría en 0 en la nube).
+  try { await flushCloud() } catch { /* sin red: se decide abajo */ }
+  const synced = cloud.status === 'saved'
+  stopCloud()
+  stopFriends()
   await sb?.auth.signOut()
+  // Si no se pudo guardar, se conserva el perfil local para no perder progreso sin subir.
+  if (synced) resetProfile()
 }
 
 export async function buyCosmeticWithCrystals(itemId) {
