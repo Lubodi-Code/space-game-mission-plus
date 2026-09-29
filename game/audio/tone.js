@@ -183,5 +183,5 @@ export function setEngine(active, speed01, pan) {
   engine.pan.pan.value = Math.max(-1, Math.min(1, pan || 0))
   engine.osc.frequency.rampTo(65 + speed * 75, 0.1)
   engine.rumbleFilter.frequency.rampTo(150 + speed * 250, 0.1)
-  engine.gain.gain.rampTo(active ? 0.012 + speed * 0.05 : 0, active ? 0.12 : 0.25, now)
+  engine.gain.gain.rampTo(active ? 0.005 + speed * 0.02 : 0, active ? 0.12 : 0.25, now) // más bajo: el comandante no debe tapar la batalla
 }

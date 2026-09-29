@@ -29,7 +29,7 @@ import { updateEnemies, nearestStructure, killEnemy } from '~/game/systems/enemi
 import { startPlacement, cancelPlacement, tryPlace, updateGhost, updateRangePreview } from '~/game/systems/placement.js'
 import { selectStructure, deselectStructure, applyUpgrade, setFireMode } from '~/game/systems/selection.js'
 import { onIntent, createRemote, renderRemote, sendSnapshot } from '~/game/net/sync.js'
-import { initSound, updateSound, setMusicState, updateShipBeds, sfxSpeed, setEngineFromWorld } from '~/game/sound.js'
+import { initSound, updateSound, setMusicState, updateShipEngines, stopShipEngines, sfxSpeed, setEngineFromWorld } from '~/game/sound.js'
 import { initAbilities, updateAbilities, requestAbility, handleTargetClick, cancelTargeting } from '~/game/systems/abilities.js'
 import { runBonuses } from '~/game/meta/research.js'
 import { WEAPON_ROLES } from '~/game/meta/arsenal.js'
@@ -101,7 +101,10 @@ export class GameScene extends Phaser.Scene {
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.render3D, this)
 
     this.scale.on('resize', this.handleResize, this)
+    // game.destroy (volver al menú) emite DESTROY, no SHUTDOWN: apagar motores en ambos.
+    this.events.once(Phaser.Scenes.Events.DESTROY, stopShipEngines)
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      stopShipEngines()
       this.scale.off('resize', this.handleResize, this)
       this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.render3D, this)
       if (this.three) { this.three.dispose(); this.three = null }
@@ -708,18 +711,18 @@ export class GameScene extends Phaser.Scene {
     const wv = this.cam.worldView
     updateSound(wv.centerX, wv.centerY, wv.width)
     setMusicState(this.wave?.state === 'intermission' ? 'transition' : 'ingame')
-    // Camas de movimiento de naves: solo las naves cerca del centro de la cámara suenan
-    // (peso cuadrático: 1 encima, 0 a ~media pantalla). Pesadas = radio grande.
-    let lightN = 0, heavyN = 0
+    // Motores de naves enemigas: un sonido por tipo, solo de las naves cerca del centro de la
+    // cámara (peso cuadrático: 1 encima, 0 a ~media pantalla), sumado por tipo.
+    const engines = this._engineW || (this._engineW = {})
+    for (const k in engines) engines[k] = 0
     const bedR = wv.width * 0.45
-    for (const e of this.enemies) {
-      if (e.dead) continue
+    // Cliente remoto: las naves son los sprites interpolados del snapshot (eById, con .type).
+    for (const e of (this.remote ? (this.eById?.values() || []) : this.enemies)) {
+      if (e.dead || e.visible === false) continue
       const k = Math.max(0, 1 - Math.hypot(e.x - wv.centerX, e.y - wv.centerY) / bedR)
-      if (k <= 0) continue
-      if (e.radius >= 16) heavyN += k * k
-      else lightN += k * k
+      if (k > 0) engines[e.type] = (engines[e.type] || 0) + k * k
     }
-    updateShipBeds(lightN, heavyN)
+    updateShipEngines(engines)
 
     if (this.remote) {
       renderRemote(this, time, delta)

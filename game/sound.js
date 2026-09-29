@@ -16,9 +16,20 @@ import missileUrl from './sounds/trhowlasermisil.ogg'
 import explosionUrl from './sounds/lowFrequency_explosion_001.ogg'
 import collectorUrl from './sounds/recolectorsound.ogg'
 import speedUrl from './sounds/barofspeed.ogg'
-import shipLightUrl from './sounds/shipmovesound.ogg'
-import shipHeavyUrl from './sounds/heavyshipmovesound.ogg'
 import { initTone, play as playTone, playExplosion, setEngine } from './audio/tone.js'
+
+// Motores de naves enemigas: un loop por tipo (Kenney "Sci-Fi Sounds", CC0 — ver
+// sounds/ships/KENNEY-LICENSE.txt). El archivo se llama como el EnemyType (grunt.ogg, brute.ogg…).
+const SHIP_ENGINE_URLS = Object.fromEntries(
+  Object.entries(import.meta.glob('./sounds/ships/*.ogg', { eager: true, query: '?url', import: 'default' }))
+    .map(([path, url]) => ['ship_' + path.split('/').pop().replace('.ogg', ''), url]),
+)
+// Volumen por nave cercana y techo de cada tipo: las grandes pesan más y suenan más graves.
+const SHIP_ENGINE_MIX = {
+  grunt: [0.035, 0.12], runner: [0.03, 0.11], skirmisher: [0.035, 0.12], kamikaze: [0.05, 0.14],
+  saboteur: [0.04, 0.12], leech: [0.04, 0.12], bomber: [0.05, 0.14], warden: [0.05, 0.13],
+  brute: [0.07, 0.16], artillery: [0.06, 0.15], commandship: [0.08, 0.17], mothership: [0.1, 0.2],
+}
 
 const MUSIC = { ingame: inGameUrl, transition: transitionUrl }
 const SAMPLES = {
@@ -28,8 +39,7 @@ const SAMPLES = {
   explosion: explosionUrl,
   mine: collectorUrl,
   speed: speedUrl,
-  shipLight: shipLightUrl,
-  shipHeavy: shipHeavyUrl,
+  ...SHIP_ENGINE_URLS,
 }
 const MUSIC_VOL = 0.5
 
@@ -285,7 +295,7 @@ export function sfxEnemyBeam(x, y) {
   if (!toneShot('enemyBeam', x, y, 0.6, 40)) playSample('enemybeam', x, y, { gain: 0.6, throttleMs: 0 })
 }
 export function sfxGeneralShot(x, y) {
-  if (!toneShot('generalShot', x, y, 0.55, 60)) playSample('laser', x, y, { gain: 0.55, rate: 1.5, throttleMs: 0 })
+  if (!toneShot('generalShot', x, y, 0.3, 60)) playSample('laser', x, y, { gain: 0.3, rate: 1.5, throttleMs: 0 }) // bajo: el comandante dispara seguido
 }
 export function sfxSpeed() { playSample('speed', null, null, { gain: 0.7, throttleMs: 120 }) }                  // cambio de velocidad
 
@@ -315,6 +325,7 @@ function bedTarget(name, count, perUnit, max) {
   if (!ctx) return
   let b = beds[name]
   if (!b) {
+    if (count <= 0.01) return // no crear el loop hasta que haga falta
     if (!buffers[name]) return // aún no cargó el sample
     const src = ctx.createBufferSource()
     src.buffer = buffers[name]
@@ -331,10 +342,17 @@ function bedTarget(name, count, perUnit, max) {
   b.gain.gain.value += (target - b.gain.gain.value) * 0.04 // suavizado
 }
 
-// Llamar cada frame con la cantidad de naves ligeras/pesadas CERCANAS (ponderada 0..1 por distancia).
-export function updateShipBeds(light, heavy) {
-  bedTarget('shipLight', light, 0.035, 0.2)
-  bedTarget('shipHeavy', heavy, 0.06, 0.22)
+// Llamar cada frame con { tipoDeNave: peso } de las naves CERCANAS (peso 0..1 por distancia a la
+// cámara, sumado por tipo). Cada tipo suena con su propio motor; los tipos ausentes se apagan.
+// Silencia todos los motores al salir de la partida (si no, quedan sonando con el último volumen).
+export function stopShipEngines() {
+  for (const [name, b] of Object.entries(beds)) if (name.startsWith('ship_')) b.gain.gain.value = 0
+}
+
+export function updateShipEngines(weights) {
+  for (const [type, [perUnit, max]] of Object.entries(SHIP_ENGINE_MIX)) {
+    bedTarget('ship_' + type, weights[type] || 0, perUnit, max)
+  }
 }
 
 // Llamar cada frame: mantiene el centro de cámara para espacializar los SFX.
