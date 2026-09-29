@@ -29,7 +29,7 @@ import { updateEnemies, nearestStructure, killEnemy } from '~/game/systems/enemi
 import { startPlacement, cancelPlacement, tryPlace, updateGhost, updateRangePreview } from '~/game/systems/placement.js'
 import { selectStructure, deselectStructure, applyUpgrade, setFireMode } from '~/game/systems/selection.js'
 import { onIntent, createRemote, renderRemote, sendSnapshot } from '~/game/net/sync.js'
-import { initSound, updateSound, setMusicState, updateShipBeds, sfxSpeed } from '~/game/sound.js'
+import { initSound, updateSound, setMusicState, updateShipBeds, sfxSpeed, setEngineFromWorld } from '~/game/sound.js'
 import { initAbilities, updateAbilities, requestAbility, handleTargetClick, cancelTargeting } from '~/game/systems/abilities.js'
 import { runBonuses } from '~/game/meta/research.js'
 import { WEAPON_ROLES } from '~/game/meta/arsenal.js'
@@ -112,6 +112,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.remote) { createRemote(this); return }
 
+    this.runStats = { bosses: 0, structuresBuilt: 0, abilitiesUsed: 0, giantsMined: 0, playMs: 0 }
     this.epSystem = new EnemyProjectileSystem(this)
 
     populateMeteorites(this)
@@ -192,17 +193,35 @@ export class GameScene extends Phaser.Scene {
     gameState.status = 'playing'
 
     if (net.isHost) {
-      net.onData = (d, nc) => onIntent(this, d, nc)
+      this.disconnectedGenerals = new Map()
+      net.onData = (d, nc) => {
+        if (d.t === 'ready' || d.t === 'bye') return
+        onIntent(this, d, nc)
+      }
       net.onOpen = (nc) => this.addClientGeneral(nc)
-      net.onDisconnect = (nc) => this.remoteCursors.delete(nc.pid)
-      for (const nc of net.conns) if (nc.open) this.addClientGeneral(nc)
+      net.onDisconnect = (nc) => this.disconnectClientGeneral(nc)
+      for (const nc of net.conns) if (nc.open && nc.authenticated) this.addClientGeneral(nc)
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+        for (const timer of this.disconnectedGenerals.values()) clearTimeout(timer)
+        this.disconnectedGenerals.clear()
+      })
     }
   }
 
   // Un general por cliente conectado (host-authoritative). Idempotente por pid.
   addClientGeneral(nc) {
-    net.sendTo(nc.pid, { t: 'welcome', pid: nc.pid }) // el cliente filtra su propio cursor
-    if (this.generals.has(nc.pid)) return
+    const timer = this.disconnectedGenerals?.get(nc.pid)
+    if (timer) clearTimeout(timer)
+    this.disconnectedGenerals?.delete(nc.pid)
+    const existing = this.generals.get(nc.pid)
+    if (existing && nc.rejoined) {
+      existing.setLabel(nc.name || ('Aliado ' + nc.pid))
+      return
+    }
+    if (existing) {
+      existing.destroy()
+      this.generals.delete(nc.pid)
+    }
     const g = new General(this, this.core.x - 60, this.core.y, GEN_TINTS[nc.pid % GEN_TINTS.length])
     g.pid = nc.pid
     g.setLabel(nc.name || ('Aliado ' + nc.pid))
@@ -212,6 +231,30 @@ export class GameScene extends Phaser.Scene {
       if (u) g.applyUpgrade(u)
     }
     this.generals.set(nc.pid, g)
+  }
+
+  disconnectClientGeneral(nc) {
+    this.remoteCursors.delete(nc.pid)
+    const g = this.generals.get(nc.pid)
+    if (!g) return
+    if (nc.intentional) {
+      g.destroy()
+      this.generals.delete(nc.pid)
+      return
+    }
+    g.setLabel((nc.name || ('Aliado ' + nc.pid)) + ' (desconectado)')
+    g.mineTarget = null
+    g.tx = g.x
+    g.ty = g.y
+    const previous = this.disconnectedGenerals.get(nc.pid)
+    if (previous) clearTimeout(previous)
+    const timer = setTimeout(() => {
+      if (this.disconnectedGenerals.get(nc.pid) !== timer) return
+      this.disconnectedGenerals.delete(nc.pid)
+      this.generals.get(nc.pid)?.destroy()
+      this.generals.delete(nc.pid)
+    }, 60000)
+    this.disconnectedGenerals.set(nc.pid, timer)
   }
 
   // ---------------------------------------------------------------- input
@@ -399,7 +442,7 @@ export class GameScene extends Phaser.Scene {
             this.deselectGeneral()
             selectStructure(this, hit)
           } else {
-            this.general.setTarget(wx, wy, this)
+            this.commandGeneral(wx, wy)
           }
         } else if (this._rightDown) {
           this.deselectGeneral()
@@ -460,8 +503,10 @@ export class GameScene extends Phaser.Scene {
             this.multiSel.clear()
             gameState.multiSelCount = 0
           }
-        } else {
+        } else if (this.selectedStructure) {
           deselectStructure(this)
+        } else {
+          this.commandGeneral(wx, wy)
         }
       }
       this._dragging = false
@@ -552,6 +597,18 @@ export class GameScene extends Phaser.Scene {
       bus.on('callWave', () => { if (!this.remote) callWaveEarly(this) }),
       bus.on('gotoEvent', () => { if (!this.remote) goToGiant(this) }),
     ]
+  }
+
+  commandGeneral(x, y) {
+    if (!this.general?.alive) return
+    this.general.setTarget(x, y, this)
+    const marker = this.add.graphics().setDepth(14).setPosition(x, y)
+    marker.lineStyle(2, 0x8be9fd, 0.9).strokeCircle(0, 0, 12)
+    marker.fillStyle(0x8be9fd, 0.18).fillCircle(0, 0, 12)
+    this.tweens.add({
+      targets: marker, alpha: 0, scale: 1.8, duration: 500, ease: 'Quad.out',
+      onComplete: () => marker.destroy(),
+    })
   }
 
 
@@ -686,6 +743,7 @@ export class GameScene extends Phaser.Scene {
     if (gameState.status !== 'playing' || d === 0) return
 
     this.elapsedMs += d
+    this.runStats.playMs += d
     gameState.timeElapsed = Math.floor(this.elapsedMs / 1000)
 
     // Clear beam graphics before structures draw on them
@@ -706,6 +764,7 @@ export class GameScene extends Phaser.Scene {
     updateWaves(this, d)
     updateEnemies(this, d)
     for (const g of this.generals.values()) g.update(d / 1000, this.world)
+    const me = this.general; if (me && d > 0) { const moved = this._genPrev ? Math.hypot(me.x - this._genPrev.x, me.y - this._genPrev.y) : 0; this._genPrev = { x: me.x, y: me.y }; setEngineFromWorld(me.x, me.y, me.alive ? moved / (me.speed * d / 1000) : 0) }
     updateAbilities(this, d)
     updateSpecialMeteors(this, d)
     gameState.general.alive = this.general.alive
@@ -781,6 +840,12 @@ export class GameScene extends Phaser.Scene {
       victory,
       kills: gameState.kills,
       sectorReward: this.sector?.reward || 0,
+      bosses: this.runStats.bosses,
+      playtimeMs: this.runStats.playMs,
+      structuresBuilt: this.runStats.structuresBuilt,
+      abilitiesUsed: this.runStats.abilitiesUsed,
+      giantsMined: this.runStats.giantsMined,
+      coop: net.conns.length > 0,
     })
     gameState.runRewards.newCosmetics = claimUnlocks().map((c) => c.name)
     if (gameState.runRewards.levelUp || gameState.runRewards.newCosmetics.length) sfxLevelUp()

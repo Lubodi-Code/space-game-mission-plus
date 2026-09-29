@@ -4,6 +4,7 @@ import { gameState } from '~/game/gameState'
 import { bus } from '~/game/bus'
 import { STRUCTURES, SPEED } from '~/game/constants'
 import { goToLobby } from '~/game/appState'
+import { net } from '~/game/net'
 import { buildUpgradeTree } from '~/game/structures/upgrades'
 import '~/game/meta/research'
 import { ABILITIES } from '~/game/systems/abilities'
@@ -17,6 +18,7 @@ import Settings from './Settings.vue'
 import GameIcon from './GameIcon.vue'
 
 const settingsOpen = ref(false)
+const exitOpen = ref(false)
 const coreExpanded = ref(false)
 const buildbarExpanded = ref(true)
 
@@ -65,7 +67,16 @@ function setSpeed(v) {
 }
 
 function mainMenu() {
+  const savedRun = appState.mp.role === 'solo' ? sessionStorage.getItem('sgmp_solo_run') : null
+  if (appState.mp.role !== 'solo') net.leave()
   goToLobby()
+  if (savedRun) sessionStorage.setItem('sgmp_solo_run', savedRun)
+  appState.mp.role = 'solo'
+  appState.mp.connected = false
+  appState.mp.players = []
+  appState.mp.status = 'idle'
+  appState.mp.code = null
+  appState.mp.attempt = 0
 }
 
 const timeLabel = computed(() => {
@@ -288,10 +299,16 @@ const cancelable = computed(() => !!(activeLabel.value || gameState.generalMode 
 function goToEvent() {
   bus.emit('gotoEvent')
 }
+const eventDismissed = ref(false)
+watch(() => [gameState.event?.kind, gameState.event?.timeLeft], ([kind, timeLeft], [oldKind, oldTimeLeft]) => {
+  if (kind !== oldKind || (kind && oldTimeLeft != null && timeLeft > oldTimeLeft + 1)) {
+    eventDismissed.value = false
+  }
+})
 // Flecha al borde de la pantalla hacia el evento cuando no está a la vista.
 const eventArrow = computed(() => {
   const ev = gameState.event
-  if (!ev || ev.onScreen) return null
+  if (!ev || ev.onScreen || eventDismissed.value) return null
   const a = ev.angle
   const x = 50 + Math.cos(a) * 44
   const y = 50 + Math.sin(a) * 40
@@ -363,7 +380,7 @@ function onKey(e) {
   // Fin de partida: solo reinicio / menú.
   if (gameState.status === 'gameover' || gameState.status === 'victory') {
     if (e.key === 'r' || e.key === 'R' || e.key === 'Enter') restart()
-    else if (e.key === 'm' || e.key === 'M') mainMenu()
+    else if (e.key === 'm' || e.key === 'M') exitOpen.value = true
     return
   }
 
@@ -428,6 +445,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
           <GameIcon name="crystals" :size="15" title="Cristales" /><span class="tabular-nums">{{ profile.crystals }}</span>
         </span>
         <button class="hud-btn shrink-0" aria-label="Ajustes" title="Ajustes" @click="settingsOpen = true">⚙ <span class="hidden sm:inline">Ajustes</span></button>
+        <button class="hud-btn shrink-0" aria-label="Salir de la partida" title="Salir de la partida" @click="exitOpen = true">⏏ <span class="hidden sm:inline">Salir</span></button>
       </div>
     </div>
 
@@ -592,7 +610,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
           <button
             class="px-6 py-2 rounded-lg bg-white/5 ring-1 ring-cyan-400/20 text-cyan-200/80
                    hover:bg-cyan-400/10 hover:text-white transition-colors"
-            @click="mainMenu"
+            @click="exitOpen = true"
           >
             Menú principal <span class="opacity-50">(M)</span>
           </button>
@@ -750,7 +768,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
     <AbilityBar v-if="gameState.status === 'playing'" :class="{ 'ability-under-sheet': sheetOpen }" />
 
     <!-- Evento: meteorito gigante (systems/specialMeteors.js) -->
-    <div v-if="gameState.event?.kind === 'giant' && gameState.status === 'playing'" class="event-card pointer-events-auto">
+    <div v-if="gameState.event?.kind === 'giant' && gameState.status === 'playing' && !eventDismissed" class="event-card pointer-events-auto">
       <span class="text-lg">☄</span>
       <span class="leading-tight">
         <b class="text-amber-200">Meteorito gigante</b>
@@ -758,6 +776,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
       </span>
       <button v-if="!gameState.event.mining && !gameState.event.remote" class="event-go" @click="goToEvent">Ir</button>
       <span v-else class="text-[10px] text-emerald-200 font-bold">Minando…</span>
+      <button class="event-close pointer-events-auto" aria-label="Descartar aviso" @click="eventDismissed = true">✕</button>
     </div>
     <div v-if="eventArrow && gameState.status === 'playing'" class="event-arrow" :style="eventArrow">➤</div>
 
@@ -857,6 +876,15 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
       </button>
     </div>
     <Settings v-if="settingsOpen" :open="settingsOpen" @close="settingsOpen = false" />
+    <div v-if="exitOpen" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 pointer-events-auto p-4" role="dialog" aria-modal="true" aria-label="Salir de la partida">
+      <div class="w-full max-w-xs rounded-xl bg-[#0a0f1c] p-5 text-center ring-1 ring-cyan-300/40 shadow-xl">
+        <p class="text-lg font-semibold">¿Salir de la partida?</p>
+        <div class="mt-5 flex justify-center gap-3">
+          <button class="hud-btn" @click="exitOpen = false">Cancelar</button>
+          <button class="rounded-md bg-red-500/80 px-4 py-2 text-sm font-bold text-white" @click="mainMenu">Sí, salir</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -917,6 +945,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 }
 .event-go {
   @apply px-3 py-1 rounded-full font-bold text-[#05070f] bg-amber-300 active:scale-95;
+}
+.event-close {
+  @apply w-8 h-8 flex shrink-0 items-center justify-center rounded-full text-amber-100/80 hover:bg-white/15 active:scale-95;
 }
 .event-arrow {
   @apply absolute text-2xl text-amber-300 pointer-events-none;

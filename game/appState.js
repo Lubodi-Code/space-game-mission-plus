@@ -14,14 +14,15 @@ export const appState = reactive({
   difficulty: saved?.difficulty || 'normal', // 'normal' | 'hard'
   mode: saved?.mode || 'classic', // ver game/modes/index.js
   sector: saved?.sector || 1, // ver game/meta/sectors.js
+  seed: Number.isInteger(saved?.seed) ? saved.seed : 0,
   playerName: 'Comandante',
-  mp: { role: 'solo', connected: false, code: null, ping: false, players: [] },
+  mp: { role: 'solo', connected: false, code: null, players: [], status: 'idle', attempt: 0 },
 })
 
 watch(
-  () => [appState.view, appState.difficulty, appState.mode, appState.sector],
-  ([view, difficulty, mode, sector]) => {
-    sessionStorage.setItem(SAVE_KEY, JSON.stringify({ view, difficulty, mode, sector }))
+  () => [appState.view, appState.difficulty, appState.mode, appState.sector, appState.seed],
+  ([view, difficulty, mode, sector, seed]) => {
+    sessionStorage.setItem(SAVE_KEY, JSON.stringify({ view, difficulty, mode, sector, seed }))
   }
 )
 
@@ -32,11 +33,13 @@ export const DIFFICULTY = {
   hard:   { label: 'Difícil', hpMult: 1.5, dmgMult: 1.35, countMult: 5.5, gapMult: 0.25, startMinerals: 200 },
 }
 
-export function startGame(difficulty, mode = appState.mode, sector = appState.sector) {
+export function startGame(difficulty, mode = appState.mode, sector = appState.sector, seed = Math.floor(Math.random() * 0x80000000)) {
   sessionStorage.removeItem('sgmp_solo_run') // JUGAR siempre empieza partida nueva, no reanuda una vieja
+  if (appState.mp.status === 'lost') appState.mp.status = 'idle' // aviso de una sala anterior: no tapar la partida nueva
   appState.difficulty = difficulty
   appState.mode = mode
   appState.sector = sector
+  appState.seed = seed
   appState.view = 'game'
 }
 

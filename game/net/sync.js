@@ -14,6 +14,12 @@ import { explosion, hitFlash, drawBeam, spawnMarker, auraBurst, drawPlayerCursor
 import { glowBlend } from '~/game/render/blend.js'
 import { GEN_TINTS } from '~/game/General.js'
 import { UPGRADES } from '~/game/structures/upgrades.js'
+import { ABILITY_IDS } from '~/game/net/protocol.js'
+import { ABILITIES, abilityCooldownsFor, requestAbility } from '~/game/systems/abilities.js'
+import { callWaveEarly } from '~/game/systems/waves.js'
+import { upgradeBurst } from '~/game/render/fx.js'
+import { sfxUpgrade } from '~/game/sound.js'
+import { selectStructure } from '~/game/systems/selection.js'
 
 // Capa de sincronización multijugador (host-authoritative ~12 Hz).
 // Host: buildSnapshot/sendSnapshot/onIntent. Cliente: createRemote/applySnapshot/
@@ -31,13 +37,46 @@ export function onIntent(scene, d, nc) {
     scene.placementKey = k
   } else if (d.t === 'cursor') {
     scene.remoteCursors?.set(nc.pid, { x: d.x, y: d.y })
-  } else if (d.t === 'general') {
+  } else if (d.t === 'move' || d.t === 'general') { // parseIntent normaliza 'general' → 'move'
     scene.generals.get(nc.pid)?.setTarget(d.x, d.y, scene)
   } else if (d.t === 'hello') {
     nc.name = d.name || nc.name
     if (d.name) scene.generals.get(nc.pid)?.setLabel(d.name)
   } else if (d.t === 'speed') {
     scene.setSpeed(d.v)
+  } else if (d.t === 'upgrade') {
+    // Misma validación y efectos de applyUpgrade, sin seleccionar en el HUD del host.
+    const s = scene.structures.find((x) => x.id === d.sid)
+    const upg = UPGRADES.find((u) => u.id === d.uid)
+    if (!s || s.dead || !s.applyUpgrade || !upg ||
+      (upg.requires && !(s.upgrades || []).includes(upg.requires)) ||
+      (s.upgrades || []).includes(upg.id) || gameState.minerals < (upg.cost || 0)) return
+    gameState.minerals -= upg.cost || 0
+    s.applyUpgrade(upg)
+    s.applyUpgradeVisual?.(upg)
+    s.upgradePulse = { color: upg.tint || s.def.color, t: 0 }
+    upgradeBurst(scene, s.x, s.y, upg.tint || s.def.color, s.radius, upg.label)
+    sfxUpgrade(s.x, s.y)
+  } else if (d.t === 'demolish') {
+    const selected = scene.selectedStructure
+    const pending = scene._pendingFocusId
+    scene.demolishStructure(d.sid)
+    if (selected && !selected.dead && scene.structures.includes(selected)) {
+      selectStructure(scene, selected)
+      scene._pendingFocusId = pending
+    }
+  } else if (d.t === 'fireMode') {
+    const s = scene.structures.find((x) => x.id === d.sid)
+    if (!s || s.dead) return
+    s.fireMode = d.mode
+    s.focusTarget = d.mode === 'focus' && d.targetId != null
+      ? scene.enemies.find((e) => e.id === d.targetId && !e.dead) || null : null
+  } else if (d.t === 'upgradeGeneral') {
+    scene.applyGeneralUpgrade(d.uid)
+  } else if (d.t === 'ability') {
+    requestAbility(scene, d.id, nc.pid, { x: d.x, y: d.y, targetId: d.targetId })
+  } else if (d.t === 'callWave') {
+    callWaveEarly(scene)
   }
 }
 
@@ -75,9 +114,9 @@ export function buildSnapshot(scene) {
       expl,
       aura,
     },
-    // [pid, x, y, hp, alive, name]. El nombre va en cada snap (≤16 chars × ≤4 generales,
+    // [pid, x, y, hp, alive, name, cooldownFractions]. El nombre va en cada snap (≤16 chars × ≤4 generales,
     // ~12 Hz). ponytail: trivial; separar a un mensaje aparte solo si el ancho de banda importa.
-    gen: [...scene.generals.values()].map((g) => [g.pid, Math.round(g.x), Math.round(g.y), Math.round(g.hp), g.alive ? 1 : 0, g.labelName || '']),
+    gen: [...scene.generals.values()].map((g) => [g.pid, Math.round(g.x), Math.round(g.y), Math.round(g.hp), g.alive ? 1 : 0, g.labelName || '', abilityCooldownsFor(scene, g.pid).map((c) => Math.round(c.frac * 1000) / 1000)]),
     // Esferas del Enjambre Sanador (solo posición + si está curando) para que el cliente las vea.
     orbs: (scene.healers || []).map((h) => [Math.round(h.x), Math.round(h.y), h.target ? 1 : 0]),
     // Cursores de todos los jugadores: host (pid 0, puntero local) + clientes (intents 'cursor').
@@ -111,7 +150,7 @@ export function createRemote(scene) {
   scene.eMissiles = new Map() // id -> sprite 'star' (misiles enemigos)
   scene._fx = null
   scene._snap = null
-  scene.myPid = -1 // llega en 'welcome'; hasta entonces no se filtra ningún cursor
+  scene.myPid = net.myPid ?? -1 // el 'welcome' suele llegar en el lobby; si llega después, lo toma onData
   scene.orbSprites = [] // pool de sprites para las esferas sanadoras
   scene.rCursors = new Map() // pid -> {x,y,tx,ty} interpolado
   net.onData = (d) => {
@@ -229,7 +268,7 @@ export function applySnapshot(scene, snap) {
 
   // Generales con interpolación (tx/ty para movimiento suave en update) + nombre encima.
   const seenG = new Set()
-  for (const [pid, x, y, hp, alive, name] of snap.gen) {
+  for (const [pid, x, y, hp, alive, name, cooldowns] of snap.gen) {
     seenG.add(pid)
     let g = scene.genSprites.get(pid)
     if (!g) {
@@ -242,6 +281,16 @@ export function applySnapshot(scene, snap) {
     g.tx = x; g.ty = y; g.setVisible(!!alive)
     if (name && g.label.text !== name) g.label.setText(name)
     g.label.setVisible(!!alive)
+    if (pid === scene.myPid) {
+      gameState.general.alive = !!alive
+      gameState.general.hp = hp
+      const abilities = {}
+      ABILITY_IDS.forEach((id, i) => {
+        const frac = Math.max(0, Math.min(1, cooldowns?.[i] || 0))
+        abilities[id] = { unlocked: true, ready: frac === 0, cdLeft: Math.ceil(frac * ABILITIES[id].cooldownMs / 1000), frac }
+      })
+      gameState.abilities = abilities
+    }
   }
   for (const [pid, g] of scene.genSprites) if (!seenG.has(pid)) { g.label?.destroy(); g.destroy(); scene.genSprites.delete(pid) }
 
@@ -304,8 +353,10 @@ export function setupRemoteInput(scene) {
 
   scene.input.on('pointerdown', (p) => {
     if (p.wasTouch) { scene._downX = p.x; scene._downY = p.y; scene._dragging = false } else scene.beginMouseDrag(p)
+    scene._remoteRightDown = p.rightButtonDown()
     if (p.rightButtonDown()) {
-      if (gameState.generalMode === 'selected') gameState.generalMode = null
+      if (gameState.abilityTargeting) gameState.abilityTargeting = null
+      else if (gameState.generalMode === 'selected') gameState.generalMode = null
       else { scene.placementKey = null; gameState.activeBuild = null; scene.ghost.setVisible(false) }
     }
   })
@@ -330,14 +381,36 @@ export function setupRemoteInput(scene) {
   })
 
   scene.input.on('pointerup', (p) => {
-    if (!scene._dragging) {
-      if (scene.placementKey && gameState.generalMode !== 'selected') {
+    if (!scene._dragging && !scene._remoteRightDown) {
+      if (gameState.abilityTargeting) {
+        const id = gameState.abilityTargeting
+        let targetId = null
+        if (ABILITIES[id]?.target === 'enemy') {
+          let bestD = 60
+          for (const [eid, e] of scene.eById) {
+            const d = Math.hypot(e.x - p.worldX, e.y - p.worldY)
+            if (d <= bestD) { bestD = d; targetId = eid }
+          }
+        }
+        net.send({ t: 'ability', id, x: p.worldX, y: p.worldY, targetId })
+        gameState.abilityTargeting = null
+      } else if (scene._remoteFocusSid != null) {
+        let targetId = null; let bestD = 60
+        for (const [eid, e] of scene.eById) {
+          const d = Math.hypot(e.x - p.worldX, e.y - p.worldY)
+          if (d <= bestD) { bestD = d; targetId = eid }
+        }
+        if (targetId != null) net.send({ t: 'fireMode', sid: scene._remoteFocusSid, mode: 'focus', targetId })
+        scene._remoteFocusSid = null
+      } else if (scene.placementKey && gameState.generalMode !== 'selected') {
         net.send({ t: 'build', key: scene.placementKey, x: p.worldX, y: p.worldY })
-      } else if (gameState.generalMode === 'selected') {
-        net.send({ t: 'general', x: p.worldX, y: p.worldY })
+      } else if (gameState.generalMode === 'selected' ||
+        ![...scene.sById.values()].some((s) => Math.hypot(s.x - p.worldX, s.y - p.worldY) <= Math.max(s.radius, 12))) {
+        net.send({ t: 'move', x: p.worldX, y: p.worldY })
       }
     }
     scene._dragging = false
+    scene._remoteRightDown = false
   })
 
   scene.input.on('wheel', (_p, _o, _dx, dy) => {
@@ -354,11 +427,35 @@ export function setupRemoteInput(scene) {
       scene.ghost.setVisible(false)
     }),
     bus.on('cancel', () => {
-      if (gameState.generalMode === 'selected') gameState.generalMode = null
+      if (gameState.abilityTargeting) gameState.abilityTargeting = null
+      else if (gameState.generalMode === 'selected') gameState.generalMode = null
       else { scene.placementKey = null; gameState.activeBuild = null; scene.ghost.setVisible(false) }
+      scene._remoteFocusSid = null
     }),
     bus.on('speed', (v) => net.send({ t: 'speed', v })),
+    bus.on('upgrade', ({ structureId, upgradeId }) => net.send({ t: 'upgrade', sid: structureId, uid: upgradeId })),
+    bus.on('demolish', ({ structureId }) => net.send({ t: 'demolish', sid: structureId })),
+    bus.on('fireMode', ({ structureId, mode }) => {
+      scene._remoteFocusSid = mode === 'focus' ? structureId : null
+      net.send({ t: 'fireMode', sid: structureId, mode })
+    }),
+    bus.on('upgradeGeneral', (id) => net.send({ t: 'upgradeGeneral', uid: id })),
+    bus.on('ability', (id) => {
+      const def = ABILITIES[id]
+      if (!def || !gameState.abilities[id]?.ready) return
+      if (def.target === 'self') net.send({ t: 'ability', id })
+      else gameState.abilityTargeting = gameState.abilityTargeting === id ? null : id
+    }),
+    bus.on('callWave', () => net.send({ t: 'callWave' })),
+    bus.on('gotoEvent', () => {
+      const ev = scene._snap?.event
+      if (ev) scene.cam.pan(ev.x, ev.y, 450, 'Sine.easeInOut')
+    }),
   ]
+  scene.input.keyboard?.on('keydown-ESC', () => {
+    gameState.abilityTargeting = null
+    scene._remoteFocusSid = null
+  })
 }
 
 export function drawRemoteGhost(scene, x, y) {

@@ -1,16 +1,18 @@
 <script setup>
-import { ref, computed } from 'vue'
-import { startGame, DIFFICULTY } from '~/game/appState'
-import { appState } from '~/game/appState'
+import { ref, computed, onMounted, watch } from 'vue'
+import { startGame, DIFFICULTY, appState } from '~/game/appState'
 import { MODES, DEFAULT_MODE } from '~/game/modes/index'
 import { SECTORS } from '~/game/meta/sectors'
 import { profile, levelFromXp } from '~/game/meta/profile'
 import { net } from '~/game/net'
+import { playerColor } from '~/game/net/protocol'
 import { initUiSound, sfxUi } from '~/game/sound'
 import Settings from './Settings.vue'
+import AccountPanel from './AccountPanel.vue'
+import { friends, dismissInvite } from '~/game/meta/friends'
+import { account, displayName, initAccount } from '~/game/meta/account'
 
 const settingsOpen = ref(false)
-
 const difficulty = ref(appState.difficulty || 'normal')
 const mode = ref(MODES[appState.mode] ? appState.mode : DEFAULT_MODE)
 const sector = ref(Math.min(appState.sector || 1, profile.sectorUnlocked))
@@ -28,9 +30,21 @@ function openView(v) {
   sfxUi('click')
   appState.view = v
 }
+
 const joinCode = ref(new URLSearchParams(location.search).get('join')?.toUpperCase() || '')
 const playerName = ref(localStorage.getItem('sgmp_name') || 'Comandante')
+onMounted(() => initAccount())
+watch(() => account.user, (user) => {
+  if (user && (!playerName.value.trim() || playerName.value === 'Comandante')) {
+    playerName.value = displayName(user) || 'Comandante'
+  }
+}, { immediate: true })
 const linkCopied = ref(false)
+const roomError = ref('')
+const forceStart = ref(false)
+const waitingCount = computed(() => appState.mp.players.filter((p) => !p.host && !p.ready).length)
+const ownReady = computed(() => appState.mp.players.find((p) => p.pid === net.myPid)?.ready || false)
+const playerHex = (pid) => `#${playerColor(pid).toString(16).padStart(6, '0')}`
 
 function copyInviteLink() {
   const url = `${location.origin}${location.pathname}?join=${appState.mp.code}`
@@ -39,67 +53,168 @@ function copyInviteLink() {
   setTimeout(() => { linkCopied.value = false }, 1500)
 }
 
-function play() {
-  appState.playerName = playerName.value.slice(0, 16) || 'Comandante'
-  localStorage.setItem('sgmp_name', appState.playerName)
-  initUiSound()
-  startGame(difficulty.value, mode.value, sector.value)
-}
-
 function saveName() {
   appState.playerName = playerName.value.slice(0, 16) || 'Comandante'
   localStorage.setItem('sgmp_name', appState.playerName)
 }
 
-function hostGame() {
+function play() {
+  if (appState.mp.role === 'client' || appState.mp.status === 'connecting' || appState.mp.status === 'reconnecting') return
+  if (appState.mp.role === 'host') {
+    if (waitingCount.value && !forceStart.value) { forceStart.value = true; return }
+    const seed = Math.floor(Math.random() * 0x80000000)
+    net.send({ t: 'start', difficulty: difficulty.value, mode: mode.value, sector: sector.value, seed })
+    startGame(difficulty.value, mode.value, sector.value, seed)
+    return
+  }
   saveName()
-  const code = Math.random().toString(36).slice(2, 6).toUpperCase()
-  appState.mp.role = 'host'
-  appState.mp.code = code
-  appState.mp.players = [{ name: appState.playerName, host: true }]
-  net.onOpen = (conn) => { appState.mp.connected = true; net.send({ t: 'ping', name: appState.playerName }) }
-  net.onData = (d, conn) => {
-    if (d.t === 'pong') {
-      appState.mp.ping = true
-      if (d.name) {
-        conn.name = d.name // el host recuerda el nombre por conexión (general etiquetado en juego)
-        if (!appState.mp.players.find((p) => p.name === d.name)) {
-          appState.mp.players.push({ name: d.name, host: false })
-        }
-      }
-    }
-  }
-  net.onError = () => { appState.mp.role = 'solo'; appState.mp.code = null; appState.mp.players = [] }
-  net.onDisconnect = (conn) => {
-    appState.mp.players = appState.mp.players.filter((p) => p.name !== conn.name)
-  }
-  net.host(code, appState.playerName)
+  initUiSound()
+  startGame(difficulty.value, mode.value, sector.value)
 }
 
-function joinGame() {
+function leaveRoom(status = 'idle') {
+  appState.mp.role = 'solo'
+  appState.mp.connected = false
+  appState.mp.code = null
+  appState.mp.players = []
+  appState.mp.status = status
+  appState.mp.attempt = 0
+  forceStart.value = false
+  net.leave()
+}
+
+function publishRoster() {
+  forceStart.value = false
+  net.send({ t: 'roster', players: appState.mp.players })
+}
+
+function connectionError(err) {
+  roomError.value = `Error de conexión: ${err?.message || String(err)}`
+  if (appState.mp.status === 'connecting') leaveRoom()
+}
+
+function setConnectionHandlers(role) {
+  net.onOpen = () => {
+    if (appState.mp.role !== role) return
+    appState.mp.connected = true
+    appState.mp.status = 'connected'
+    appState.mp.attempt = 0
+    roomError.value = ''
+  }
+  net.onReconnecting = (attempt) => {
+    if (appState.mp.role !== role) return
+    appState.mp.connected = false
+    appState.mp.status = 'reconnecting'
+    appState.mp.attempt = attempt
+  }
+  net.onReconnected = () => {
+    if (appState.mp.role !== role) return
+    appState.mp.connected = true
+    appState.mp.status = 'connected'
+    appState.mp.attempt = 0
+    roomError.value = ''
+  }
+  net.onError = (err) => {
+    if (appState.mp.role === role) connectionError(err)
+  }
+  net.onHostLost = () => {
+    if (appState.mp.role !== 'client') return
+    leaveRoom('lost')
+    roomError.value = ''
+  }
+}
+
+async function hostGame() {
   saveName()
-  if (!joinCode.value) return
-  appState.mp.role = 'client'
-  appState.mp.code = joinCode.value.toUpperCase()
-  appState.mp.players = [{ name: appState.playerName, host: false }]
-  net.onOpen = (conn) => { appState.mp.connected = true }
+  const code = Math.random().toString(36).slice(2, 6).toUpperCase()
+  roomError.value = ''
+  net.myEquipped = { ...profile.cosmetics.equipped }
+  appState.mp.role = 'host'
+  appState.mp.code = code
+  appState.mp.players = [{ pid: 0, name: appState.playerName, ready: true, host: true, equipped: net.myEquipped }]
+  appState.mp.status = 'connecting'
+  appState.mp.connected = false
+  appState.mp.attempt = 0
+  setConnectionHandlers('host')
   net.onData = (d, conn) => {
-    if (d.t === 'ping') {
-      appState.mp.ping = true
-      if (d.name && !appState.mp.players.find((p) => p.name === d.name)) {
-        appState.mp.players.push({ name: d.name, host: true })
-      }
-      net.send({ t: 'pong', name: appState.playerName })
+    if (appState.mp.role !== 'host') return
+    if (d.t === 'hello') {
+      conn.name = d.name
+      const previous = appState.mp.players.find((p) => p.pid === conn.pid)
+      const player = { pid: conn.pid, name: d.name || 'Comandante', ready: previous?.ready || false, host: false, equipped: d.equipped }
+      appState.mp.players = [...appState.mp.players.filter((p) => p.pid !== conn.pid), player].sort((a, b) => a.pid - b.pid)
+      publishRoster()
+    } else if (d.t === 'ready') {
+      const player = appState.mp.players.find((p) => p.pid === conn.pid)
+      if (player) { player.ready = d.ready; publishRoster() }
+    }
+  }
+  net.onDisconnect = (conn) => {
+    if (appState.mp.role !== 'host') return
+    appState.mp.players = appState.mp.players.filter((p) => p.pid !== conn.pid)
+    publishRoster()
+  }
+  try {
+    await net.host(code, appState.playerName)
+    if (appState.mp.role === 'host' && appState.mp.code === code) {
+      appState.mp.connected = true
+      appState.mp.status = 'connected'
+    }
+  } catch (err) {
+    if (appState.mp.role === 'host' && appState.mp.code === code) connectionError(err)
+  }
+}
+
+// Invitación de un amigo (Realtime): unirse usa el mismo flujo que escribir el código a mano.
+function acceptInvite() {
+  const inv = friends.invite
+  if (!inv) return
+  joinCode.value = inv.roomCode
+  dismissInvite()
+  void joinGame()
+}
+
+async function joinGame() {
+  saveName()
+  const code = joinCode.value.trim().toUpperCase()
+  if (!code) return
+  roomError.value = ''
+  net.myEquipped = { ...profile.cosmetics.equipped }
+  appState.mp.role = 'client'
+  appState.mp.code = code
+  appState.mp.players = []
+  appState.mp.status = 'connecting'
+  appState.mp.connected = false
+  appState.mp.attempt = 0
+  setConnectionHandlers('client')
+  net.onData = (d) => {
+    if (appState.mp.role !== 'client') return
+    if (d.t === 'welcome') {
+      net.myPid = d.pid
+    } else if (d.t === 'roster') {
+      appState.mp.players = d.players
+    } else if (d.t === 'start') {
+      startGame(d.difficulty, d.mode, d.sector, d.seed)
     } else if (d.t === 'snap') {
       appState.mp.connected = true
+      appState.mp.status = 'connected'
       appState.view = 'game'
     }
   }
-  net.onError = () => { appState.mp.role = 'solo'; appState.mp.players = [] }
-  net.join(appState.mp.code, appState.playerName)
+  net.onDisconnect = () => {
+    if (appState.mp.role === 'client') appState.mp.connected = false
+  }
+  try {
+    await net.join(code, appState.playerName)
+  } catch (err) {
+    if (appState.mp.role === 'client' && appState.mp.code === code) connectionError(err)
+  }
 }
 
-
+function toggleReady() {
+  if (appState.mp.status !== 'connected') return
+  net.send({ t: 'ready', ready: !ownReady.value })
+}
 </script>
 
 <template>
@@ -122,6 +237,14 @@ function joinGame() {
         Expande tu red de energía desde el Núcleo, mina meteoritos, construye
         defensas y sobrevive a <b class="text-cyan-200">{{ MODES[mode].waveCount }} oleadas</b> de la horda.
       </p>
+
+      <AccountPanel class="mt-6 w-full max-w-md" />
+      <div v-if="friends.invite && appState.mp.role === 'solo'" class="invite mt-3 w-full max-w-md" role="status">
+        <img v-if="friends.invite.fromAvatar" :src="friends.invite.fromAvatar" alt="" referrerpolicy="no-referrer" class="invite-avatar" />
+        <span class="invite-text"><b>{{ friends.invite.fromName }}</b> te invita a su sala</span>
+        <button type="button" class="invite-go" @click="acceptInvite">Unirse</button>
+        <button type="button" class="invite-x" aria-label="Descartar invitación" @click="dismissInvite">✕</button>
+      </div>
 
       <!-- Nombre de jugador -->
       <div class="mt-6 w-full max-w-xs">
@@ -214,7 +337,15 @@ function joinGame() {
         </div>
       </div>
 
-      <button class="play-btn mt-8" @click="play">JUGAR</button>
+      <button
+        v-if="appState.mp.role !== 'client'"
+        class="play-btn mt-8"
+        :disabled="appState.mp.status === 'connecting' || appState.mp.status === 'reconnecting'"
+        @click="play"
+      >JUGAR</button>
+      <p v-if="appState.mp.role === 'host' && forceStart && waitingCount" class="mt-3 max-w-xs text-sm text-amber-200">
+        Esperando a {{ waitingCount }} jugador(es) · tocá de nuevo para empezar igual
+      </p>
 
       <!-- Multijugador -->
       <div class="mt-8 border-t border-cyan-400/10 pt-6 w-full max-w-xs">
@@ -235,18 +366,35 @@ function joinGame() {
           </div>
         </div>
 
-        <div v-else class="flex flex-col items-center gap-2 text-sm">
+        <div v-else class="flex flex-col items-center gap-3 text-sm">
           <div class="flex items-center gap-2">
             <span class="text-cyan-300/60">Código:</span>
             <span class="text-cyan-200 font-mono tracking-widest">{{ appState.mp.code }}</span>
           </div>
-          <div v-if="appState.mp.connected" class="text-xs text-green-400/80">Conectado</div>
-          <div v-else class="text-xs text-yellow-400/60 animate-pulse">Esperando...</div>
-          <div v-if="appState.mp.ping" class="text-xs text-green-400/80">ping OK ✓</div>
+          <div v-if="appState.mp.status === 'connecting'" class="text-xs text-amber-200 animate-pulse">Conectando…</div>
+          <div v-else-if="appState.mp.status === 'reconnecting'" class="text-xs text-amber-200 animate-pulse">
+            Reconectando (intento {{ appState.mp.attempt }})…
+          </div>
+          <div v-else-if="appState.mp.status === 'connected'" class="text-xs text-green-400/80">Conectado</div>
+          <ul v-if="appState.mp.players.length" class="w-full space-y-1.5 text-left" aria-label="Jugadores en la sala">
+            <li v-for="player in appState.mp.players" :key="player.pid" class="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 ring-1 ring-cyan-400/10">
+              <span class="h-3 w-3 shrink-0 rounded-full" :style="{ backgroundColor: playerHex(player.pid) }" aria-hidden="true"></span>
+              <span class="min-w-0 flex-1 truncate text-cyan-100">{{ player.name }}</span>
+              <span v-if="player.host" class="text-amber-200" title="Anfitrión" aria-label="Anfitrión">♛</span>
+              <span v-if="player.ready" class="text-green-300" title="Listo" aria-label="Listo">✓</span>
+              <span v-else class="text-cyan-300/50 text-xs">No listo</span>
+            </li>
+          </ul>
+          <button v-if="appState.mp.role === 'client'" class="ready-btn w-full" :disabled="appState.mp.status !== 'connected'" @click="toggleReady">
+            {{ ownReady ? 'No listo' : 'Estoy listo' }}
+          </button>
           <button v-if="appState.mp.role === 'host'" class="mp-btn mt-1" @click="copyInviteLink">
             {{ linkCopied ? 'Enlace copiado ✓' : 'Copiar enlace de invitación' }}
           </button>
+          <button class="text-xs text-cyan-200/60 underline underline-offset-4 hover:text-cyan-100" @click="leaveRoom()">Salir de la sala</button>
         </div>
+        <p v-if="appState.mp.status === 'lost'" class="mt-3 text-sm text-amber-200">El anfitrión se desconectó. Volviste al modo solo.</p>
+        <p v-if="roomError" class="mt-3 text-sm text-red-300" role="alert">{{ roomError }}</p>
       </div>
 
       <div class="mt-10 text-[11px] text-cyan-300/40 space-y-1">
@@ -260,6 +408,17 @@ function joinGame() {
 </template>
 
 <style scoped>
+.invite {
+  display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.6rem 0.55rem 0.75rem; border-radius: 0.9rem; text-align: left;
+  background: linear-gradient(135deg, rgba(80,250,123,0.14), rgba(10,15,28,0.9) 60%); box-shadow: inset 0 0 0 1px rgba(80,250,123,0.45);
+  animation: invite-in 0.3s ease-out;
+}
+.invite-avatar { width: 2rem; height: 2rem; border-radius: 999px; object-fit: cover; flex: none; }
+.invite-text { flex: 1; min-width: 0; font-size: 0.85rem; color: #cfe8ff; }
+.invite-text b { color: #fff; }
+.invite-go { min-height: 2.25rem; padding: 0 0.9rem; border-radius: 0.7rem; background: #50fa7b; color: #05070f; font-weight: 800; font-size: 0.8rem; }
+.invite-x { width: 2rem; height: 2rem; border-radius: 999px; color: rgba(207,232,255,0.6); }
+@keyframes invite-in { from { opacity: 0; transform: translateY(-6px); } }
 @reference 'tailwindcss';
 
 .lobby {
@@ -288,6 +447,13 @@ function joinGame() {
          bg-cyan-300 hover:bg-cyan-200 active:scale-95 transition-all;
   box-shadow: 0 0 30px rgba(108, 200, 255, 0.5);
 }
+.play-btn:disabled { @apply opacity-50 cursor-not-allowed; }
+
+.ready-btn {
+  @apply rounded-xl bg-green-300 px-5 py-3 text-base font-bold text-[#05070f]
+         hover:bg-green-200 active:scale-95 transition-all;
+}
+.ready-btn:disabled { @apply opacity-50 cursor-not-allowed; }
 
 .menu-btn {
   @apply px-4 py-1.5 text-sm font-semibold rounded-lg bg-white/5 ring-1 ring-cyan-400/25

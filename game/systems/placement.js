@@ -68,6 +68,7 @@ export function tryPlace(scene, x, y, gen = scene.general, useSnap = true) {
 
   const s = createStructure(def.key, placeX, placeY, scene)
   scene.structures.push(s)
+  if (scene.runStats?.structuresBuilt != null) scene.runStats.structuresBuilt++
   recomputeNetwork(scene)
   flashPlacementFeedback(scene, true, placeX, placeY, def)
 

@@ -3,10 +3,11 @@ import { createCommanderShip, createEnemyShipModel } from './shipModel.js'
 import { createSectorBackdrop } from './sectorBackdrop.js'
 import { createStructureModel } from './structureModels.js'
 import { createExplosion, createMissileModel } from './fxModels.js'
+import { createMeteorModel, updateMeteorMaterials, disposeMeteorModels } from './meteorModels.js'
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { UPGRADES_BY_ID } from '~/game/structures/upgrades.js'
 import { nexusColor, equipped } from '~/game/meta/cosmetics.js'
 import { appState } from '~/game/appState.js'
-import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { WORLD } from '~/game/balance.js'
 import { IS_TOUCH, LOW_GFX, RENDER_SCALE } from '~/game/quality.js'
 import { REGISTRY } from '~/game/enemies/EnemyType.js'
@@ -14,7 +15,7 @@ import { updateTiltCamera } from './tilt.js'
 
 // Capa de render 3D (Three.js) que vive detrás del canvas invisible de Phaser.
 // Modo actual: FONDO 3D + METEORITOS 3D + explosiones. Dibuja el fondo espacial (estrellas con
-// twinkle + nebulosas con parallax), los meteoritos (malla OBJ con texturas PBR, ver _loadMeteor/
+// twinkle + nebulosas con parallax), los meteoritos (OBJ original y variantes en meteorModels.js/
 // sync) y las explosiones. El resto del gameplay (estructuras/enemigos), el selector, los enlaces,
 // las barras y el HUD los dibuja Phaser en 2D encima. _makeStructure/_makeEnemy quedan disponibles
 // para reactivar el 3D completo paso a paso cuando se resuelva el compositing 2D/3D.
@@ -143,7 +144,7 @@ export class ThreeLayer {
 
     this.meshes = new Map()   // objeto de juego -> { root, ... }
     this.enemyModels = new Map() // Enemy host o sprite remoto -> nave 3D
-    this.meteors = new Map()  // meteorito de juego -> { mesh, baseScale, spin, axis, dying, dieT }
+    this.meteors = new Map()  // meteorito de juego -> { root, model, spin, axis, dying, dieT }
     this.explosions = []
     this.nexus = null         // núcleo 3D (se crea en sync cuando existe el core)
     this._loadMeteor()
@@ -470,23 +471,31 @@ export class ThreeLayer {
       let e = this.meteors.get(m)
       // El container muere al agotarse (tween de Collector) o al quitarlo el cliente remoto.
       const dead = m.depleted || !m.container || m.container.scene == null
+      // El snapshot remoto no incluye variant; sus meteoritos normales usan rock.
+      const variant = m.special === 'giant' ? 'giant' : m.special === 'explosive' ? 'explosive' : scene.remote ? 'rock' : m.variant || 'rock'
+      if (e && !dead && (e.variant !== variant || e.radius !== m.radius)) {
+        this.scene.remove(e.root)
+        e.model.userData.dispose()
+        e.halo.material.dispose()
+        this.meteors.delete(m)
+        e = null
+      }
       if (!e) {
         if (dead) continue
         const root = new THREE.Group()
         root.position.set(m.x, m.y, 0)
-        const mesh = new THREE.Mesh(this.meteorGeo, this.meteorMat)
-        mesh.rotation.set(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28)
-        mesh.scale.setScalar(m.radius)
+        const model = createMeteorModel(variant, m.radius, LOW_GFX, this.meteorBase)
+        model.rotation.set(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28)
         const halo = new THREE.Sprite(new THREE.SpriteMaterial({
           map: this.glowTex, color: 0x49e07a, transparent: true, opacity: 0.78,
           blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, alphaTest: 0.01,
         }))
         halo.scale.set(m.radius * 5.5, m.radius * 5.5, 1)
         halo.position.z = -2
-        root.add(halo, mesh)
+        root.add(halo, model)
         this.scene.add(root)
         e = {
-          root, mesh, halo, dying: false, dieT: 0,
+          root, model, halo, variant, radius: m.radius, dying: false, dieT: 0,
           spin: (Math.random() - 0.5) * 0.6,
           axis: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize(),
         }
@@ -801,8 +810,7 @@ export class ThreeLayer {
     }
   }
 
-  // Carga la malla OBJ + texturas PBR una vez; la geometría se normaliza a radio 1 (la escala por
-  // meteorito = m.radius). Asíncrono: sync() no crea mallas hasta que meteorGeo está listo.
+  // Original OBJ and PBR textures from 3e4dc12. Geometry is shared by every variant.
   _loadMeteor() {
     const A = ASSET.meteor3D
     const tx = (url, srgb) => {
@@ -811,9 +819,6 @@ export class ThreeLayer {
       t.anisotropy = LOW_GFX ? 1 : 4
       return t
     }
-    // ponytail: roca = no metálica; omito metalnessMap (~1.4MB) — imperceptible a 40px. metalness=0.
-    // DoubleSide: la malla decimada no es 100% estanca; dibujar la cara trasera tapa los huecos.
-    // emissiveMap = el mismo diffuse: la roca se auto-ilumina (brilla aunque la luz no le pegue).
     const diff = tx(A.diffuse, true)
     this.meteorMat = new THREE.MeshStandardMaterial({
       map: diff,
@@ -824,59 +829,50 @@ export class ThreeLayer {
       side: THREE.DoubleSide,
     })
     new OBJLoader().load(A.obj, (grp) => {
+      if (this._meteorDisposed) return
       let geo = null
       grp.traverse((o) => { if (o.isMesh && !geo) geo = o.geometry })
-      if (!geo) { console.warn('[meteor3D] OBJ sin malla:', A.obj, '(¿404 → index.html? reinicia el dev server)'); return }
+      if (!geo) { console.warn('[meteor3D] OBJ sin malla:', A.obj); return }
       geo.computeBoundingSphere()
       const c = geo.boundingSphere.center, r = geo.boundingSphere.radius || 1
       geo.translate(-c.x, -c.y, -c.z)
-      geo.scale(1 / r, 1 / r, 1 / r) // ahora radio ~1; el OBJ ya trae normales (no recomputar)
+      geo.scale(1 / r, 1 / r, 1 / r)
       this.meteorGeo = geo
+      this.meteorBase = { geo, mat: this.meteorMat }
     })
   }
 
-  // Material compartido de los meteoritos explosivos: misma roca con brillo rojo.
-  _explosiveMat() {
-    if (!this._expMat) {
-      this._expMat = this.meteorMat.clone()
-      this._expMat.emissive = new THREE.Color(0xff3d2e)
-      this._expMat.emissiveIntensity = 0.55
-    }
-    return this._expMat
-  }
-
   _updateMeteors(dt) {
+    const now = performance.now()
+    updateMeteorMaterials(this.meteorBase, now)
     for (const [m, e] of this.meteors) {
       if (e.dying) {
         e.dieT += dt
         const k = 1 - e.dieT / 0.45
         if (k <= 0) {
           this.scene.remove(e.root)
+          e.model.userData.dispose()
           e.halo.material.dispose()
           this.meteors.delete(m)
           continue
         }
         e.root.scale.setScalar(k)
       } else {
-        e.mesh.rotateOnAxis(e.axis, e.spin * dt * (m.special === 'giant' ? 2.5 : 1))
-        // Especiales (systems/specialMeteors.js): gigante dorado, explosivo rojo que late.
-        if (m.special !== e.special) {
-          e.special = m.special
-          e.halo.material.color.setHex(m.special === 'giant' ? 0xffd24a : m.special === 'explosive' ? 0xff3d2e : 0x49e07a)
-          if (m.special === 'giant') { e.mesh.scale.setScalar(m.radius); e.halo.scale.set(m.radius * 6, m.radius * 6, 1) }
-          if (m.special === 'explosive') e.mesh.material = this._explosiveMat()
-          else if (e.mesh.material !== this.meteorMat) e.mesh.material = this.meteorMat
-        }
-        if (m.special === 'explosive') {
-          const k = 0.5 + 0.5 * Math.sin(performance.now() * 0.008 + m.x)
-          e.halo.material.opacity = 0.45 + 0.5 * k
-        } else if (m.special === 'giant') {
-          e.halo.material.opacity = 0.7 + 0.3 * Math.sin(performance.now() * 0.004)
-        }
+        e.model.rotateOnAxis(e.axis, e.spin * dt * (m.special === 'giant' ? 2.5 : 1))
+        // El explosivo actual no tiene cuenta regresiva; admite una si se agrega al estado.
+        e.model.userData.urgency = m.explodeAt
+          ? Math.max(0, Math.min(1, 1 - (m.explodeAt - now) / 3000)) : 0
+        e.model.userData.update(dt, now)
+        const color = m.special === 'giant' ? 0xffd24a : m.special === 'explosive' ? 0xff3d2e : 0x49e07a
+        if (e.halo.material.color.getHex() !== color) e.halo.material.color.setHex(color)
+        const haloSize = m.radius * (m.special === 'giant' ? 6 : 5.5)
+        if (e.halo.scale.x !== haloSize) e.halo.scale.set(haloSize, haloSize, 1)
+        e.halo.material.opacity = m.special === 'explosive'
+          ? 0.45 + 0.5 * (0.5 + 0.5 * Math.sin(now * 0.008 + m.x))
+          : m.special === 'giant' ? 0.7 + 0.3 * Math.sin(now * 0.004) : 0.78
       }
     }
   }
-
   _makeStructure(s) {
     const root = new THREE.Group()
     const sides = s.isCore ? 6 : (s.def.sides || 6)
@@ -1159,18 +1155,19 @@ export class ThreeLayer {
   }
 
   dispose() {
+    this._meteorDisposed = true
     this.game?.events.off('postrender', this._onPostRender, this)
     if (this.nexus) { this._dispose(this.nexus); this.nexus = null; this.nexusCore = null }
     for (const [, e] of this.meshes) this._dispose(e)
     this.meshes.clear()
-    for (const [, e] of this.meteors) { this.scene.remove(e.root); e.halo.material.dispose() }
+    for (const [, e] of this.meteors) { this.scene.remove(e.root); e.model.userData.dispose(); e.halo.material.dispose() }
     this.meteors.clear()
+    disposeMeteorModels(this.meteorBase)
     this.meteorGeo?.dispose()
-    if (this.meteorMat) {
-      // map y emissiveMap son la misma textura (diff); normal/roughness aparte
-      for (const k of ['map', 'normalMap', 'roughnessMap']) this.meteorMat[k]?.dispose()
-      this.meteorMat.dispose()
-    }
+    this.meteorMat?.dispose()
+    this.meteorMat?.map?.dispose()
+    this.meteorMat?.normalMap?.dispose()
+    this.meteorMat?.roughnessMap?.dispose()
     for (const ex of this.explosions) { this.scene.remove(ex.pts); this.scene.remove(ex.ring) }
     this.explosions = []
     if (this.vignette) {

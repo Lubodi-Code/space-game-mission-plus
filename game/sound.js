@@ -18,6 +18,7 @@ import collectorUrl from './sounds/recolectorsound.ogg'
 import speedUrl from './sounds/barofspeed.ogg'
 import shipLightUrl from './sounds/shipmovesound.ogg'
 import shipHeavyUrl from './sounds/heavyshipmovesound.ogg'
+import { initTone, play as playTone, playExplosion, setEngine } from './audio/tone.js'
 
 const MUSIC = { ingame: inGameUrl, transition: transitionUrl }
 const SAMPLES = {
@@ -46,6 +47,7 @@ const beds = {}               // camas en loop (movimiento de naves)
 const music = { buffers: {}, node: null, gain: null, lfo: null, name: null, want: null, loaded: false }
 
 export function initSound(scene) {
+  if (typeof window === 'undefined') return
   if (master) return
   ctx = ctx || scene?.sound?.context || null // null si Phaser cae a HTML5 audio → silencio
   if (!ctx) return
@@ -63,6 +65,7 @@ export function initSound(scene) {
   comp.connect(ctx.destination)
   buildReverb()
   loadAudio()
+  void initTone(ctx, sfxBus)
 }
 
 // Menús (lobby/tienda): crea el contexto propio en el primer gesto del usuario. Si luego
@@ -248,14 +251,33 @@ function playSample(name, x, y, { gain = 1, rate = 1, bass = 0, reverb = 0, thro
 }
 
 // ------------------------------------------------------------------- SFX (samples)
-export function sfxLaser(x, y) { playSample('laser', x, y, { gain: 0.9, bass: 8, throttleMs: 35 }) }            // torreta láser
-export function sfxMissile(x, y) { playSample('missile', x, y, { gain: 1.0, reverb: 0.55, throttleMs: 45 }) }   // misil (+reverb)
+function toneShot(kind, x, y, gain, ms) {
+  if (!ctx || !throttle(kind, ms)) return true
+  const { pan, vol } = at(x, y)
+  if (vol <= 0.02) return true
+  return playTone(kind, pan, gain * vol)
+}
+
+export function sfxLaser(x, y) {
+  if (!toneShot('laser', x, y, 0.9, 35)) playSample('laser', x, y, { gain: 0.9, bass: 8, throttleMs: 0 })
+}
+export function sfxMissile(x, y) {
+  if (!toneShot('missile', x, y, 1, 45)) playSample('missile', x, y, { gain: 1, reverb: 0.55, throttleMs: 0 })
+}
 export function sfxImpact(x, y, size = 1) {                                                                     // explosión/impacto (+graves)
   playSample('explosion', x, y, { gain: Math.min(1.25, 0.8 + size * 0.18), bass: 9, throttleMs: 28 })
+  if (size >= 1.5 && ctx) {
+    const { pan, vol } = at(x, y)
+    if (vol > 0.02) playExplosion(pan, vol * Math.min(size, 2))
+  }
 }
 export function sfxMine(x, y) { playSample('mine', x, y, { gain: 0.5, throttleMs: 500 }) }                      // recolector
-export function sfxEnemyBeam(x, y) { playSample('enemybeam', x, y, { gain: 0.6, throttleMs: 40 }) }             // rayo enemigo
-export function sfxGeneralShot(x, y) { playSample('laser', x, y, { gain: 0.55, rate: 1.5, throttleMs: 60 }) }   // disparo del General (láser agudo)
+export function sfxEnemyBeam(x, y) {
+  if (!toneShot('enemyBeam', x, y, 0.6, 40)) playSample('enemybeam', x, y, { gain: 0.6, throttleMs: 0 })
+}
+export function sfxGeneralShot(x, y) {
+  if (!toneShot('generalShot', x, y, 0.55, 60)) playSample('laser', x, y, { gain: 0.55, rate: 1.5, throttleMs: 0 })
+}
 export function sfxSpeed() { playSample('speed', null, null, { gain: 0.7, throttleMs: 120 }) }                  // cambio de velocidad
 
 // SFX sintetizado (sin sample): blip de fijado de objetivo.
@@ -308,6 +330,20 @@ export function updateShipBeds(light, heavy) {
 // Llamar cada frame: mantiene el centro de cámara para espacializar los SFX.
 export function updateSound(cx, cy, viewW) {
   view.cx = cx; view.cy = cy; view.w = viewW || view.w
+  const fresh = engineWorld && performance.now() - engineWorld.updated < 200
+  if (fresh) {
+    const { pan, vol } = spatial(engineWorld.x, engineWorld.y)
+    setEngine(vol > 0.02 && engineWorld.speed01 > 0.01, engineWorld.speed01 * vol, pan)
+  } else setEngine(false, 0, 0)
+}
+
+let engineWorld = null
+// GameScene.update, después de General.update, debe llamar con la velocidad real:
+// setEngineFromWorld(this.general.x, this.general.y, velocidadActual / this.general.speed)
+// El motor permanece apagado hasta conectar esa llamada (GameScene está fuera del alcance S4).
+export function setEngineFromWorld(x, y, speed01) {
+  if (!ctx || !Number.isFinite(x) || !Number.isFinite(y)) return
+  engineWorld = { x, y, speed01: Math.max(0, Math.min(1, speed01 || 0)), updated: performance.now() }
 }
 
 // ------------------------------------------------ SFX sintetizados (Fase 10: habilidades y UI)
@@ -413,6 +449,7 @@ export function sfxTesla(x, y) {
   if (!ctx || !throttle('tesla', 70)) return
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
+  if (playTone('tesla', pan, vol)) return
   noise({ dur: 0.12, gain: 0.18, lp: 6000, pan, vol })
   sweep({ type: 'square', f0: 1800, f1: 400, dur: 0.1, gain: 0.05, pan, vol })
 }
@@ -420,6 +457,7 @@ export function sfxCryo(x, y) {
   if (!ctx || !throttle('cryo', 90)) return
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
+  if (playTone('cryo', pan, vol)) return
   sweep({ type: 'sine', f0: 2400, f1: 1600, dur: 0.18, gain: 0.05, pan, vol })
   noise({ dur: 0.2, gain: 0.05, lp: 9000, pan, vol })
 }
@@ -427,6 +465,7 @@ export function sfxRail(x, y) {
   if (!ctx || !throttle('rail', 120)) return
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
+  if (playTone('rail', pan, vol)) return
   sweep({ type: 'sawtooth', f0: 3000, f1: 120, dur: 0.35, gain: 0.12, pan, vol })
   noise({ dur: 0.25, gain: 0.2, lp: 3000, pan, vol })
 }
@@ -434,8 +473,18 @@ export function sfxFlak(x, y) {
   if (!ctx || !throttle('flak', 80)) return
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
+  if (playTone('flak', pan, vol)) return
   noise({ dur: 0.16, gain: 0.3, lp: 1800, pan, vol })
   sweep({ type: 'triangle', f0: 220, f1: 60, dur: 0.15, gain: 0.12, pan, vol })
+}
+
+export function sfxMortar(x, y) {
+  if (!ctx || !throttle('mortar', 120)) return
+  const { pan, vol } = at(x, y)
+  if (vol <= 0.03) return
+  if (playTone('mortar', pan, vol)) return
+  sweep({ type: 'sine', f0: 180, f1: 55, dur: 0.38, gain: 0.2, pan, vol })
+  noise({ dur: 0.18, gain: 0.12, lp: 1100, pan, vol })
 }
 
 // Mejora comprada: barrido ascendente + acorde brillante.

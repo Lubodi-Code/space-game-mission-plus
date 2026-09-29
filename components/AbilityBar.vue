@@ -12,7 +12,8 @@ const list = computed(() =>
     .filter((a) => a.st.unlocked)
 )
 
-const hidden = computed(() => appState.mp.role === 'client')
+// El invitado también usa sus habilidades (cooldowns propios que llegan en el snapshot).
+const hidden = computed(() => false)
 
 function use(id: string) {
   bus.emit('ability', id)
