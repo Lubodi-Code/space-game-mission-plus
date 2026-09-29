@@ -280,7 +280,7 @@ export function sfxImpact(x, y, size = 1) {                                     
     if (vol > 0.02) playExplosion(pan, vol * Math.min(size, 2))
   }
 }
-export function sfxMine(x, y) { playSample('mine', x, y, { gain: 0.32, throttleMs: 500, reach: 0.9, near: true }) } // solo si la cámara está cerca                      // recolector
+export function sfxMine(x, y) { playSample('mine', x, y, { gain: 0.2, throttleMs: 500, reach: 0.75, near: true }) } // bajito; sube solo al acercarse                      // recolector
 export function sfxEnemyBeam(x, y) {
   if (!toneShot('enemyBeam', x, y, 0.6, 40)) playSample('enemybeam', x, y, { gain: 0.6, throttleMs: 0 })
 }

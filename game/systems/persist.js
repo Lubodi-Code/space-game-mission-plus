@@ -3,6 +3,7 @@ import { appState } from '~/game/appState.js'
 import { createStructure } from '~/game/structures/StructureRegistry.js'
 import { UPGRADES } from '~/game/structures/upgrades.js'
 import { Enemy } from '~/game/enemies/Enemy.js'
+import { createMeteorite } from '~/game/systems/worldgen.js'
 
 // Guarda/restaura una partida en solitario a través de un reload de página
 // (sessionStorage: sobrevive al F5, se pierde al cerrar la pestaña). Multijugador
@@ -35,6 +36,11 @@ export function saveSoloSnapshot(scene) {
     structs: scene.structures
       .filter((s) => !s.dead && !s.isCore)
       .map((s) => ({ key: s.key, x: Math.round(s.x), y: Math.round(s.y), hp: Math.round(s.hp), maxHp: Math.round(s.maxHp), upgrades: s.upgrades || [] })),
+    // Meteoritos tal como están (posición, tamaño, mineral restante, clase visual): sin esto, al
+    // recargar se volvían a generar al azar. El gigante es un evento temporal y no se guarda.
+    meteors: scene.meteorites
+      .filter((m) => !m.depleted && m.special !== 'giant')
+      .map((m) => ({ x: Math.round(m.x), y: Math.round(m.y), r: m.radius, a: Math.round(m.amount), v: m.variant })),
     enemies: scene.enemies
       .filter((e) => !e.dead)
       .map((e) => ({ type: e.type, x: Math.round(e.x), y: Math.round(e.y), hp: Math.round(e.hp), maxHp: Math.round(e.maxHp), damage: e.damage, heading: e.heading })),
@@ -76,6 +82,18 @@ export function restoreSoloSnapshot(scene, snap) {
   scene.core.hp = snap.coreHp
   scene.core.maxHp = snap.coreHpMax
   scene._enemySeq = snap.enemySeq || 0
+
+  // Reemplaza los meteoritos recién sembrados (populateMeteorites) por los guardados.
+  if (Array.isArray(snap.meteors)) {
+    for (const m of scene.meteorites) m.container?.destroy()
+    scene.meteorites.length = 0
+    for (const row of snap.meteors) {
+      const m = createMeteorite(scene, row.x, row.y)
+      m.radius = row.r
+      m.amount = row.a
+      if (row.v) m.variant = row.v
+    }
+  }
 
   for (const row of snap.structs) {
     const s = createStructure(row.key, row.x, row.y, scene)
