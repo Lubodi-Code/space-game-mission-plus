@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 // Nave del comandante en 3D low-poly retro. Única fuente del diseño: la usan el juego
 // (ThreeLayer, vista cenital) y la tienda (ShopPreview, vitrina). La silueta calca
@@ -225,6 +226,59 @@ function createVariantShip(tint, design) {
 
 export function createCommanderShip(tint = 0xffaa44, design = 'falcon') {
   return VARIANTS[design] ? createVariantShip(tint, design) : createFalconShip(tint)
+}
+
+// Geometría de una nave enemiga ya horneada en espacio local y fusionada por material, para
+// dibujar todas las naves del mismo tipo con InstancedMesh (enemyInstances.js). Misma silueta que
+// createEnemyShipModel; el casco lleva color por vértice (cuerpo vs. alas blindadas).
+export function enemyShipParts({ radius = 10, type = 'grunt' } = {}) {
+  const r = Math.max(4, radius)
+  const long = r * (type === 'runner' || type === 'kamikaze' ? 2.7 : type === 'mothership' || type === 'commandship' ? 2.35 : 2.2)
+  const wide = r * (type === 'brute' || type === 'bomber' || type === 'warden' ? 1.35 : 0.95)
+  const depth = r * (type === 'mothership' || type === 'commandship' ? 0.46 : 0.34)
+  const hullPoints = type === 'brute' || type === 'bomber'
+    ? [[-long * 0.52, -wide], [long * 0.2, -wide * 0.96], [long * 0.55, -wide * 0.45], [long * 0.55, wide * 0.45], [long * 0.2, wide * 0.96], [-long * 0.52, wide]]
+    : type === 'runner' || type === 'kamikaze'
+      ? [[-long * 0.58, -wide * 0.42], [long * 0.55, 0], [-long * 0.58, wide * 0.42], [-long * 0.2, 0]]
+      : [[-long * 0.58, -wide * 0.6], [long * 0.18, -wide * 0.72], [long * 0.56, 0], [long * 0.18, wide * 0.72], [-long * 0.58, wide * 0.6], [-long * 0.32, 0]]
+  const paint = (g, hex) => {
+    const c = new THREE.Color(hex)
+    const n = g.attributes.position.count
+    const a = new Float32Array(n * 3)
+    for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b }
+    g.setAttribute('color', new THREE.BufferAttribute(a, 3))
+    return g
+  }
+  const hull = paint(extrude(hullPoints, depth, Math.max(0.5, r * 0.06)), 0x172238)
+  const wingSpan = wide * (type === 'artillery' || type === 'saboteur' ? 1.9 : 1.35)
+  const wingDepth = Math.max(0.45, depth * 0.45)
+  const wingL = extrude([[-r * 0.15, -wide * 0.45], [-r * 0.65, -wingSpan], [-long * 0.4, -wingSpan * 0.82], [-long * 0.18, -wide * 0.4]], wingDepth, 0.35)
+  const wingR = extrude([[-r * 0.15, wide * 0.45], [-long * 0.18, wide * 0.4], [-long * 0.4, wingSpan * 0.82], [-r * 0.65, wingSpan]], wingDepth, 0.35)
+  wingL.applyMatrix4(new THREE.Matrix4().makeRotationX(0.12))
+  wingR.applyMatrix4(new THREE.Matrix4().makeRotationX(-0.12))
+  paint(wingL, 0x2c3a56); paint(wingR, 0x2c3a56)
+  const solids = [hull, wingL, wingR]
+  const edgeParts = solids.map((g) => new THREE.EdgesGeometry(g, 18))
+
+  const cockpit = new THREE.OctahedronGeometry(Math.max(1.4, r * 0.22), 0)
+  cockpit.scale(1.5, 0.72, 0.55)
+  cockpit.translate(long * 0.25, 0, Math.max(1.5, r * 0.28))
+
+  const big = type === 'mothership' || type === 'commandship'
+  const engine = new THREE.OctahedronGeometry(Math.max(1.4, r * 0.2), 0)
+  engine.scale(big ? 1.9 : 1.25, 1, 0.8)
+  engine.translate(-long * 0.52, 0, 0)
+  const engines = [engine]
+  if (type === 'runner' || type === 'kamikaze' || big) engines.push(engine.clone().translate(0, r * 0.35, 0))
+
+  const out = {
+    solid: mergeGeometries(solids),
+    edges: mergeGeometries(edgeParts),
+    cockpit,
+    engine: engines.length > 1 ? mergeGeometries(engines) : engine,
+  }
+  for (const g of [...solids, ...edgeParts, ...(engines.length > 1 ? engines : [])]) g.dispose()
+  return out
 }
 
 // Enemigos: siluetas low-poly pequeñas, extruidas y ligeramente inclinadas para que

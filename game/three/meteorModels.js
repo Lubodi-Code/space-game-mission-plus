@@ -18,17 +18,17 @@ function resources(base) {
     mat.roughness = roughness
     mats[kind] = mat
   }
-  derived('iron', 0xa9bdd0, 0xb7c7d7, 0.25, 0.6, 0.45)
-  derived('ice', 0xb7efff, 0x53d9f5, 0.22, 0, 0.32)
-  derived('crystal', 0xffffff, 0xffffff, 0.75, 0, 1)
+  derived('iron', 0xa9bdd0, 0xb7c7d7, 0.5, 0.6, 0.45)
+  derived('ice', 0xb7efff, 0x53d9f5, 0.5, 0, 0.32)
+  derived('crystal', 0xffffff, 0xffffff, 1.05, 0, 1)
   derived('lava', 0x704946, 0xff671c, 0.46, 0, 0.88)
   derived('giant', 0xffd5a0, 0xffaf57, 0.42, 0, 0.9)
   derived('explosive', 0xffffff, 0xff3d2e, 0.55, 0, 1)
   c = {
     mats,
     crystalGeo: new THREE.ConeGeometry(0.13, 0.5, 5),
-    cyan: new THREE.MeshStandardMaterial({ color: 0x9befff, emissive: 0x38dfff, emissiveIntensity: 0.9, roughness: 0.38 }),
-    magenta: new THREE.MeshStandardMaterial({ color: 0xf6b0f0, emissive: 0xd94dcc, emissiveIntensity: 0.9, roughness: 0.38 }),
+    cyan: new THREE.MeshStandardMaterial({ color: 0x9befff, emissive: 0x38dfff, emissiveIntensity: 1.25, roughness: 0.38 }),
+    magenta: new THREE.MeshStandardMaterial({ color: 0xf6b0f0, emissive: 0xd94dcc, emissiveIntensity: 1.25, roughness: 0.38 }),
   }
   caches.set(base.geo, c)
   return c
@@ -94,9 +94,9 @@ export function updateMeteorMaterials(base, now) {
   const c = caches.get(base.geo)
   if (!c) return
   const t = now * 0.001
-  c.mats.lava.emissiveIntensity = 0.42 + 0.17 * Math.sin(t * 2.4)
-  c.mats.giant.emissiveIntensity = 0.4 + 0.13 * Math.sin(t * 1.4)
-  c.mats.explosive.emissiveIntensity = 0.55 + 0.26 * Math.sin(t * 8)
+  c.mats.lava.emissiveIntensity = 0.62 + 0.2 * Math.sin(t * 2.4)
+  c.mats.giant.emissiveIntensity = 0.62 + 0.15 * Math.sin(t * 1.4)
+  c.mats.explosive.emissiveIntensity = 0.75 + 0.28 * Math.sin(t * 8)
 }
 
 export function disposeMeteorModels(base) {

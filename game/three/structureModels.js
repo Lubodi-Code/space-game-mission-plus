@@ -2,6 +2,42 @@ import * as THREE from 'three'
 
 export const DECORS = ['fast', 'triple', 'wide', 'heavy', 'pods', 'plasma', 'long', 'pierce']
 
+const BATTERY_ARCS = 3
+const ARC_STEPS = 4
+
+// Textura radial compartida por todas las baterías (no se libera con cada modelo).
+let _spark = null
+function sparkTexture() {
+  if (_spark || typeof document === 'undefined') return _spark
+  const c = document.createElement('canvas')
+  c.width = c.height = 64
+  const ctx = c.getContext('2d')
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32)
+  g.addColorStop(0, 'rgba(255,255,255,1)')
+  g.addColorStop(0.25, 'rgba(255,255,255,0.45)')
+  g.addColorStop(1, 'rgba(255,255,255,0)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, 64, 64)
+  _spark = new THREE.CanvasTexture(c)
+  return _spark
+}
+
+// Arco quebrado de (ax,ay,az) a (bx,by,bz) escrito en `attr` desde el segmento `first`.
+function writeArc(attr, first, ax, ay, az, bx, by, bz, jitter) {
+  let px = ax, py = ay, pz = az
+  for (let s = 1; s <= ARC_STEPS; s++) {
+    const k = s / ARC_STEPS
+    const j = s === ARC_STEPS ? 0 : jitter
+    const nx = ax + (bx - ax) * k + (Math.random() - 0.5) * j
+    const ny = ay + (by - ay) * k + (Math.random() - 0.5) * j
+    const nz = az + (bz - az) * k + (Math.random() - 0.5) * j * 0.6
+    const o = (first + s - 1) * 2
+    attr.setXYZ(o, px, py, pz)
+    attr.setXYZ(o + 1, nx, ny, nz)
+    px = nx; py = ny; pz = nz
+  }
+}
+
 // All dimensions are world pixels. The tilted inner group exposes the side walls to a -Z camera.
 export function createStructureModel({ role, sides, size, color, isCore }) {
   const root = new THREE.Group()
@@ -102,6 +138,8 @@ export function createStructureModel({ role, sides, size, color, isCore }) {
   let healerOrbs = []
   let chargeBars = []
   let teslaArcs = null
+  let batteryArcs = null
+  let batteryGlow = null
   let lastSpark = -Infinity
   let cryoMist = null
   let railCoils = []
@@ -133,6 +171,20 @@ export function createStructureModel({ role, sides, size, color, isCore }) {
       chargeBars.push(bar)
     }
     ring(model, r * 0.7, r * 0.035, top + r * 0.7)
+    // Electricidad: arcos que saltan entre los bornes y hacia el anillo mientras genera energía.
+    const sparks = ownGeometry(new THREE.BufferGeometry())
+    sparks.setAttribute('position', new THREE.BufferAttribute(new Float32Array(BATTERY_ARCS * ARC_STEPS * 2 * 3), 3))
+    batteryArcs = new THREE.LineSegments(sparks, ownMaterial(new THREE.LineBasicMaterial({
+      color: 0xc8f6ff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false,
+    })))
+    batteryArcs.frustumCulled = false // la esfera se calcula con el buffer en ceros
+    model.add(batteryArcs)
+    batteryGlow = new THREE.Mesh(ownGeometry(new THREE.PlaneGeometry(r * 4, r * 4)), ownMaterial(new THREE.MeshBasicMaterial({
+      map: sparkTexture(), color: 0x7fdcff, transparent: true, opacity: 0.5,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    })))
+    batteryGlow.position.z = top + r * 0.55
+    model.add(batteryGlow)
   } else if (kind === 'healer') {
     orb(model, r * 0.35, 0, 0, top + r * 0.4)
     healerOrbs = Array.from({ length: 4 }, () => orb(model, r * 0.14, 0, 0, top + r * 0.55))
@@ -253,9 +305,14 @@ export function createStructureModel({ role, sides, size, color, isCore }) {
     if (shieldDome) shieldDome.material.opacity = powered ? 0.3 : 0.035
   }
   function setBuilding(frac) {
-    building = THREE.MathUtils.clamp(Number.isFinite(frac) ? frac : 0, 0, 1)
+    const next = THREE.MathUtils.clamp(Number.isFinite(frac) ? frac : 0, 0, 1)
+    // Se llama cada frame por estructura: rehacer el anillo siempre subía geometría nueva a la GPU
+    // aunque la estructura estuviera terminada. Solo se rehace si cambió visiblemente.
+    if (Math.abs(next - building) < 0.004 && (next < 1 || !progress.visible)) return
+    building = next
     model.scale.z = Math.max(0.03, building)
     progress.visible = building < 1
+    if (!progress.visible) return
     // Arc conveys the actual completed fraction, including at zero.
     progress.geometry.dispose()
     geometries.delete(progress.geometry)
@@ -336,6 +393,26 @@ export function createStructureModel({ role, sides, size, color, isCore }) {
     for (let i = 0; i < chargeBars.length; i++) {
       const h = 0.55 + 0.4 * (0.5 + 0.5 * Math.sin(t * 2.2 + i * 1.2))
       chargeBars[i].scale.z = h
+    }
+    if (batteryArcs) {
+      batteryArcs.visible = batteryGlow.visible = powered && building >= 1
+      if (batteryArcs.visible) {
+        const flicker = Math.random()
+        batteryArcs.material.opacity = 0.45 + 0.55 * flicker // parpadeo de chispa
+        batteryGlow.material.opacity = 0.45 + 0.4 * flicker + 0.15 * Math.sin(t * 6)
+        if (timeMs - lastSpark >= 70) {
+          lastSpark = timeMs
+          const a = batteryArcs.geometry.attributes.position
+          const tip = (i) => top + r * 0.35 + r * 0.325 * chargeBars[i].scale.z
+          const bx = (i) => (i - 1) * 0.42 * r
+          writeArc(a, 0, bx(0), 0, tip(0), bx(1), 0, tip(1), r * 0.3)
+          writeArc(a, ARC_STEPS, bx(1), 0, tip(1), bx(2), 0, tip(2), r * 0.3)
+          const src = Math.floor(Math.random() * 3)
+          const ang = Math.random() * Math.PI * 2
+          writeArc(a, ARC_STEPS * 2, bx(src), 0, tip(src), Math.cos(ang) * r * 0.7, Math.sin(ang) * r * 0.7, top + r * 0.7, r * 0.35)
+          a.needsUpdate = true
+        }
+      }
     }
     if (teslaArcs && timeMs - lastSpark >= 80) {
       lastSpark = timeMs

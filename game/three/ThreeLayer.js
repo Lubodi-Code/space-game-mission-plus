@@ -1,5 +1,6 @@
 import * as THREE from 'three'
-import { createCommanderShip, createEnemyShipModel } from './shipModel.js'
+import { createCommanderShip } from './shipModel.js'
+import { createEnemyInstances } from './enemyInstances.js'
 import { createSectorBackdrop } from './sectorBackdrop.js'
 import { createStructureModel } from './structureModels.js'
 import { createExplosion, createMissileModel } from './fxModels.js'
@@ -143,7 +144,6 @@ export class ThreeLayer {
     this._buildBackground()
 
     this.meshes = new Map()   // objeto de juego -> { root, ... }
-    this.enemyModels = new Map() // Enemy host o sprite remoto -> nave 3D
     this.meteors = new Map()  // meteorito de juego -> { root, model, spin, axis, dying, dieT }
     this.explosions = []
     this.nexus = null         // núcleo 3D (se crea en sync cuando existe el core)
@@ -487,7 +487,7 @@ export class ThreeLayer {
         const model = createMeteorModel(variant, m.radius, LOW_GFX, this.meteorBase)
         model.rotation.set(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28)
         const halo = new THREE.Sprite(new THREE.SpriteMaterial({
-          map: this.glowTex, color: 0x49e07a, transparent: true, opacity: 0.78,
+          map: this.glowTex, color: 0x49e07a, transparent: true, opacity: 0.95,
           blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, alphaTest: 0.01,
         }))
         halo.scale.set(m.radius * 5.5, m.radius * 5.5, 1)
@@ -554,56 +554,34 @@ export class ThreeLayer {
 
   // Naves enemigas 3D: el simulador sigue siendo Phaser, pero el cuerpo visible vive aquí.
   // El mismo reconciliador sirve para host y cliente remoto (que expone sprites interpolados).
+  // Instanciado (enemyInstances.js): una tanda de draw calls por tipo de nave, no por nave. El
+  // estado por nave (radio, alabeo) vive en enemy._r3 y muere con el objeto.
   _syncEnemies(scene) {
-    const enemies = scene?.remote ? [...(scene.eById?.values() || [])] : scene?.enemies
+    const remote = !!scene?.remote
+    const enemies = remote ? scene.eById?.values() : scene?.enemies
     if (!enemies) return
-    const live = new Set()
+    const I = this.enemyInst ||= createEnemyInstances(this.scene, this.glowTex, { haloScale: LOW_GFX ? 3.6 : 4.4 })
+    const now = performance.now()
+    I.begin()
     for (const enemy of enemies) {
-      if (!enemy || enemy.dead || (scene.remote && enemy.visible === false)) continue
-      const def = scene.remote ? REGISTRY[enemy.type] : enemy.def
+      if (!enemy || enemy.dead || (remote && enemy.visible === false)) continue
+      const def = remote ? REGISTRY[enemy.type] : enemy.def
       if (!def) continue
-      live.add(enemy)
-      let entry = this.enemyModels.get(enemy)
-      if (!entry) {
-        const radius = scene.remote
-          ? 12 * 0.5 * (enemy.escala || def.scale || 1)
-          : enemy.radius
-        const root = createEnemyShipModel({ tint: def.color, radius, type: enemy.type || 'grunt' })
-        const halo = new THREE.Sprite(new THREE.SpriteMaterial({
-          map: this.glowTex, color: def.color, transparent: true, opacity: 0.32,
-          blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
-        }))
-        halo.scale.set(radius * 4.4, radius * 4.4, 1)
-        halo.position.z = -2
-        root.add(halo)
-        this.scene.add(root)
-        const phaserObjects = scene.remote ? [enemy, enemy.glow] : [enemy.sprite, enemy.glow]
-        scene.cam?.ignore(phaserObjects.filter(Boolean))
-        entry = { root, halo, radius, lastHeading: null, bank: 0 }
-        this.enemyModels.set(enemy, entry)
+      let st = enemy._r3
+      if (!st) {
+        const radius = remote ? 12 * 0.5 * (enemy.escala || def.scale || 1) : enemy.radius
+        const type = enemy.type || 'grunt'
+        st = enemy._r3 = { radius, type, key: `${type}|${radius.toFixed(1)}`, last: null, bank: 0 }
+        scene.cam?.ignore((remote ? [enemy, enemy.glow] : [enemy.sprite, enemy.glow]).filter(Boolean))
       }
-      const x = scene.remote ? enemy.x : enemy.x
-      const y = scene.remote ? enemy.y : enemy.y
       const heading = Number.isFinite(enemy.heading) ? enemy.heading : 0
-      const turn = entry.lastHeading == null ? 0 : Math.atan2(Math.sin(heading - entry.lastHeading), Math.cos(heading - entry.lastHeading))
-      entry.lastHeading = heading
-      entry.bank = entry.bank * 0.88 + Math.max(-0.36, Math.min(0.36, turn * 5))
-      entry.root.visible = scene.remote ? enemy.visible !== false : !enemy.dead
-      entry.root.position.set(x, y, 12)
-      entry.root.rotation.x = -0.24 + entry.bank
-      entry.root.rotation.z = heading
-      const pulse = 0.24 + Math.sin(performance.now() * 0.008 + heading) * 0.08
-      entry.halo.material.opacity = pulse
-      const stun = scene.remote ? false : enemy.stunMs > 0
-      entry.halo.material.color.setHex(stun ? 0x8be9fd : def.color)
-      if (entry.root.userData.engine) entry.root.userData.engine.material.color.setHex(stun ? 0x8be9fd : def.color)
+      const turn = st.last == null ? 0 : Math.atan2(Math.sin(heading - st.last), Math.cos(heading - st.last))
+      st.last = heading
+      st.bank = st.bank * 0.88 + Math.max(-0.36, Math.min(0.36, turn * 5))
+      const stun = !remote && enemy.stunMs > 0
+      I.push(st, st.type, def.color, enemy.x, enemy.y, heading, st.bank, stun, 0.24 + Math.sin(now * 0.008 + heading) * 0.08)
     }
-    for (const [enemy, entry] of this.enemyModels) {
-      if (!live.has(enemy)) {
-        this._dispose(entry)
-        this.enemyModels.delete(enemy)
-      }
-    }
+    I.end()
   }
 
   // Misiles del jugador en 3D con estela (fxModels.js). El sprite 2D se oculta.
@@ -822,7 +800,7 @@ export class ThreeLayer {
     const diff = tx(A.diffuse, true)
     this.meteorMat = new THREE.MeshStandardMaterial({
       map: diff,
-      emissiveMap: diff, emissive: 0xffffff, emissiveIntensity: 0.75,
+      emissiveMap: diff, emissive: 0xffffff, emissiveIntensity: 1.05,
       normalMap: tx(A.normal, false),
       roughnessMap: tx(A.roughness, false),
       metalness: 0, roughness: 1,
@@ -869,7 +847,7 @@ export class ThreeLayer {
         if (e.halo.scale.x !== haloSize) e.halo.scale.set(haloSize, haloSize, 1)
         e.halo.material.opacity = m.special === 'explosive'
           ? 0.45 + 0.5 * (0.5 + 0.5 * Math.sin(now * 0.008 + m.x))
-          : m.special === 'giant' ? 0.7 + 0.3 * Math.sin(now * 0.004) : 0.78
+          : m.special === 'giant' ? 0.85 + 0.15 * Math.sin(now * 0.004) : 0.95
       }
     }
   }
@@ -1178,7 +1156,7 @@ export class ThreeLayer {
     for (const [, e] of this.structs || []) e.root.userData.dispose()
     for (const [, m] of this.missiles || []) m.userData.dispose()
     for (const [, e] of this.gens || []) { e.root.userData.dispose(); e.trail?.geometry.dispose(); e.trail?.material.dispose() }
-    for (const [, e] of this.enemyModels || []) this._dispose(e)
+    this.enemyInst?.dispose()
     for (const f of this.fx || []) f.dispose()
     this.nebulaAlpha?.dispose()
     this.backdrop?.dispose()
