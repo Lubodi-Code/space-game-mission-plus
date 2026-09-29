@@ -194,12 +194,15 @@ function swapMusic(name, fade = 1.4) {
 }
 
 // ----------------------------------------------------------------- espacialización
-function spatial(x, y) {
+// reach: alcance relativo a media pantalla (1.7 = se oye bastante fuera de cuadro). near: caída
+// cuadrática, para sonidos de ambiente que solo deben oírse cuando la cámara está encima.
+function spatial(x, y, reach = 1.7, near = false) {
   const half = view.w * 0.5 || 960
   const dx = x - view.cx
   const dy = y - view.cy
   const pan = Math.max(-1, Math.min(1, dx / half))
-  const vol = Math.max(0, 1 - Math.hypot(dx, dy) / (half * 1.7))
+  const k = Math.max(0, 1 - Math.hypot(dx, dy) / (half * reach))
+  const vol = near ? k * k : k
   return { pan, vol }
 }
 
@@ -212,11 +215,12 @@ function throttle(key, ms) {
 
 // -------------------------------------------------------------- reproducir sample
 // x/y null → sonido no espacial (centrado, vol completo). bass = dB de realce de graves.
-function playSample(name, x, y, { gain = 1, rate = 1, bass = 0, reverb = 0, throttleMs = 30 } = {}) {
+function playSample(name, x, y, { gain = 1, rate = 1, bass = 0, reverb = 0, throttleMs = 30, reach = 1.7, near = false } = {}) {
   if (!ctx || !buffers[name]) return
-  if (throttleMs && !throttle(name, throttleMs)) return
-  const { pan, vol } = x == null ? { pan: 0, vol: 1 } : spatial(x, y)
+  const { pan, vol } = x == null ? { pan: 0, vol: 1 } : spatial(x, y, reach, near)
+  // El throttle va después del volumen: un recolector lejano (vol 0) no le roba el turno a uno cercano.
   if (vol <= 0.02) return
+  if (throttleMs && !throttle(name, throttleMs)) return
   const t = ctx.currentTime
   const src = ctx.createBufferSource()
   src.buffer = buffers[name]
@@ -251,7 +255,12 @@ function playSample(name, x, y, { gain = 1, rate = 1, bass = 0, reverb = 0, thro
 }
 
 // ------------------------------------------------------------------- SFX (samples)
+// Los disparos con Tone.js quedaron apagados a pedido (sonaban peor que los de antes): con
+// TONE_SHOTS = false cada arma usa su sample o síntesis original. Explosiones y motor siguen en Tone.
+const TONE_SHOTS = false
+
 function toneShot(kind, x, y, gain, ms) {
+  if (!TONE_SHOTS) return false
   if (!ctx || !throttle(kind, ms)) return true
   const { pan, vol } = at(x, y)
   if (vol <= 0.02) return true
@@ -271,7 +280,7 @@ export function sfxImpact(x, y, size = 1) {                                     
     if (vol > 0.02) playExplosion(pan, vol * Math.min(size, 2))
   }
 }
-export function sfxMine(x, y) { playSample('mine', x, y, { gain: 0.5, throttleMs: 500 }) }                      // recolector
+export function sfxMine(x, y) { playSample('mine', x, y, { gain: 0.32, throttleMs: 500, reach: 0.9, near: true }) } // solo si la cámara está cerca                      // recolector
 export function sfxEnemyBeam(x, y) {
   if (!toneShot('enemyBeam', x, y, 0.6, 40)) playSample('enemybeam', x, y, { gain: 0.6, throttleMs: 0 })
 }
@@ -317,14 +326,15 @@ function bedTarget(name, count, perUnit, max) {
     src.start()
     b = beds[name] = { gain: g }
   }
-  const target = count > 0 ? Math.min(max, 0.05 + count * perUnit) : 0
+  // count ya viene ponderado por cercanía a la cámara (GameScene): sin naves cerca → silencio.
+  const target = count > 0.01 ? Math.min(max, count * perUnit) : 0
   b.gain.gain.value += (target - b.gain.gain.value) * 0.04 // suavizado
 }
 
-// Llamar cada frame con la cantidad de naves ligeras/pesadas vivas.
+// Llamar cada frame con la cantidad de naves ligeras/pesadas CERCANAS (ponderada 0..1 por distancia).
 export function updateShipBeds(light, heavy) {
-  bedTarget('shipLight', light, 0.01, 0.32)
-  bedTarget('shipHeavy', heavy, 0.02, 0.32)
+  bedTarget('shipLight', light, 0.035, 0.2)
+  bedTarget('shipHeavy', heavy, 0.06, 0.22)
 }
 
 // Llamar cada frame: mantiene el centro de cámara para espacializar los SFX.
@@ -449,7 +459,7 @@ export function sfxTesla(x, y) {
   if (!ctx || !throttle('tesla', 70)) return
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
-  if (playTone('tesla', pan, vol)) return
+  if (TONE_SHOTS && playTone('tesla', pan, vol)) return
   noise({ dur: 0.12, gain: 0.18, lp: 6000, pan, vol })
   sweep({ type: 'square', f0: 1800, f1: 400, dur: 0.1, gain: 0.05, pan, vol })
 }
@@ -457,7 +467,7 @@ export function sfxCryo(x, y) {
   if (!ctx || !throttle('cryo', 90)) return
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
-  if (playTone('cryo', pan, vol)) return
+  if (TONE_SHOTS && playTone('cryo', pan, vol)) return
   sweep({ type: 'sine', f0: 2400, f1: 1600, dur: 0.18, gain: 0.05, pan, vol })
   noise({ dur: 0.2, gain: 0.05, lp: 9000, pan, vol })
 }
@@ -465,7 +475,7 @@ export function sfxRail(x, y) {
   if (!ctx || !throttle('rail', 120)) return
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
-  if (playTone('rail', pan, vol)) return
+  if (TONE_SHOTS && playTone('rail', pan, vol)) return
   sweep({ type: 'sawtooth', f0: 3000, f1: 120, dur: 0.35, gain: 0.12, pan, vol })
   noise({ dur: 0.25, gain: 0.2, lp: 3000, pan, vol })
 }
@@ -473,7 +483,7 @@ export function sfxFlak(x, y) {
   if (!ctx || !throttle('flak', 80)) return
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
-  if (playTone('flak', pan, vol)) return
+  if (TONE_SHOTS && playTone('flak', pan, vol)) return
   noise({ dur: 0.16, gain: 0.3, lp: 1800, pan, vol })
   sweep({ type: 'triangle', f0: 220, f1: 60, dur: 0.15, gain: 0.12, pan, vol })
 }
@@ -482,7 +492,7 @@ export function sfxMortar(x, y) {
   if (!ctx || !throttle('mortar', 120)) return
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
-  if (playTone('mortar', pan, vol)) return
+  if (TONE_SHOTS && playTone('mortar', pan, vol)) return
   sweep({ type: 'sine', f0: 180, f1: 55, dur: 0.38, gain: 0.2, pan, vol })
   noise({ dur: 0.18, gain: 0.12, lp: 1100, pan, vol })
 }

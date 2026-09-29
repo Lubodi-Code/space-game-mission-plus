@@ -708,9 +708,17 @@ export class GameScene extends Phaser.Scene {
     const wv = this.cam.worldView
     updateSound(wv.centerX, wv.centerY, wv.width)
     setMusicState(this.wave?.state === 'intermission' ? 'transition' : 'ingame')
-    // Camas de movimiento de naves: vol según nº de enemigos (pesados = radio grande).
+    // Camas de movimiento de naves: solo las naves cerca del centro de la cámara suenan
+    // (peso cuadrático: 1 encima, 0 a ~media pantalla). Pesadas = radio grande.
     let lightN = 0, heavyN = 0
-    for (const e of this.enemies) { if (e.dead) continue; e.radius >= 16 ? heavyN++ : lightN++ }
+    const bedR = wv.width * 0.45
+    for (const e of this.enemies) {
+      if (e.dead) continue
+      const k = Math.max(0, 1 - Math.hypot(e.x - wv.centerX, e.y - wv.centerY) / bedR)
+      if (k <= 0) continue
+      if (e.radius >= 16) heavyN += k * k
+      else lightN += k * k
+    }
     updateShipBeds(lightN, heavyN)
 
     if (this.remote) {
