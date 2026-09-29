@@ -81,7 +81,14 @@ export function initSound(scene) {
   sfxBus = ctx.createGain()
   musicBus.gain.value = audioPrefs.music
   sfxBus.gain.value = audioPrefs.sfx
-  const comp = ctx.createDynamicsCompressor() // techo suave para que los graves no saturen
+  const comp = ctx.createDynamicsCompressor() // techo para que la suma de sonidos no sature
+  // Por defecto (-24 dB, rodilla 30, ratio 12) no frena los picos rápidos: con muchas explosiones
+  // la mezcla pasaba de 0 dBFS y recortaba (crepitaba). Configurado como limitador.
+  comp.threshold.value = -6
+  comp.knee.value = 4
+  comp.ratio.value = 20
+  comp.attack.value = 0.002
+  comp.release.value = 0.2
   musicBus.connect(master)
   sfxBus.connect(master)
   master.connect(comp)
@@ -348,14 +355,23 @@ function bedTarget(name, count, perUnit, max) {
   }
   // count ya viene ponderado por cercanía a la cámara (GameScene): sin naves cerca → silencio.
   const target = count > 0.01 ? Math.min(max, count * perUnit) : 0
-  b.gain.gain.value += (target - b.gain.gain.value) * 0.04 // suavizado
+  // Escribir gain.value cada frame da saltos escalonados (zipper noise: crepita). Se agenda una
+  // rampa en el hilo de audio y solo cuando el objetivo cambia de verdad.
+  if (b.target !== undefined && Math.abs(target - b.target) < 0.002) return
+  b.target = target
+  b.gain.gain.setTargetAtTime(target, ctx.currentTime, 0.35)
 }
 
 // Llamar cada frame con { tipoDeNave: peso } de las naves CERCANAS (peso 0..1 por distancia a la
 // cámara, sumado por tipo). Cada tipo suena con su propio motor; los tipos ausentes se apagan.
 // Silencia todos los motores al salir de la partida (si no, quedan sonando con el último volumen).
 export function stopShipEngines() {
-  for (const [name, b] of Object.entries(beds)) if (name.startsWith('ship_')) b.gain.gain.value = 0
+  for (const [name, b] of Object.entries(beds)) {
+    if (!name.startsWith('ship_')) continue
+    b.target = 0
+    b.gain.gain.cancelScheduledValues(ctx.currentTime)
+    b.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.05)
+  }
 }
 
 export function updateShipEngines(weights) {
