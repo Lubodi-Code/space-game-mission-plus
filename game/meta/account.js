@@ -66,6 +66,9 @@ export async function syncAccount() {
     profile.crystals = me.crystals
     setPremium(uid, me.inventory)
   } catch (e) {
+    // Sin clave de servicio en el servidor (pagos en pausa) /api/me responde 503 "Cuentas no
+    // configuradas": la sesión sirve igual, solo no hay Cristales en la nube. No es un error del jugador.
+    if (e.message === 'Cuentas no configuradas') return
     account.error = e.message
   }
 }
