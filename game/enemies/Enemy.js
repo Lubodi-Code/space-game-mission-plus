@@ -44,7 +44,9 @@ export class Enemy {
 
     // El cuerpo visible pasa a ThreeLayer; Phaser conserva estos sprites para
     // input/minimapa y para que la lógica de combate no cambie.
-    if (scene.three) scene.cam?.ignore([this.sprite, this.glow])
+    // Con la capa 3D nadie los dibuja: invisibles, Phaser los salta sin procesarlos cada frame.
+    this.hidden2D = !!scene.three
+    if (this.hidden2D) { this.sprite.setVisible(false); this.glow.setVisible(false) }
 
     this.movement = MOVEMENT[this.def.movement]
     this.attack = ATTACK[this.def.attack]
@@ -132,16 +134,15 @@ export class Enemy {
     this.ax = 0
     this.ay = 0
 
-    this.sprite.setPosition(this.x, this.y)
-    this.glow.setPosition(this.x, this.y)
-
-    if (vMag > 1) {
-      this.sprite.setRotation(this.heading)
-      this.glow.setRotation(this.heading)
+    if (!this.hidden2D) {
+      this.sprite.setPosition(this.x, this.y)
+      this.glow.setPosition(this.x, this.y)
+      if (vMag > 1) {
+        this.sprite.setRotation(this.heading)
+        this.glow.setRotation(this.heading)
+      }
+      this.glow.setAlpha(0.3 + Math.sin((time || 0) * 0.008 + this.heading) * 0.15)
     }
-
-    const glowPulse = 0.3 + Math.sin((time || 0) * 0.008 + this.heading) * 0.15
-    this.glow.setAlpha(glowPulse)
 
     this.attack(this, world, dt)
 

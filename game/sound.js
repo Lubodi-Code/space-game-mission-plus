@@ -56,9 +56,22 @@ const buffers = {}            // nombre → AudioBuffer (samples)
 const beds = {}               // camas en loop (movimiento de naves)
 const music = { buffers: {}, node: null, gain: null, lfo: null, name: null, want: null, loaded: false }
 
+// Contexto único de la página. Se le pasa a Phaser (createGame.js, audio.context): así al destruir
+// la partida Phaser lo suspende en vez de cerrarlo. Antes cerraba el suyo y este módulo seguía
+// usándolo: la siguiente partida quedaba muda y cada sonido creaba nodos sobre un contexto muerto.
+export function sharedAudioContext() {
+  if (typeof window === 'undefined') return undefined
+  if (!ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext
+    if (!AC) return undefined
+    try { ctx = new AC() } catch { return undefined }
+  }
+  return ctx
+}
+
 export function initSound(scene) {
   if (typeof window === 'undefined') return
-  if (master) return
+  if (master) { if (ctx?.state === 'suspended') ctx.resume(); return }
   ctx = ctx || scene?.sound?.context || null // null si Phaser cae a HTML5 audio → silencio
   if (!ctx) return
   loadAudioPrefs()
@@ -82,11 +95,7 @@ export function initSound(scene) {
 // arranca Phaser, initSound reutiliza este mismo contexto.
 export function initUiSound() {
   if (typeof window === 'undefined') return
-  if (!ctx) {
-    const AC = window.AudioContext || window.webkitAudioContext
-    if (!AC) return
-    try { ctx = new AC() } catch { return }
-  }
+  if (!sharedAudioContext()) return
   if (ctx.state === 'suspended') ctx.resume()
   initSound(null)
 }

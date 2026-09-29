@@ -3,6 +3,7 @@ import { BootScene } from './scenes/BootScene.js'
 import { GameScene } from './scenes/GameScene.js'
 import { RENDER_SCALE } from './quality.js'
 import { phaserHeightFor } from './three/tilt.js'
+import { sharedAudioContext } from './sound.js'
 
 /** Configuración de Phaser para el tamaño actual del contenedor. */
 export function createGameConfig(parent) {
@@ -28,6 +29,8 @@ export function createGameConfig(parent) {
     input: {
       activePointers: 3, // multi-touch support
     },
+    // Contexto compartido con sound.js: con él Phaser lo suspende al destruirse en vez de cerrarlo.
+    audio: { context: sharedAudioContext() },
     render: {
       antialias: true,
       roundPixels: false,

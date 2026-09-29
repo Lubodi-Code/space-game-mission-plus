@@ -93,6 +93,7 @@ export class GameScene extends Phaser.Scene {
 
     // Capa de render 3D (fondo + meteoritos + explosiones) — compartida entre host y cliente.
     this.three = new ThreeLayer(this.game.canvas.parentElement, this.game.canvas, this.game)
+    if (import.meta.dev) window.__sgScene = this // solo dev: pruebas de rendimiento desde la consola
     if (!this.game._tiltInputInstalled) {
       installTiltInput(this.game, () => this.three)
       this.game._tiltInputInstalled = true

@@ -165,7 +165,7 @@ export const STRUCTURES = [
     capBonus: 800,
     energyCap: 120,
     buildTime: 3000,
-    desc: 'Amplía el almacén de energía y de minerales del sistema.'
+    desc: 'Genera energía sin parar mientras está conectada y amplía el almacén de energía y de minerales.'
   },
   { 
     key: 'healer', 
