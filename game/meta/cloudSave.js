@@ -75,7 +75,9 @@ async function syncLoop() {
       }
 
       const sentRevision = revision
-      const { data, error } = await sb.rpc('merge_profile', { p: localPayload() })
+      // p_initial: solo la primera fusión de la sesión junta la Chatarra con el máximo (progreso de
+      // invitado + cuenta). Después manda el dispositivo, o gastar Chatarra no tendría efecto.
+      const { data, error } = await sb.rpc('merge_profile', { p: localPayload(), p_initial: !initialized })
       if (current !== generation) return
       if (error) throw error
       // Una partida puede terminar durante el RPC. Conservamos sus cambios y repetimos
