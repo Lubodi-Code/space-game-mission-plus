@@ -29,7 +29,7 @@ import { updateEnemies, nearestStructure, killEnemy } from '~/game/systems/enemi
 import { startPlacement, cancelPlacement, tryPlace, updateGhost, updateRangePreview } from '~/game/systems/placement.js'
 import { selectStructure, deselectStructure, applyUpgrade, setFireMode } from '~/game/systems/selection.js'
 import { onIntent, createRemote, renderRemote, sendSnapshot } from '~/game/net/sync.js'
-import { initSound, updateSound, setMusicState, updateShipBeds, sfxSpeed } from '~/game/sound.js'
+import { initSound, updateSound, setMusicState, updateShipBeds, sfxSpeed, setEngineFromWorld } from '~/game/sound.js'
 import { initAbilities, updateAbilities, requestAbility, handleTargetClick, cancelTargeting } from '~/game/systems/abilities.js'
 import { runBonuses } from '~/game/meta/research.js'
 import { WEAPON_ROLES } from '~/game/meta/arsenal.js'
@@ -762,6 +762,7 @@ export class GameScene extends Phaser.Scene {
     updateWaves(this, d)
     updateEnemies(this, d)
     for (const g of this.generals.values()) g.update(d / 1000, this.world)
+    const me = this.general; if (me && d > 0) { const moved = this._genPrev ? Math.hypot(me.x - this._genPrev.x, me.y - this._genPrev.y) : 0; this._genPrev = { x: me.x, y: me.y }; setEngineFromWorld(me.x, me.y, me.alive ? moved / (me.speed * d / 1000) : 0) }
     updateAbilities(this, d)
     updateSpecialMeteors(this, d)
     gameState.general.alive = this.general.alive
