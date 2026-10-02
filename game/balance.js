@@ -52,8 +52,8 @@ export const WORLD = { width: 10800, height: 7200 }
 // El canvas de Phaser se renderiza a RENDER_SCALE píxeles por píxel CSS (nitidez en pantallas
 // de alta densidad), así que zoom y umbrales en píxeles se escalan por R: la vista queda igual.
 export const CAMERA = {
-  minZoom: 0.25 * R,
-  maxZoom: 1.0 * R,
+  minZoom: 0.18 * R,
+  maxZoom: 1.8 * R,
   startZoom: 0.55 * R,
   zoomStep: 0.05 * R,
   keyPanSpeed: 1500,
@@ -232,23 +232,23 @@ export const STRUCTURES = [
   {
     key: 'cryo', label: 'Criogénica', glyph: '❄', cost: 110, color: 0x9ae8ff, css: '#9ae8ff',
     range: 110, sides: 8, size: 11, role: 'cryo', hp: 70, buildTime: 5000,
-    atkRange: 140, damage: 4, cooldown: 700, slowMs: 1400, slowFactor: 0.5, splash: 0, energyDrain: 2,
+    atkRange: 260, damage: 4, cooldown: 700, slowMs: 1400, slowFactor: 0.5, splash: 0, energyDrain: 2,
     arsenal: { scrap: 200, level: 1 },
     desc: 'Rayo helado que ralentiza a la horda. Ideal junto a torretas de daño.',
   },
   {
     key: 'tesla', label: 'Bobina Tesla', glyph: 'ϟ', cost: 130, color: 0x7a9bff, css: '#7a9bff',
     range: 110, sides: 4, size: 11, role: 'tesla', hp: 65, buildTime: 5000,
-    atkRange: 170, damage: 12, cooldown: 1300, chains: 2, chainRange: 110, slowMs: 0, energyDrain: 3,
+    atkRange: 300, damage: 12, cooldown: 1300, chains: 2, chainRange: 110, slowMs: 0, energyDrain: 3,
     arsenal: { scrap: 250, level: 2 },
     desc: 'Descarga eléctrica que salta entre varios enemigos cercanos.',
   },
   {
     key: 'flak', label: 'Flak', glyph: '✱', cost: 140, color: 0xff9a3d, css: '#ff9a3d',
     range: 110, sides: 6, size: 11, role: 'flak', hp: 90, buildTime: 5000,
-    atkRange: 115, damage: 9, cooldown: 850, coneDeg: 60, pellets: 5, energyDrain: 2,
+    atkRange: 250, damage: 3, cooldown: 110, coneDeg: 26, pellets: 1, energyDrain: 0.3,
     arsenal: { scrap: 300, level: 3 },
-    desc: 'Metralla en cono a corta distancia. Destroza enjambres que se acercan.',
+    desc: 'Minigun: lluvia de balas sin mucha puntería que se disuelven al final de su alcance.',
   },
   {
     key: 'shield', label: 'Escudo', glyph: '◌', cost: 160, color: 0x6cffe0, css: '#6cffe0',
@@ -267,9 +267,9 @@ export const STRUCTURES = [
   {
     key: 'mortar', label: 'Mortero', glyph: '⬤', cost: 220, color: 0xff5e3d, css: '#ff5e3d',
     range: 110, sides: 5, size: 12, role: 'mortar', hp: 70, buildTime: 5000,
-    atkRange: 900, damage: 40, splash: 70, cooldown: 4200, projSpeed: 170, shells: 1, energyDrain: 5,
+    atkRange: 900, damage: 55, splash: 75, cooldown: 4200, projSpeed: 75, shells: 1, energyDrain: 5,
     arsenal: { scrap: 450, level: 5 },
-    desc: 'Proyectiles lentos de gran área a larga distancia. Castiga a los grupos.',
+    desc: 'Lanza bombas muy lentas que caen, encienden la mecha y explotan en área.',
   },
 ]
 
@@ -330,6 +330,8 @@ export function buildWaves(difficultyKey = 'normal', waveCount = WAVE_TOTAL, opt
     if (i >= 3) push(EnemyType.LEECH, 1 + (i - 2))
     if (i >= 4) push(EnemyType.WARDEN, 0.4 + (i - 4) * 0.25)
     if (i >= 5) push(EnemyType.BOMBER, 0.5 + (i - 5) * 0.4)
+    // Prismas (inmunes al láser) desde la oleada 3: pocos al principio, una cuota creciente.
+    if (i >= 3) push(EnemyType.PRISM, 1 + (i - 3) * 0.9)
 
     shuffle(list)
 

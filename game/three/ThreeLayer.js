@@ -21,6 +21,9 @@ import { updateTiltCamera } from './tilt.js'
 // las barras y el HUD los dibuja Phaser en 2D encima. _makeStructure/_makeEnemy quedan disponibles
 // para reactivar el 3D completo paso a paso cuando se resuelva el compositing 2D/3D.
 
+// Zoom (sin RENDER_SCALE) por debajo del cual la cámara cuenta como lejana (vista inicial: 0.55).
+const LOD_FAR = 0.42
+
 const ASSET = {
   meteor3D: {
     obj: 'assets/3D/Meteorito/base.obj',
@@ -455,6 +458,10 @@ export class ThreeLayer {
     updateTiltCamera(this.camera, view, { w: canvas.width, h: canvas.height })
     this.viewCenter.x = wv.x + wv.width / 2
     this.viewCenter.y = wv.y + wv.height / 2
+    // Nivel de detalle: con la cámara alejada los contornos, cabinas y cristales miden 1-2 px y
+    // multiplican los draw calls. Histéresis para no parpadear justo en el umbral.
+    const z = cam.zoom / RENDER_SCALE
+    this.far = this.far ? z < LOD_FAR + 0.04 : z < LOD_FAR
   }
 
   // Modo "fondo 3D + meteoritos 3D + explosiones": Three solo sincroniza meteoritos (estructuras/
@@ -548,6 +555,7 @@ export class ThreeLayer {
       if (on !== e.powered) { u.setPowered(on); e.powered = on }
       u.setBuilding(s.building ? s.buildProgress / (s.buildTime || 1) : 1)
       if (s.aimAngle != null) u.setAim(s.aimAngle)
+      if (e.far !== this.far) { u.setDetail(this.far); e.far = this.far }
       u.update(dt, now)
     }
   }
@@ -581,7 +589,7 @@ export class ThreeLayer {
       const stun = !remote && enemy.stunMs > 0
       I.push(st, st.type, def.color, enemy.x, enemy.y, heading, st.bank, stun, 0.24 + Math.sin(now * 0.008 + heading) * 0.08)
     }
-    I.end()
+    I.end(this.far)
   }
 
   // Misiles del jugador en 3D con estela (fxModels.js). El sprite 2D se oculta.
@@ -665,8 +673,10 @@ export class ThreeLayer {
     e.trail.visible = g.alive
     const mat = e.trail.material
     mat.color.setHex(td.color || 0xffffff)
-    mat.size = (td.style === 'pixel' ? 7 : td.style === 'comet' ? 6 : 4) * RENDER_SCALE
-    const moving = Math.hypot(g.tx - g.x, g.ty - g.y) > 6
+    mat.size = (td.style === 'pixel' ? 9 : td.style === 'comet' ? 8 : 7) * RENDER_SCALE
+    // Movimiento real (no la distancia al destino): también cuenta si lo empuja otra cosa.
+    const moving = e.trailPrev ? Math.hypot(g.x - e.trailPrev.x, g.y - e.trailPrev.y) > 0.4 : false
+    e.trailPrev = { x: g.x, y: g.y }
     if (moving) {
       const p = e.trailParts[e.trailI++ % N]
       p.x = g.x - Math.cos(rot) * 10 + (Math.random() - 0.5) * 3
@@ -836,6 +846,11 @@ export class ThreeLayer {
         }
         e.root.scale.setScalar(k)
       } else {
+        if (e.far !== this.far) {
+          // Lejos: solo la roca (sin cristales ni escombros orbitando).
+          for (let i = 1; i < e.model.children.length; i++) e.model.children[i].visible = !this.far
+          e.far = this.far
+        }
         e.model.rotateOnAxis(e.axis, e.spin * dt * (m.special === 'giant' ? 2.5 : 1))
         // El explosivo actual no tiene cuenta regresiva; admite una si se agrega al estado.
         e.model.userData.urgency = m.explodeAt

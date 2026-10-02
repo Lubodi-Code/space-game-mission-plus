@@ -55,26 +55,39 @@ export function createStructureModel({ role, sides, size, color, isCore }) {
   let decorGroup = null
   let decorAge = 1
   let plasma = null
+  let far = false
   const tintMaterials = new Set()
   const lineMaterials = new Set()
   const geometries = new Set()
   const materials = new Set()
 
+  // Las piezas del chasis comparten material por color/brillo (antes: uno por pieza, ~14 por
+  // estructura). Los adornos de mejora (setDecor) siguen con materiales propios porque se liberan
+  // al cambiar de mejora; por eso el caché solo se usa mientras se arma el modelo base.
+  const shared = new Map()
+  let sharing = true
+  const outlines = [] // contornos: se ocultan con la cámara lejos (setDetail)
   function ownGeometry(g) { geometries.add(g); return g }
   function ownMaterial(m) { materials.add(m); return m }
   function bodyMaterial(hex = tint, bright = 0.55) {
+    const key = sharing && `b${new THREE.Color(hex).getHex()}|${bright}`
+    if (key && shared.has(key)) return shared.get(key)
     const m = ownMaterial(new THREE.MeshStandardMaterial({
       color: 0x1b2438, emissive: hex, emissiveIntensity: powered ? bright : 0.025,
       metalness: 0.45, roughness: 0.42, flatShading: true, side: THREE.DoubleSide,
     }))
     m.userData.litIntensity = bright
     tintMaterials.add(m)
+    if (key) shared.set(key, m)
     return m
   }
   function edgeMaterial(hex = tint) {
+    const key = sharing && `e${new THREE.Color(hex).getHex()}`
+    if (key && shared.has(key)) return shared.get(key)
     const m = ownMaterial(new THREE.LineBasicMaterial({ color: hex, transparent: true,
       opacity: powered ? 0.95 : 0.12, side: THREE.DoubleSide }))
     lineMaterials.add(m)
+    if (key) shared.set(key, m)
     return m
   }
   function add(parent, geometry, hex = tint, bright = 0.55, edges = true) {
@@ -82,6 +95,8 @@ export function createStructureModel({ role, sides, size, color, isCore }) {
     const mesh = new THREE.Mesh(g, bodyMaterial(hex, bright))
     if (edges) {
       const outline = new THREE.LineSegments(ownGeometry(new THREE.EdgesGeometry(g, 25)), edgeMaterial(hex))
+      outline.visible = !far
+      outlines.push(outline)
       mesh.add(outline)
     }
     parent.add(mesh)
@@ -117,6 +132,8 @@ export function createStructureModel({ role, sides, size, color, isCore }) {
     if (!branch) return
     branch.parent?.remove(branch)
     branch.traverse((o) => {
+      const oi = outlines.indexOf(o)
+      if (oi >= 0) outlines.splice(oi, 1)
       if (o.geometry) { o.geometry.dispose(); geometries.delete(o.geometry) }
       const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : []
       for (const m of mats) {
@@ -237,6 +254,9 @@ export function createStructureModel({ role, sides, size, color, isCore }) {
       box(head, r * 0.72, y, r * 0.12, r * 1.5, r * 0.12, r * 0.17)
       for (let i = 0; i < 5; i++) {
         const coil = box(head, r * (0.24 + i * 0.29), y, r * 0.12, r * 0.075, r * 0.22, r * 0.27)
+        // Cada bobina parpadea por separado: material propio, no el compartido.
+        coil.material = ownMaterial(coil.material.clone())
+        tintMaterials.add(coil.material)
         railCoils.push(coil)
       }
     }
@@ -272,6 +292,7 @@ export function createStructureModel({ role, sides, size, color, isCore }) {
     model.add(shieldDome)
   }
 
+  sharing = false
   const progress = new THREE.Mesh(
     ownGeometry(new THREE.RingGeometry(r * 1.12, r * 1.2, 24)),
     ownMaterial(new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.8,
@@ -469,6 +490,11 @@ export function createStructureModel({ role, sides, size, color, isCore }) {
     for (const m of materials) m.dispose()
     geometries.clear(); materials.clear(); tintMaterials.clear(); lineMaterials.clear()
   }
-  root.userData = { setColor, setDecor, setPowered, setBuilding, setAim, pulseUpgrade, update, dispose }
+  // Cámara lejos: sin contornos (la mitad de los draw calls de cada estructura) ni arcos finos.
+  function setDetail(isFar) {
+    far = !!isFar
+    for (const o of outlines) o.visible = !far
+  }
+  root.userData = { setColor, setDecor, setPowered, setBuilding, setAim, pulseUpgrade, update, dispose, setDetail }
   return root
 }

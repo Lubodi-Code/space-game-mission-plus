@@ -32,7 +32,7 @@ export class LaserTurret extends Structure {
     if (this.fireMode === 'focus') {
       if (this.focusTarget && !this.focusTarget.dead) {
         const d = Phaser.Math.Distance.Between(this.x, this.y, this.focusTarget.x, this.focusTarget.y)
-        if (d <= this.atkRange) target = this.focusTarget
+        if (d <= this.atkRange && !this.focusTarget.def?.laserImmune) target = this.focusTarget
       } else {
         this.focusTarget = null
       }
@@ -62,7 +62,7 @@ export class LaserTurret extends Structure {
     let best = null
     let bestD = this.atkRange
     for (const e of world.enemies) {
-      if (e.dead) continue
+      if (e.dead || e.def?.laserImmune) continue
       const d = Phaser.Math.Distance.Between(this.x, this.y, e.x, e.y)
       if (d <= bestD) { bestD = d; best = e }
     }
@@ -72,7 +72,7 @@ export class LaserTurret extends Structure {
   nearestEnemies(world, n) {
     const inRange = []
     for (const e of world.enemies) {
-      if (e.dead) continue
+      if (e.dead || e.def?.laserImmune) continue
       const d = Phaser.Math.Distance.Between(this.x, this.y, e.x, e.y)
       if (d <= this.atkRange) inRange.push({ e, d })
     }
@@ -84,7 +84,7 @@ export class LaserTurret extends Structure {
     let best = null
     let bestScore = -1
     for (const e of world.enemies) {
-      if (e.dead) continue
+      if (e.dead || e.def?.laserImmune) continue
       const d = Phaser.Math.Distance.Between(this.x, this.y, e.x, e.y)
       if (d > this.atkRange) continue
       const score = (e.radius || 0) * 1000 + (e.maxHp || 0)

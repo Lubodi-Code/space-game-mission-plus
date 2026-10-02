@@ -354,7 +354,7 @@ export const UPGRADES = [
   { id: 'tesla_b3', branch: 'B', label: 'Relámpago', cost: 200, forRole: 'tesla', requires: 'tesla_b2', damage: 1.6, cooldown: 0.8, tint: 0xffffff, decor: 'pierce' },
 
   // ---- Flak
-  { id: 'flak_a', branch: 'A', label: 'Perdigones', cost: 80, forRole: 'flak', pellets: 3, damage: 1.2, tint: 0xffb05e, decor: 'triple' },
+  { id: 'flak_a', branch: 'A', label: 'Doble cañón', cost: 80, forRole: 'flak', pellets: 1, damage: 1.2, tint: 0xffb05e, decor: 'triple' },
   { id: 'flak_a2', branch: 'A', label: 'Abanico', cost: 130, forRole: 'flak', requires: 'flak_a', coneDeg: 1.5, tint: 0xffc47a, decor: 'wide' },
   { id: 'flak_a3', branch: 'A', label: 'Muro de metralla', cost: 200, forRole: 'flak', requires: 'flak_a2', coneDeg: 1.4, damage: 1.4, tint: 0xffd8a0, decor: 'pods' },
   { id: 'flak_b', branch: 'B', label: 'Cargador tambor', cost: 80, forRole: 'flak', cooldown: 0.7, tint: 0xff7a3d, decor: 'fast' },

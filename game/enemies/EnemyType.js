@@ -11,6 +11,7 @@ export const EnemyType = Object.freeze({
   WARDEN: 'warden',
   LEECH: 'leech',
   BOMBER: 'bomber',
+  PRISM: 'prism',
 })
 
 export const ROLE_GROUPS = {
@@ -225,5 +226,23 @@ export const REGISTRY = {
     risk: 'CALCULATED',
     evasion: 'JUKE',
     evasionChance: 0.2,
+  },
+  // Prisma: casco reflectante. Las torretas láser no le hacen daño (ni lo apuntan): obliga a
+  // mezclar misiles y Arsenal. El rayo del comandante y las habilidades sí lo dañan.
+  [EnemyType.PRISM]: {
+    hp: 55, speed: 46, scale: 0.85, reward: 16,
+    color: 0xdfe8ff, textureKey: 'enemy_skirmisher', engineSound: 'skirmisher',
+    laserImmune: true,
+    targetPriority: 'DEFENSE',
+    targetSecondary: 'CORE',
+    movement: 'WEAVE',
+    attack: 'LIGHT_LASER',
+    attackRange: 140, atkCooldown: 800, damage: 6,
+    beamColor: 0xdfe8ff,
+    maxForce: 260,
+    agility: 0.25,
+    risk: 'BRAVE',
+    evasion: 'JUKE',
+    evasionChance: 0.3,
   },
 }
