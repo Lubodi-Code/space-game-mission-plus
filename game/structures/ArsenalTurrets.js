@@ -1,7 +1,6 @@
 import Phaser from 'phaser'
 import { gameState } from '~/game/gameState.js'
 import { Structure } from './Structure.js'
-import { glowBlend } from '~/game/render/blend.js'
 import { sfxLock, sfxMissile, sfxTesla, sfxCryo, sfxRail, sfxFlak } from '~/game/sound.js'
 
 // Torretas del Arsenal (se desbloquean en la tienda). Base común WeaponTurret: objetivo
@@ -153,51 +152,155 @@ export class RailTurret extends WeaponTurret {
   }
 }
 
-// ---------------------------------------------------------- Flak: cono de metralla
+// ------------------------------------------- Flak: minigun de balas con mala puntería
+// Cadencia muy alta; cada bala sale con un desvío aleatorio dentro de coneDeg, vuela en línea
+// recta y se disuelve al final de su alcance si no pega. pellets = balas por disparo.
+const FLAK_MAX_BULLETS = 90
+
 export class FlakTurret extends WeaponTurret {
-  fire(target, world) {
-    const ang = Math.atan2(target.y - this.y, target.x - this.x)
-    const half = Phaser.Math.DegToRad((this.coneDeg || 50) / 2)
-    for (const e of world.enemies) {
-      if (e.dead) continue
-      const d = Math.hypot(e.x - this.x, e.y - this.y)
-      if (d > this.atkRange + e.radius) continue
-      const da = Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(e.y - this.y, e.x - this.x) - ang))
-      if (da <= half) e.hit(Math.round(this.dmg * (this.pellets || 5) / 5), world)
+  constructor(def, x, y, scene) {
+    super(def, x, y, scene)
+    this.bullets = []
+  }
+
+  fire(target) {
+    const base = Math.atan2(target.y - this.y, target.x - this.x)
+    const spread = Phaser.Math.DegToRad(this.coneDeg || 26)
+    for (let i = 0; i < (this.pellets || 1) && this.bullets.length < FLAK_MAX_BULLETS; i++) {
+      const a = base + (Math.random() - 0.5) * spread
+      const speed = 620 + Math.random() * 140
+      this.bullets.push({
+        x: this.x + Math.cos(a) * this.radius, y: this.y + Math.sin(a) * this.radius,
+        vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, life: 0,
+        maxLife: (this.atkRange * 1.15 / speed) * 1000,
+      })
+      // Clientes remotos: no simulan balas; ven una estela corta cada tantas.
+      if (this.scene.netHost && (this._net = (this._net || 0) + 1) % 3 === 0) {
+        this.beam(this.x, this.y, this.x + Math.cos(a) * this.atkRange * 0.7, this.y + Math.sin(a) * this.atkRange * 0.7, this.fxColor, 1.2, { ttl: 70 })
+      }
     }
-    const n = this.pellets || 5
-    for (let i = 0; i < n; i++) {
-      const a = ang + (i / (n - 1) - 0.5) * half * 2
-      this.beam(this.x, this.y, this.x + Math.cos(a) * this.atkRange, this.y + Math.sin(a) * this.atkRange, this.fxColor, 1.4, { ttl: 90 })
+    if ((this._snd = (this._snd || 0) + 1) % 3 === 1) sfxFlak(this.x, this.y)
+  }
+
+  update(dt, world, time) {
+    super.update(dt, world, time)
+    if (this.bullets.length) this.updateBullets(dt, world)
+  }
+
+  // dt en MS. Las balas siguen volando aunque la torreta se apague.
+  updateBullets(dt, world) {
+    const g = this.scene.beamGraphics
+    const s = dt / 1000
+    for (let i = this.bullets.length - 1; i >= 0; i--) {
+      const b = this.bullets[i]
+      b.life += dt
+      // Choque en subpasos de ≤12 px: a velocidad 3× una bala avanza 40+ px por frame y si solo
+      // se mirara el punto final atravesaría naves pequeñas.
+      const px = b.x, py = b.y
+      b.x += b.vx * s; b.y += b.vy * s
+      const k = b.life / b.maxLife
+      let hit = null
+      const steps = Math.max(1, Math.ceil(Math.hypot(b.x - px, b.y - py) / 12))
+      for (let j = 1; j <= steps && !hit; j++) {
+        const qx = px + (b.x - px) * j / steps, qy = py + (b.y - py) * j / steps
+        // Radio de búsqueda que cubre a los jefes (radio ~30-50): la colisión usa e.radius.
+        world.enemyGrid?.forEachNear(qx, qy, 64, (e) => {
+          if (!hit && !e.dead && Math.hypot(e.x - qx, e.y - qy) <= e.radius + 3) hit = e
+        })
+      }
+      if (hit) {
+        hit.hit(this.dmg, world)
+        g.fillStyle(0xfff0c0, 0.9).fillCircle(b.x, b.y, 2.5)
+        this.bullets.splice(i, 1)
+        continue
+      }
+      if (k >= 1) { this.bullets.splice(i, 1); continue }
+      // Trazadora que se desvanece y se encoge al final del recorrido (la bala "se diluye").
+      const alpha = 1 - k * k
+      g.lineStyle(2.2 - k * 1.2, this.fxColor, alpha)
+        .lineBetween(b.x - b.vx * 0.022, b.y - b.vy * 0.022, b.x, b.y)
     }
-    sfxFlak(this.x, this.y)
   }
 }
 
-// --------------------------------------------------- Mortero: proyectil lento de área
+// ---------------------------------------- Mortero: bombas lentas con mecha
+// Lanza una bomba en arco muy lento; al caer queda en el suelo con una mecha (anillo que se
+// cierra) y luego explota en área. Con la rama A (más proyectiles) lanza un racimo de bombitas
+// dispersas de mecha corta y menos daño cada una.
+const MORTAR_FUSE_MS = 1000
+const CLUSTER_FUSE_MS = 650
+
 export class MortarTurret extends WeaponTurret {
+  constructor(def, x, y, scene) {
+    super(def, x, y, scene)
+    this.shellsInAir = []
+  }
+
   fire(target) {
     const n = this.shells || 1
+    const cluster = n > 1
+    // Adelanta la posición del blanco, pero no más de 2.5 s: el vuelo es largo y pierde sentido.
+    const d0 = Math.hypot(target.x - this.x, target.y - this.y)
+    const lead = Math.min(2.5, d0 / this.projSpeed)
+    const ax = target.x + (target.vx || 0) * lead
+    const ay = target.y + (target.vy || 0) * lead
     for (let i = 0; i < n; i++) {
-      this.scene.time.delayedCall(i * 180, () => this.shell(target))
+      const scatter = cluster ? 30 + Math.random() * 70 : Math.random() * 20
+      const a = Math.random() * Math.PI * 2
+      const tx = ax + Math.cos(a) * scatter
+      const ty = ay + Math.sin(a) * scatter
+      const dist = Math.hypot(tx - this.x, ty - this.y)
+      this.shellsInAir.push({
+        sx: this.x, sy: this.y, tx, ty, x: this.x, y: this.y, t: -i * 140, // salida escalonada
+        dur: (dist / this.projSpeed) * 1000, peak: Math.min(260, dist * 0.35),
+        fuse: cluster ? CLUSTER_FUSE_MS + Math.random() * 350 : MORTAR_FUSE_MS, landedAt: null,
+        dmg: cluster ? this.dmg * 0.55 : this.dmg, splash: cluster ? this.splash * 0.65 : this.splash,
+        r: cluster ? 3.2 : 5, launched: false,
+      })
     }
   }
 
-  shell(target) {
-    const scene = this.scene
-    const tx = target.x + (target.vx || 0) * 0.8 + (Math.random() - 0.5) * 40
-    const ty = target.y + (target.vy || 0) * 0.8 + (Math.random() - 0.5) * 40
-    const dx = tx - this.x; const dy = ty - this.y; const d = Math.hypot(dx, dy) || 1
-    const sprite = scene.add.image(this.x, this.y, 'missile_rod').setTint(this.fxColor).setScale(1.3).setDepth(20)
-    const glow = scene.add.image(this.x, this.y, 'glow').setTint(this.fxColor).setBlendMode(glowBlend()).setScale(0.09).setAlpha(0.8).setDepth(19)
-    scene.projectiles.push({
-      x: this.x, y: this.y, tx, ty, target: null, // sin guía: cae donde apuntó
-      speed: this.projSpeed, damage: this.dmg, splash: this.splash, aura: true, color: this.fxColor, sprite, glow,
-      _dir: { x: dx / d, y: dy / d }, vx: (dx / d) * this.projSpeed, vy: (dy / d) * this.projSpeed,
-      id: (scene._missileSeq = (scene._missileSeq || 0) + 1),
-      maxLife: (d / this.projSpeed) * 1000 + 600,
-    })
-    sfxMissile(this.x, this.y)
+  update(dt, world, time) {
+    super.update(dt, world, time)
+    if (this.shellsInAir.length) this.updateShells(dt, world)
+  }
+
+  updateShells(dt, world) {
+    const g = this.scene.beamGraphics
+    for (let i = this.shellsInAir.length - 1; i >= 0; i--) {
+      const sh = this.shellsInAir[i]
+      sh.t += dt
+      if (sh.t < 0) continue
+      if (!sh.launched) { sh.launched = true; sfxMissile(this.x, this.y) }
+      if (sh.landedAt == null) {
+        const k = Math.min(1, sh.t / sh.dur)
+        sh.x = sh.sx + (sh.tx - sh.sx) * k
+        sh.y = sh.sy + (sh.ty - sh.sy) * k
+        const h = Math.sin(k * Math.PI) * sh.peak
+        // Sombra en el suelo + bomba "en el aire" (desplazada hacia arriba por la altura).
+        g.fillStyle(0x000000, 0.35).fillEllipse(sh.x, sh.y, sh.r * 2.4, sh.r * 1.4)
+        g.fillStyle(this.fxColor, 1).fillCircle(sh.x, sh.y - h * 0.6, sh.r + h * 0.012)
+        g.fillStyle(0xffffff, 0.7).fillCircle(sh.x - 1, sh.y - h * 0.6 - 1, (sh.r + h * 0.012) * 0.35)
+        if (k >= 1) sh.landedAt = sh.t
+        continue
+      }
+      const waited = sh.t - sh.landedAt
+      const left = 1 - waited / sh.fuse
+      if (left <= 0) {
+        for (const e of world.enemies) {
+          if (!e.dead && Math.hypot(e.x - sh.x, e.y - sh.y) <= sh.splash + e.radius) e.hit(Math.round(sh.dmg), world)
+        }
+        this.scene.explosion(sh.x, sh.y, this.fxColor, sh.splash, sh.r > 4 ? 'big' : 'small')
+        this.shellsInAir.splice(i, 1)
+        continue
+      }
+      // Bomba en el suelo: parpadea cada vez más rápido y un anillo marca la mecha restante.
+      const blink = Math.sin(waited * (0.012 + (1 - left) * 0.05)) > 0
+      g.fillStyle(blink ? 0xffffff : this.fxColor, 1).fillCircle(sh.x, sh.y, sh.r)
+      g.lineStyle(1.6, this.fxColor, 0.9).beginPath()
+        .arc(sh.x, sh.y, sh.r + 5, -Math.PI / 2, -Math.PI / 2 + left * Math.PI * 2).strokePath()
+      g.lineStyle(1, this.fxColor, 0.25 + (1 - left) * 0.35).strokeCircle(sh.x, sh.y, sh.splash * (1 - left * 0.5))
+    }
   }
 }
 

@@ -140,10 +140,12 @@ export function createEnemyInstances(scene, glowTex, { haloScale = 4.4 } = {}) {
       halo.setColorAt(h, _col)
     },
 
-    end() {
+    // far: cámara alejada → sin contorno ni cabina (miden ~1 px), la mitad de los draw calls.
+    end(far = false) {
       for (const k of kinds.values()) {
         const vis = k.n > 0
-        k.hull.visible = k.cockpit.visible = k.engine.visible = k.edges.visible = vis
+        k.hull.visible = k.engine.visible = vis
+        k.cockpit.visible = k.edges.visible = vis && !far
         if (!vis) continue
         k.hull.count = k.cockpit.count = k.engine.count = k.n
         k.edges.geometry.instanceCount = k.n

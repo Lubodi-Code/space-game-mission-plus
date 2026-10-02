@@ -7,7 +7,7 @@ import {
   CAMERA,
 } from '~/game/balance.js'
 // (la mayoría de los subsistemas viven en systems/ · render/ · net/)
-import { ROLE_GROUPS } from '~/game/enemies/EnemyType.js'
+import { ROLE_GROUPS, REGISTRY } from '~/game/enemies/EnemyType.js'
 import { Enemy } from '~/game/enemies/Enemy.js'
 import { EnemyProjectileSystem } from '~/game/enemies/EnemyProjectiles.js'
 import { createStructure } from '~/game/structures/StructureRegistry.js'
@@ -518,8 +518,9 @@ export class GameScene extends Phaser.Scene {
     })
 
     this.input.on('wheel', (_pointer, _over, _dx, dy) => {
-      const step = dy > 0 ? -CAMERA.zoomStep : CAMERA.zoomStep
-      const newZoom = Phaser.Math.Clamp(this.cam.zoom + step, CAMERA.minZoom, CAMERA.maxZoom)
+      // Paso proporcional (±10 %): con el rango amplio de zoom un paso fijo era lentísimo de
+      // cerca y brusco de lejos.
+      const newZoom = Phaser.Math.Clamp(this.cam.zoom * (dy > 0 ? 1 / 1.1 : 1.1), CAMERA.minZoom, CAMERA.maxZoom)
       const pointer = this.input.activePointer
       const wx = (pointer.x + this.cam.scrollX * this.cam.zoom) / this.cam.zoom
       const wy = (pointer.y + this.cam.scrollY * this.cam.zoom) / this.cam.zoom
@@ -721,7 +722,7 @@ export class GameScene extends Phaser.Scene {
     for (const e of (this.remote ? (this.eById?.values() || []) : this.enemies)) {
       if (e.dead || e.visible === false) continue
       const k = Math.max(0, 1 - Math.hypot(e.x - wv.centerX, e.y - wv.centerY) / bedR)
-      if (k > 0) engines[e.type] = (engines[e.type] || 0) + k * k
+      if (k > 0) { const snd = REGISTRY[e.type]?.engineSound || e.type; engines[snd] = (engines[snd] || 0) + k * k }
     }
     updateShipEngines(engines)
 

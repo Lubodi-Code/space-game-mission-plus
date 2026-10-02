@@ -236,7 +236,10 @@ export function enemyShipParts({ radius = 10, type = 'grunt' } = {}) {
   const long = r * (type === 'runner' || type === 'kamikaze' ? 2.7 : type === 'mothership' || type === 'commandship' ? 2.35 : 2.2)
   const wide = r * (type === 'brute' || type === 'bomber' || type === 'warden' ? 1.35 : 0.95)
   const depth = r * (type === 'mothership' || type === 'commandship' ? 0.46 : 0.34)
-  const hullPoints = type === 'brute' || type === 'bomber'
+  const hullPoints = type === 'prism'
+    // Rombo facetado: se lee distinto del resto (es la nave inmune al láser).
+    ? [[-long * 0.5, 0], [-long * 0.05, -wide * 0.95], [long * 0.55, 0], [-long * 0.05, wide * 0.95]]
+    : type === 'brute' || type === 'bomber'
     ? [[-long * 0.52, -wide], [long * 0.2, -wide * 0.96], [long * 0.55, -wide * 0.45], [long * 0.55, wide * 0.45], [long * 0.2, wide * 0.96], [-long * 0.52, wide]]
     : type === 'runner' || type === 'kamikaze'
       ? [[-long * 0.58, -wide * 0.42], [long * 0.55, 0], [-long * 0.58, wide * 0.42], [-long * 0.2, 0]]
@@ -249,7 +252,7 @@ export function enemyShipParts({ radius = 10, type = 'grunt' } = {}) {
     g.setAttribute('color', new THREE.BufferAttribute(a, 3))
     return g
   }
-  const hull = paint(extrude(hullPoints, depth, Math.max(0.5, r * 0.06)), 0x172238)
+  const hull = paint(extrude(hullPoints, depth, Math.max(0.5, r * 0.06)), type === 'prism' ? 0x9fb0cc : 0x172238)
   const wingSpan = wide * (type === 'artillery' || type === 'saboteur' ? 1.9 : 1.35)
   const wingDepth = Math.max(0.45, depth * 0.45)
   const wingL = extrude([[-r * 0.15, -wide * 0.45], [-r * 0.65, -wingSpan], [-long * 0.4, -wingSpan * 0.82], [-long * 0.18, -wide * 0.4]], wingDepth, 0.35)

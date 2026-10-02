@@ -9,6 +9,7 @@ import { EnemyType } from '../enemies/EnemyType.js'
 const BASE_ROSTER = [
   EnemyType.GRUNT, EnemyType.RUNNER, EnemyType.SABOTEUR, EnemyType.SKIRMISHER,
   EnemyType.BRUTE, EnemyType.ARTILLERY, EnemyType.MOTHERSHIP, EnemyType.COMMANDSHIP,
+  EnemyType.PRISM,
 ]
 
 const DEFS = [
