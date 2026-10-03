@@ -35,7 +35,7 @@ const enemies = [
 ]
 const faqs = [
   { question: '¿Space Game Mission Plus es gratis?', answer: 'Sí. Podés jugar gratis. La tienda ofrece cosméticos para rayos, naves y estelas que no dan ventaja de juego.' },
-  { question: '¿Se puede jugar en celular?', answer: 'Sí. Space Game Mission Plus funciona en PC y celular desde el navegador.' },
+  { question: '¿Se puede jugar en celular?', answer: 'Sí. Space Game Mission Plus funciona en PC y celular desde el navegador. En Windows también podés instalar la app de escritorio desde esta página.' },
   { question: '¿Puedo jugar con otra persona?', answer: 'Sí. El cooperativo online permite crear una sala y compartir su código para que otra persona se una.' },
   { question: '¿Cuánto dura una partida?', answer: 'Cada partida tiene 10 oleadas. El modo Rápido dura aproximadamente 5–10 minutos y el Clásico, 10–15 minutos.' },
   { question: '¿Qué se conserva entre partidas?', answer: 'Ganás XP y Chatarra para investigación entre partidas. También podés elegir cosméticos que no dan ventaja de juego.' },
@@ -69,10 +69,36 @@ useHead({
   ],
 })
 
+// Descarga de escritorio. El instalador sale de GitHub Releases (workflow release.yml) con un
+// nombre fijo, así el enlace /releases/latest/download/ nunca cambia entre versiones.
+const DESKTOP_URL = 'https://github.com/Lubodi-Code/space-game-mission-plus/releases/latest/download/SpaceGameMissionPlus-Setup.exe'
+// null = aún no detectado (SSR/hidratación: no se muestra nada), 'windows' = botón de descarga,
+// 'other' = PC mac/linux (aviso, todavía sin instalador), 'hide' = móvil/tablet o ya es la app.
+const desktopOs = ref<null | 'windows' | 'other' | 'hide'>(null)
+
+// El botón solo aparece si ya hay un release publicado con el instalador: sin release (o sin red,
+// o con la API de GitHub limitada) no se ofrece una descarga que daría 404.
+async function checkDesktopRelease() {
+  try {
+    const res = await fetch('https://api.github.com/repos/Lubodi-Code/space-game-mission-plus/releases/latest', { headers: { Accept: 'application/vnd.github+json' } })
+    const data = res.ok ? await res.json() : null
+    desktopOs.value = data?.assets?.some((a: { name: string }) => a.name === 'SpaceGameMissionPlus-Setup.exe') ? 'windows' : 'hide'
+  } catch {
+    desktopOs.value = 'hide'
+  }
+}
+
 // Portada (SSR + prerender). Links viejos de invitación (/?join=XXXX) siguen funcionando.
 onMounted(() => {
   const join = new URLSearchParams(location.search).get('join')
   if (join) navigateTo({ path: '/jugar', query: { join } }, { replace: true })
+
+  const ua = navigator.userAgent
+  // iPadOS se presenta como Macintosh pero con pantalla táctil; un Mac real no tiene multitouch.
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile|CrOS/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
+  if (isMobile || /Electron\//.test(ua)) desktopOs.value = 'hide'
+  else if (/Windows NT/.test(ua)) checkDesktopRelease()
+  else desktopOs.value = 'other'
 })
 </script>
 
@@ -92,9 +118,10 @@ onMounted(() => {
           <p class="hero-copy">Construí una red de energía, miná meteoritos y dirigí tus defensas a través de 10 oleadas. Jugá solo o en cooperativo online.</p>
           <div class="hero-actions">
             <NuxtLink class="button button-primary" to="/jugar">Jugar gratis <span aria-hidden="true">↗</span></NuxtLink>
+            <a v-if="desktopOs === 'windows'" class="button button-secondary" :href="DESKTOP_URL" download rel="noopener">Descargar para Windows <span aria-hidden="true">⬇</span></a>
             <a class="button button-secondary" href="#como-se-juega">Cómo se juega</a>
           </div>
-          <p class="hero-note">En tu navegador · PC y celular</p>
+          <p class="hero-note">En tu navegador · PC y celular<template v-if="desktopOs === 'windows'"> · App de escritorio para Windows</template><template v-else-if="desktopOs === 'other'"> · App de escritorio: por ahora solo Windows</template></p>
         </div>
         <div class="hero-edge" aria-hidden="true"></div>
       </section>
