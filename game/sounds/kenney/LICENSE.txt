@@ -1,0 +1,3 @@
+Audio de Kenney (www.kenney.nl), Creative Commons Zero (CC0 1.0): uso libre, sin atribución.
+Paquetes: Sci-Fi Sounds, Impact Sounds, Interface Sounds, Digital Audio, UI Audio, Music Jingles.
+Los archivos están renombrados por banco (carpeta/NN.ogg) y recortados a una selección.

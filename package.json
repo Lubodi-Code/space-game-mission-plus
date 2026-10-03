@@ -2,12 +2,17 @@
   "name": "space-game-mission-plus",
   "private": true,
   "version": "0.1.0",
+  "main": "desktop/main.cjs",
   "type": "module",
   "description": "Space Game Mission Plus - RTS / Tower Defense / Arena Survival remaster",
   "scripts": {
     "dev": "nuxt dev",
     "build": "nuxt build",
-    "preview": "nuxt preview"
+    "preview": "nuxt preview",
+    "desktop:generate": "node scripts/build-desktop.mjs",
+    "desktop": "npm run desktop:generate && electron .",
+    "desktop:dist": "npm run desktop:generate && electron-builder --win",
+    "version:info": "node scripts/version-info.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",
@@ -19,7 +24,53 @@
   },
   "devDependencies": {
     "@nuxtjs/tailwindcss": "^6.14.0",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
     "nuxt": "^4.4.8",
     "tailwindcss": "^3.4.19"
+  },
+  "build": {
+    "appId": "com.lubodi.spacegamemissionplus",
+    "productName": "Space Game Mission Plus",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "desktop/**",
+      "public/assets/icon/**",
+      "package.json",
+      "!node_modules/**"
+    ],
+    "extraResources": [
+      {
+        "from": ".output/public",
+        "to": "web"
+      }
+    ],
+    "extraMetadata": {
+      "dependencies": {}
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "SpaceGameMissionPlus-Setup.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Lubodi-Code",
+        "repo": "space-game-mission-plus"
+      }
+    ]
   }
 }

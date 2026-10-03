@@ -82,7 +82,9 @@ function makeVoice(kind, spec, output) {
   return { synth, filter, pan, level, accent, effects, freeAt: 0 }
 }
 
-export function initTone(ctx, outputNode) {
+// shots: false → no se crean los pools de disparo. Cada voz (synth + Chorus/BitCrusher/…) se
+// procesa en el hilo de audio aunque esté en silencio; ~30 voces sin usar causaban underruns.
+export function initTone(ctx, outputNode, { shots = true } = {}) {
   if (typeof window === 'undefined' || !ctx || !outputNode) return Promise.resolve(false)
   if (ready) return Promise.resolve(true)
   if (starting) return starting
@@ -91,7 +93,7 @@ export function initTone(ctx, outputNode) {
       Tone = await import('tone')
       Tone.setContext(ctx)
       const next = {}
-      for (const [kind, spec] of Object.entries(specs)) {
+      if (shots) for (const [kind, spec] of Object.entries(specs)) {
         next[kind] = Array.from({ length: LOW_GFX ? Math.max(2, Math.ceil(spec.count / 2)) : spec.count },
           () => makeVoice(kind, spec, outputNode))
       }

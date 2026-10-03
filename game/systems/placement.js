@@ -1,3 +1,4 @@
+import { sfxBuild } from '~/game/sound.js'
 import Phaser from 'phaser'
 import { gameState } from '~/game/gameState.js'
 import { BUILD, structureByKey } from '~/game/balance.js'
@@ -71,6 +72,7 @@ export function tryPlace(scene, x, y, gen = scene.general, useSnap = true) {
   if (scene.runStats?.structuresBuilt != null) scene.runStats.structuresBuilt++
   recomputeNetwork(scene)
   flashPlacementFeedback(scene, true, placeX, placeY, def)
+  sfxBuild(placeX, placeY)
 
   if (gameState.minerals < def.cost) cancelPlacement(scene)
   else updateGhost(scene, placeX, placeY)

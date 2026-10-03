@@ -10,7 +10,8 @@ export default defineNuxtConfig({
   modules: ['@nuxtjs/tailwindcss'],
 
   // Portada con SSR + prerender (SEO); el juego es solo cliente (Phaser/Three usan window).
-  ssr: true,
+  // Escritorio (Electron): SPA estático puro, sin SSR; las rutas server/ se reenvían a Vercel.
+  ssr: !process.env.NUXT_DESKTOP,
   routeRules: {
     '/': { prerender: true },
     '/jugar': { ssr: false },

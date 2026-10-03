@@ -345,6 +345,10 @@ const sectorInfo = computed(() => sectorByN(appState.sector))
 const levelInfo = computed(() => levelFromXp(profile.xp))
 
 // Teclas de habilidades (Z/C/V/B), definidas en systems/abilities.js.
+// Estilo de disparo del General: láser (rápido, un blanco) o misiles (lento, daño en área).
+// Solo host/solo: el arma del General vive en la simulación del host (el cliente no tiene intent para ella).
+function toggleGeneralWeapon() { if (appState.mp.role === 'client') return; bus.emit('generalWeapon', gameState.generalWeapon === 'missile' ? 'laser' : 'missile') }
+
 const ABILITY_KEYS = Object.fromEntries(Object.values(ABILITIES).map((a) => [a.key.toLowerCase(), a.id]))
 
 // ---- Teclas rápidas: espejo de los botones del GUI (emiten los mismos intents).
@@ -390,6 +394,7 @@ function onKey(e) {
   if (e.key === 'n' || e.key === 'N') { callWave(); return }
   switch (e.key) {
     case 'g': case 'G': pickGeneral(); break
+    case 't': case 'T': toggleGeneralWeapon(); break  // láser ↔ misiles del General
     case 'p': case 'P': togglePause(); break
     case ',': case '<': stepSpeed(-1); break
     case '.': case '>': stepSpeed(1); break
@@ -751,6 +756,15 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
         <div class="font-bold text-sm" style="color: #8be9fd">General</div>
         <button class="sheet-close" aria-label="Cerrar" @click="cancelAll">✕</button>
       </div>
+      <button
+        v-if="appState.mp.role !== 'client'"
+        class="w-full flex items-center justify-between px-2 py-1.5 rounded-lg ring-1 ring-cyan-400/30 bg-cyan-400/10 hover:bg-cyan-400/20 text-cyan-100"
+        :aria-label="'Estilo de disparo: ' + (gameState.generalWeapon === 'missile' ? 'misiles' : 'láser') + '. Cambiar (T)'"
+        @click="toggleGeneralWeapon"
+      >
+        <span>Disparo: <b>{{ gameState.generalWeapon === 'missile' ? 'Misiles' : 'Láser' }}</b></span>
+        <span class="opacity-60">T</span>
+      </button>
       <div class="space-y-1" aria-label="Estadísticas del General">
         <div v-for="row in generalRows" :key="row.title" class="stat-row" :title="row.title">
           <GameIcon :name="row.icon" :size="15" :title="row.title" />

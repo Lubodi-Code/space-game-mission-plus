@@ -2,13 +2,17 @@ import Phaser from 'phaser'
 import { GENERAL } from './balance.js'
 import { gameState } from './gameState.js'
 import { spawnFloatingText } from './render/fx.js'
-import { sfxGeneralShot } from './sound.js'
+import { sfxGeneralShot, sfxMissile } from './sound.js'
+import { glowBlend } from './render/blend.js'
 import { equippedBeam } from './meta/cosmetics.js'
 import { RENDER_SCALE } from './quality.js'
 
 // Tinte por jugador (pid): 0 = host, 1..3 = clientes. Mismo orden en host y cliente
 // para que cada general se vea igual en ambas pantallas.
 export const GEN_TINTS = [0xffaa44, 0x8be9fd, 0x9bff8b, 0xd49bff]
+
+// Estilo «misiles» del General: más daño y área, a cambio de cadencia (la torreta de misiles es la referencia).
+const MISSILE = { cooldown: 2.6, damage: 2.4, splash: 38, speed: 240 }
 
 export class General {
   constructor(scene, x, y, tint = 0x8be9fd) {
@@ -182,7 +186,10 @@ export class General {
         const ed = Math.hypot(e.x - this.x, e.y - this.y) - e.radius
         if (ed < bestD) { bestD = ed; best = e }
       }
-      if (best) {
+      if (best && gameState.generalWeapon === 'missile') {
+        this.fireMissile(best)
+        this.atkTimer = (this.cooldown * MISSILE.cooldown) / mult
+      } else if (best) {
         sfxGeneralShot(this.x, this.y)
         best.hp -= this.damage
         if (best.hp <= 0) world.killEnemy(best)
@@ -233,5 +240,27 @@ export class General {
     this.sprite.setVisible(true).setPosition(this.x, this.y)
     this.mineTarget = null
     this.minedAccum = 0
+  }
+
+  // Misil teledirigido del General: misma estructura que MissileTurret.fireMissile, así lo mueve
+  // systems/projectiles.js y el cliente remoto lo recibe en el snapshot sin cambios.
+  fireMissile(target) {
+    const scene = this.scene
+    sfxMissile(this.x, this.y)
+    const color = this.beamSkin ? equippedBeam().color : this.tint
+    const sprite = scene.add.image(this.x, this.y, 'missile_rod').setTint(color).setScale(0.5).setDepth(20)
+    const glow = scene.add.image(this.x, this.y, 'glow').setTint(color).setBlendMode(glowBlend()).setScale(0.05).setAlpha(0.75).setDepth(19)
+    const dx = target.x - this.x
+    const dy = target.y - this.y
+    const d = Math.hypot(dx, dy) || 1
+    sprite.setRotation(Math.atan2(dy, dx) + Math.PI / 2)
+    scene.projectiles.push({
+      x: this.x, y: this.y, tx: target.x, ty: target.y, target,
+      speed: MISSILE.speed, damage: Math.round(this.damage * MISSILE.damage), splash: MISSILE.splash, aura: true, color, sprite, glow,
+      _dir: { x: dx / d, y: dy / d },
+      id: (scene._missileSeq = (scene._missileSeq || 0) + 1),
+      vx: (dx / d) * MISSILE.speed, vy: (dy / d) * MISSILE.speed,
+      maxLife: ((this.atkRange * 1.6) / MISSILE.speed) * 1000,
+    })
   }
 }
