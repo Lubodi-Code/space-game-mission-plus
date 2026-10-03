@@ -17,3 +17,7 @@ assets-src
 !.env.example
 
 .vercel
+
+release/
+
+public/version.json
