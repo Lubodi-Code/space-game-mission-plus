@@ -37,7 +37,7 @@ import { initSpecialMeteors, updateSpecialMeteors, goToGiant } from '~/game/syst
 import { grantRunRewards } from '~/game/meta/profile.js'
 import { equipped, claimUnlocks } from '~/game/meta/cosmetics.js'
 import { currentMode } from '~/game/modes/index.js'
-import { sfxLevelUp, sfxUpgrade } from '~/game/sound.js'
+import { sfxLevelUp, sfxUpgrade, sfxHit, sfxUi } from '~/game/sound.js'
 import { saveSoloSnapshot, loadSoloSnapshot, restoreSoloSnapshot, clearSoloSnapshot } from '~/game/systems/persist.js'
 
 
@@ -594,6 +594,7 @@ export class GameScene extends Phaser.Scene {
       bus.on('selectGeneral', () => this.selectGeneral()),
       bus.on('restart', () => { clearSoloSnapshot(); this.scene.restart() }),
       bus.on('speed', (v) => { this.setSpeed(v); sfxSpeed() }),
+      bus.on('generalWeapon', (w) => { gameState.generalWeapon = w === 'missile' ? 'missile' : 'laser'; sfxUi('switch') }),
       bus.on('demolish', ({ structureId }) => this.demolishStructure(structureId)),
       bus.on('upgrade', ({ structureId, upgradeId }) => applyUpgrade(this, structureId, upgradeId)),
       bus.on('upgradeGeneral', (upgradeId) => this.applyGeneralUpgrade(upgradeId)),
@@ -800,6 +801,7 @@ export class GameScene extends Phaser.Scene {
 
   damageStructure(s, dmg) {
     s.damage(dmg)
+    if (!this.remote) sfxHit(s.x, s.y, dmg >= 25)
   }
 
   // Demoler una estructura: reembolsa el 50% del coste y la elimina (s.destroy hace splice +

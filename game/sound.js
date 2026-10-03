@@ -26,10 +26,20 @@ const SHIP_ENGINE_URLS = Object.fromEntries(
 )
 // Volumen por nave cercana y techo de cada tipo: las grandes pesan más y suenan más graves.
 const SHIP_ENGINE_MIX = {
-  grunt: [0.035, 0.12], runner: [0.03, 0.11], skirmisher: [0.035, 0.12], kamikaze: [0.05, 0.14],
-  saboteur: [0.04, 0.12], leech: [0.04, 0.12], bomber: [0.05, 0.14], warden: [0.05, 0.13],
-  brute: [0.07, 0.16], artillery: [0.06, 0.15], commandship: [0.08, 0.17], mothership: [0.1, 0.2],
+  grunt: [0.0175, 0.06], runner: [0.015, 0.055], skirmisher: [0.0175, 0.06], kamikaze: [0.025, 0.07],
+  saboteur: [0.02, 0.06], leech: [0.02, 0.06], bomber: [0.025, 0.07], warden: [0.025, 0.065],
+  brute: [0.035, 0.08], artillery: [0.03, 0.075], commandship: [0.04, 0.085], mothership: [0.05, 0.1],
 }
+
+// Bancos de variantes (Kenney, CC0 — ver sounds/kenney/LICENSE.txt): carpeta = banco, archivos NN.ogg.
+// Cada disparo elige una variante al azar (+ pequeño cambio de tono): evita la fatiga de oír siempre
+// el mismo sample. Si el banco aún no decodificó, se usa el sonido de antes.
+const BANK_URLS = {}
+for (const [path, url] of Object.entries(import.meta.glob('./sounds/kenney/*/*.ogg', { eager: true, query: '?url', import: 'default' }))) {
+  const bank = path.split('/')[3]
+  ;(BANK_URLS[bank] ||= []).push(url)
+}
+const banks = {}              // banco → AudioBuffer[]
 
 const MUSIC = { ingame: inGameUrl, transition: transitionUrl }
 const SAMPLES = {
@@ -48,6 +58,7 @@ let master = null
 let musicBus = null
 let sfxBus = null
 let reverbBus = null
+let echoBus = null
 const audioPrefs = { music: 1, sfx: 1 }
 let prefsLoaded = false
 const view = { cx: 0, cy: 0, w: 1920 }
@@ -64,7 +75,10 @@ export function sharedAudioContext() {
   if (!ctx) {
     const AC = window.AudioContext || window.webkitAudioContext
     if (!AC) return undefined
-    try { ctx = new AC() } catch { return undefined }
+    // 'playback' = buffer de salida más grande. Con 'interactive' (~10 ms) el hilo de audio no
+    // llegaba a tiempo mientras Phaser+Three cargan la máquina: ~12% de underruns, oído como
+    // estática/crepitar en música y SFX. Unos ms más de latencia no se notan en este juego.
+    try { ctx = new AC({ latencyHint: 'playback' }) } catch { return undefined }
   }
   return ctx
 }
@@ -94,8 +108,9 @@ export function initSound(scene) {
   master.connect(comp)
   comp.connect(ctx.destination)
   buildReverb()
+  buildEcho()
   loadAudio()
-  void initTone(ctx, sfxBus)
+  void initTone(ctx, sfxBus, { shots: TONE_SHOTS })
 }
 
 // Menús (lobby/tienda): crea el contexto propio en el primer gesto del usuario. Si luego
@@ -160,6 +175,20 @@ async function loadAudio() {
   for (const [name, url] of Object.entries(SAMPLES)) {
     try { buffers[name] = await decode(url) } catch { /* ignora sample fallido */ }
   }
+  // Bancos: de a pocos por vuelta de event loop para no competir con el arranque del juego.
+  // Primero lo más frecuente (disparos e interfaz); el resto después.
+  const PRIORITY = ['boom', 'laser', 'uiClick']
+  const order = Object.entries(BANK_URLS).sort(([x], [y]) => {
+    const ix = PRIORITY.indexOf(x), iy = PRIORITY.indexOf(y)
+    return (ix < 0 ? 99 : ix) - (iy < 0 ? 99 : iy)
+  })
+  for (const [bank, urls] of order) {
+    banks[bank] = []
+    for (const url of urls) {
+      try { banks[bank].push(await decode(url)) } catch { /* variante fallida: se omite */ }
+    }
+    await new Promise((r) => setTimeout(r, 0))
+  }
 }
 
 // ---------------------------------------------------------------------- reverb
@@ -180,10 +209,40 @@ function buildReverb() {
   reverbBus = conv
 }
 
+// ------------------------------------------------------------------- eco espacial
+// Delay con realimentación filtrada: cada repetición sale más grave y apagada (paso bajo dentro
+// del lazo), como un retumbe lejano en el vacío. El paso alto evita que los graves se acumulen.
+function buildEcho() {
+  const input = ctx.createGain()
+  const delay = ctx.createDelay(1.5)
+  delay.delayTime.value = 0.42
+  // Realimentación 0.58 con filtros sin pico de resonancia (Q 0 dB): ganancia del lazo < 1, así
+  // las ~6-8 repeticiones audibles se apagan solas y nunca se embala.
+  const fb = ctx.createGain()
+  fb.gain.value = 0.58
+  const lp = ctx.createBiquadFilter()
+  lp.type = 'lowpass'
+  lp.frequency.value = 750
+  lp.Q.value = 0
+  const hp = ctx.createBiquadFilter()
+  hp.type = 'highpass'
+  hp.frequency.value = 55
+  hp.Q.value = 0
+  const wet = ctx.createGain()
+  wet.gain.value = 0.9
+  input.connect(delay)
+  delay.connect(lp); lp.connect(hp); hp.connect(fb); fb.connect(delay)
+  hp.connect(wet)
+  wet.connect(sfxBus)
+  if (reverbBus) wet.connect(reverbBus) // las repeticiones también reverberan: más «espacio»
+  echoBus = input
+}
+
 // --------------------------------------------------------------- música/ambiente
 export function setMusicState(name) {
   if (!ctx) return
   music.want = name
+  startAmbience()
   if (music.loaded) swapMusic(name)
 }
 
@@ -241,15 +300,16 @@ function throttle(key, ms) {
 
 // -------------------------------------------------------------- reproducir sample
 // x/y null → sonido no espacial (centrado, vol completo). bass = dB de realce de graves.
-function playSample(name, x, y, { gain = 1, rate = 1, bass = 0, reverb = 0, throttleMs = 30, reach = 1.7, near = false } = {}) {
-  if (!ctx || !buffers[name]) return
+function playSample(name, x, y, { gain = 1, rate = 1, bass = 0, reverb = 0, throttleMs = 30, reach = 1.7, near = false, buffer = null, maxDur = 0, echo = 0 } = {}) {
+  const buf = buffer || buffers[name]
+  if (!ctx || !buf) return false
   const { pan, vol } = x == null ? { pan: 0, vol: 1 } : spatial(x, y, reach, near)
   // El throttle va después del volumen: un recolector lejano (vol 0) no le roba el turno a uno cercano.
-  if (vol <= 0.02) return
-  if (throttleMs && !throttle(name, throttleMs)) return
+  if (vol <= 0.02) return true
+  if (throttleMs && !throttle(name, throttleMs)) return true
   const t = ctx.currentTime
   const src = ctx.createBufferSource()
-  src.buffer = buffers[name]
+  src.buffer = buf
   src.playbackRate.value = rate
   let node = src
   if (bass) {
@@ -262,6 +322,11 @@ function playSample(name, x, y, { gain = 1, rate = 1, bass = 0, reverb = 0, thro
   }
   const g = ctx.createGain()
   g.gain.value = gain * vol
+  if (maxDur) { // recorta colas largas con fundido: con muchas explosiones se apilarían
+    const end = t + maxDur / rate
+    g.gain.setValueAtTime(gain * vol, Math.max(t, end - 0.5))
+    g.gain.linearRampToValueAtTime(0.0001, end)
+  }
   node.connect(g)
   if (ctx.createStereoPanner) {
     const p = ctx.createStereoPanner()
@@ -277,7 +342,24 @@ function playSample(name, x, y, { gain = 1, rate = 1, bass = 0, reverb = 0, thro
     g.connect(rg)
     rg.connect(reverbBus)
   }
+  if (echo && echoBus) {
+    const eg = ctx.createGain()
+    eg.gain.value = gain * vol * echo
+    g.connect(eg)
+    eg.connect(echoBus)
+  }
   src.start(t)
+  if (maxDur) src.stop(t + maxDur / rate + 0.05)
+  return true
+}
+
+// Reproduce una variante al azar del banco. Devuelve false si el banco aún no cargó (→ fallback).
+// detune: variación de tono ±(detune/2) para que dos disparos seguidos no suenen idénticos.
+function playBank(bank, x, y, { detune = 0.1, rate = 1, ...opts } = {}) {
+  const list = banks[bank]
+  if (!ctx || !list?.length) return false
+  const buffer = list[(Math.random() * list.length) | 0]
+  return playSample('bank_' + bank, x, y, { ...opts, buffer, rate: rate * (1 + (Math.random() - 0.5) * detune) })
 }
 
 // ------------------------------------------------------------------- SFX (samples)
@@ -294,24 +376,35 @@ function toneShot(kind, x, y, gain, ms) {
 }
 
 export function sfxLaser(x, y) {
-  if (!toneShot('laser', x, y, 0.9, 35)) playSample('laser', x, y, { gain: 0.9, bass: 8, throttleMs: 0 })
+  if (toneShot('laser', x, y, 0.9, 35)) return
+  if (!playBank('laser', x, y, { gain: 0.8, bass: 5, reverb: 0.25, detune: 0.08, throttleMs: 0 })) playSample('laser', x, y, { gain: 0.9, bass: 8, throttleMs: 0 })
 }
 export function sfxMissile(x, y) {
-  if (!toneShot('missile', x, y, 1, 45)) playSample('missile', x, y, { gain: 1, reverb: 0.55, throttleMs: 0 })
+  if (toneShot('missile', x, y, 1, 45)) return
+  playSample('missile', x, y, { gain: 1, reverb: 0.55, throttleMs: 0 })
+  playBank('thruster', x, y, { gain: 0.3, reverb: 0.4, throttleMs: 40 }) // estela del misil
 }
 export function sfxImpact(x, y, size = 1) {                                                                     // explosión/impacto (+graves)
-  playSample('explosion', x, y, { gain: Math.min(1.25, 0.8 + size * 0.18), bass: 9, throttleMs: 28 })
+  // A pedido: la explosión suena como el misil (trhowlasermisil.ogg), bajada de tono, suave, y con
+  // mucho «espacio»: poco sonido directo y mucho eco + reverb. Más grande = más grave y más eco.
+  const big = Math.min(1, Math.max(0, (size - 0.8) / 1.6))
+  const rate = (0.62 - big * 0.17) * (0.95 + Math.random() * 0.1)
+  playSample('missile', x, y, { gain: 0.38 + big * 0.17, rate, bass: 7 + big * 4, reverb: 0.9, echo: 0.9 + big * 0.4, throttleMs: 45 + big * 80 })
   if (size >= 1.5 && ctx) {
     const { pan, vol } = at(x, y)
     if (vol > 0.02) playExplosion(pan, vol * Math.min(size, 2))
   }
 }
+// Rayo recolector: el sample original (recolectorsound.ogg), a pedido: los bancos nuevos no lo tocan.
 export function sfxMine(x, y) { playSample('mine', x, y, { gain: 0.2, throttleMs: 500, reach: 0.75, near: true }) } // bajito; sube solo al acercarse                      // recolector
 export function sfxEnemyBeam(x, y) {
-  if (!toneShot('enemyBeam', x, y, 0.6, 40)) playSample('enemybeam', x, y, { gain: 0.6, throttleMs: 0 })
+  if (toneShot('enemyBeam', x, y, 0.6, 40)) return
+  if (!playBank('laserSmall', x, y, { gain: 0.45, rate: 0.85, reverb: 0.2, throttleMs: 0 })) playSample('enemybeam', x, y, { gain: 0.6, throttleMs: 0 })
 }
 export function sfxGeneralShot(x, y) {
-  if (!toneShot('generalShot', x, y, 0.3, 60)) playSample('laser', x, y, { gain: 0.3, rate: 1.5, throttleMs: 0 }) // bajo: el comandante dispara seguido
+  if (toneShot('generalShot', x, y, 0.3, 60)) return
+  // bajo: el comandante dispara seguido
+  if (!playBank('laserSmall', x, y, { gain: 0.2, rate: 1.15, reverb: 0.2, detune: 0.1, throttleMs: 0 })) playSample('laser', x, y, { gain: 0.3, rate: 1.5, throttleMs: 0 })
 }
 export function sfxSpeed() { playSample('speed', null, null, { gain: 0.7, throttleMs: 120 }) }                  // cambio de velocidad
 
@@ -366,6 +459,8 @@ function bedTarget(name, count, perUnit, max) {
 // cámara, sumado por tipo). Cada tipo suena con su propio motor; los tipos ausentes se apagan.
 // Silencia todos los motores al salir de la partida (si no, quedan sonando con el último volumen).
 export function stopShipEngines() {
+  stopAmbience()
+  if (!ctx) return
   for (const [name, b] of Object.entries(beds)) {
     if (!name.startsWith('ship_')) continue
     b.target = 0
@@ -467,6 +562,7 @@ export function sfxMegaBeam(x, y) {
 export function sfxEmp(x, y) {
   if (!ctx) return
   const { pan, vol } = at(x, y)
+  playBank('forcefield', x, y, { gain: 0.8, rate: 0.7, reverb: 0.6, throttleMs: 0 })
   sweep({ type: 'sine', f0: 160, f1: 30, dur: 0.8, gain: 0.5, pan, vol })
   sweep({ type: 'triangle', f0: 2400, f1: 120, dur: 0.6, gain: 0.12, pan, vol })
   noise({ dur: 0.5, gain: 0.25, pan, vol, lp: 1500 })
@@ -475,6 +571,7 @@ export function sfxEmp(x, y) {
 export function sfxRepair(x, y) {
   if (!ctx) return
   const { pan, vol } = at(x, y)
+  playBank('forcefield', x, y, { gain: 0.3, rate: 1.3, throttleMs: 0 })
   ;[523, 659, 784, 1047].forEach((f, i) => sweep({ type: 'sine', f0: f, f1: f * 1.01, dur: 0.25, gain: 0.12, at: i * 0.07, pan, vol }))
 }
 
@@ -486,6 +583,9 @@ export function sfxStrike(x, y) {
 
 export function sfxUi(kind = 'click') {
   if (!ctx) return
+  const UI_BANK = { click: ['uiClick', 0.35], hover: ['uiHover', 0.18], error: ['uiError', 0.4], open: ['uiOpen', 0.35], close: ['uiClose', 0.35], confirm: ['uiConfirm', 0.4], switch: ['uiSwitch', 0.35] }
+  const [bank, gain] = UI_BANK[kind] || UI_BANK.click
+  if (playBank(bank, null, null, { gain, detune: 0.06, throttleMs: kind === 'hover' ? 60 : 25 })) return
   if (kind === 'click') sweep({ type: 'triangle', f0: 880, f1: 660, dur: 0.06, gain: 0.08 })
   else if (kind === 'hover') sweep({ type: 'sine', f0: 1400, f1: 1500, dur: 0.03, gain: 0.03 })
   else if (kind === 'error') sweep({ type: 'square', f0: 180, f1: 120, dur: 0.14, gain: 0.07 })
@@ -493,6 +593,9 @@ export function sfxUi(kind = 'click') {
 
 export function sfxPurchase() {
   if (!ctx) return
+  // Tienda / investigación: power up de Kenney + confirmación. Las mejoras DENTRO de la partida
+  // (sfxUpgrade) siguen con el sonido sintetizado original, a pedido.
+  if (playBank('powerUp', null, null, { gain: 0.5, throttleMs: 0 })) { playBank('uiConfirm', null, null, { gain: 0.35, throttleMs: 0 }); return }
   ;[988, 1319, 1976].forEach((f, i) => sweep({ type: 'triangle', f0: f, f1: f, dur: 0.18, gain: 0.1, at: i * 0.06 }))
   noise({ dur: 0.35, gain: 0.05, lp: 9000, at: 0.1 })
 }
@@ -503,6 +606,7 @@ export function sfxTesla(x, y) {
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
   if (TONE_SHOTS && playTone('tesla', pan, vol)) return
+  if (playBank('zap', x, y, { gain: 0.5, throttleMs: 0 })) return
   noise({ dur: 0.12, gain: 0.18, lp: 6000, pan, vol })
   sweep({ type: 'square', f0: 1800, f1: 400, dur: 0.1, gain: 0.05, pan, vol })
 }
@@ -511,6 +615,7 @@ export function sfxCryo(x, y) {
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
   if (TONE_SHOTS && playTone('cryo', pan, vol)) return
+  if (playBank('phaser', x, y, { gain: 0.3, throttleMs: 0 })) return
   sweep({ type: 'sine', f0: 2400, f1: 1600, dur: 0.18, gain: 0.05, pan, vol })
   noise({ dur: 0.2, gain: 0.05, lp: 9000, pan, vol })
 }
@@ -519,6 +624,7 @@ export function sfxRail(x, y) {
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
   if (TONE_SHOTS && playTone('rail', pan, vol)) return
+  if (playBank('laser', x, y, { gain: 0.9, rate: 0.6, bass: 10, reverb: 0.4, throttleMs: 0 })) return
   sweep({ type: 'sawtooth', f0: 3000, f1: 120, dur: 0.35, gain: 0.12, pan, vol })
   noise({ dur: 0.25, gain: 0.2, lp: 3000, pan, vol })
 }
@@ -527,6 +633,7 @@ export function sfxFlak(x, y) {
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
   if (TONE_SHOTS && playTone('flak', pan, vol)) return
+  if (playBank('hitHeavy', x, y, { gain: 0.8, bass: 6, throttleMs: 0 })) return
   noise({ dur: 0.16, gain: 0.3, lp: 1800, pan, vol })
   sweep({ type: 'triangle', f0: 220, f1: 60, dur: 0.15, gain: 0.12, pan, vol })
 }
@@ -536,6 +643,7 @@ export function sfxMortar(x, y) {
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
   if (TONE_SHOTS && playTone('mortar', pan, vol)) return
+  if (playBank('boom', x, y, { gain: 0.7, bass: 8, reverb: 0.4, throttleMs: 0 })) return
   sweep({ type: 'sine', f0: 180, f1: 55, dur: 0.38, gain: 0.2, pan, vol })
   noise({ dur: 0.18, gain: 0.12, lp: 1100, pan, vol })
 }
@@ -553,6 +661,7 @@ export function sfxUpgrade(x, y) {
 export function sfxBonus(x, y) {
   if (!ctx) return
   const { pan, vol } = at(x, y)
+  if (playBank('warp', x, y, { gain: 0.5, throttleMs: 0 })) return
   ;[784, 988, 1175, 1568].forEach((f, i) => sweep({ type: 'sine', f0: f, f1: f, dur: 0.16, gain: 0.08, at: i * 0.05, pan, vol }))
 }
 
@@ -569,11 +678,13 @@ export function sfxHeal(x, y) {
   if (!ctx || !throttle('heal', 220)) return
   const { pan, vol } = at(x, y)
   if (vol <= 0.05) return
+  if (playBank('forcefield', x, y, { gain: 0.12, throttleMs: 0, reach: 1 })) return
   sweep({ type: 'sine', f0: 900, f1: 1400, dur: 0.12, gain: 0.035, pan, vol })
 }
 
 export function sfxLevelUp() {
   if (!ctx) return
+  if (playBank('jingleLevel', null, null, { gain: 0.55, detune: 0, throttleMs: 0 })) return
   ;[392, 523, 659, 784, 1047].forEach((f, i) => sweep({ type: 'sawtooth', f0: f, f1: f, dur: 0.22, gain: 0.07, at: i * 0.09 }))
 }
 
@@ -581,6 +692,7 @@ export function sfxLevelUp() {
 export function sfxWaveStart(isBoss) {
   if (!ctx) return
   const dur = isBoss ? 1.35 : 0.75
+  playBank(isBoss ? 'flybyL' : 'flybyM', null, null, { gain: isBoss ? 0.7 : 0.45, bass: 6, reverb: 0.5, throttleMs: 0 }) // la flota entra en sector
   sweep({ type: 'sawtooth', f0: isBoss ? 95 : 145, f1: isBoss ? 58 : 105, dur, gain: isBoss ? 0.075 : 0.055 })
   sweep({ type: 'sine', f0: isBoss ? 72 : 110, f1: isBoss ? 48 : 82, dur: dur + 0.15, gain: 0.16 })
   if (isBoss) sweep({ type: 'sine', f0: 107, f1: 71, dur: 1.5, gain: 0.07, at: 0.12 })
@@ -596,6 +708,7 @@ export function sfxCoreAlarm() {
 
 export function sfxVictory() {
   if (!ctx) return
+  if (playBank('jingleWin', null, null, { gain: 0.7, detune: 0, throttleMs: 0 })) return
   ;[[392, 0], [494, 0.32], [587, 0.64], [784, 0.96]].forEach(([f, delay]) => {
     sweep({ type: 'triangle', f0: f, f1: f * 1.005, dur: 0.65, gain: 0.075, at: delay })
     sweep({ type: 'sine', f0: f * 1.5, f1: f * 1.5, dur: 0.55, gain: 0.035, at: delay })
@@ -605,6 +718,7 @@ export function sfxVictory() {
 
 export function sfxDefeat() {
   if (!ctx) return
+  if (playBank('jingleLose', null, null, { gain: 0.7, detune: 0, throttleMs: 0 })) return
   ;[[392, 0], [330, 0.33], [262, 0.66], [196, 0.99]].forEach(([f, delay]) => {
     sweep({ type: 'triangle', f0: f, f1: f * 0.94, dur: 0.75, gain: 0.07, at: delay })
     sweep({ type: 'sine', f0: f / 2, f1: f / 2, dur: 0.65, gain: 0.08, at: delay })
@@ -624,4 +738,113 @@ export function sfxEnemyDeath(x, y, size = 1) {
     sweep({ type: 'triangle', f0: 1400, f1: 520, dur: 0.11, gain: 0.065, pan, vol })
     noise({ dur: 0.07, gain: 0.035, lp: 4200, pan, vol })
   }
+}
+
+
+// ------------------------------------------------ construcción, impactos y naves (bancos Kenney)
+export function sfxBuild(x, y) {
+  if (!ctx || !throttle('build', 60)) return
+  playBank('build', x, y, { gain: 0.55, bass: 4, throttleMs: 0 })
+}
+
+// Impacto sobre una estructura. Throttle propio: con 200 enemigos no debe ser una ametralladora.
+export function sfxHit(x, y, heavy = false) {
+  if (!ctx || !throttle(heavy ? 'hitH' : 'hit', heavy ? 90 : 70)) return
+  playBank(heavy ? 'hitHeavy' : 'hitMetal', x, y, { gain: heavy ? 0.5 : 0.3, reach: 1.2, throttleMs: 0 })
+}
+
+// Una nave pasa/aparece. size: 'small' | 'medium' | 'large'. Suena solo si está cerca de la cámara.
+export function sfxFlyby(x, y, size = 'small') {
+  if (!ctx || !throttle('flyby_' + size, size === 'large' ? 1200 : 450)) return
+  const bank = size === 'large' ? 'flybyL' : size === 'medium' ? 'flybyM' : 'flybyS'
+  playBank(bank, x, y, { gain: size === 'large' ? 0.5 : 0.3, reach: 1.1, reverb: 0.3, throttleMs: 0 })
+}
+
+// ------------------------------------------------------------ ambiente de espacio profundo
+// Capa continua bajo la música, sin samples: drones graves desafinados con LFO lento + viento
+// espacial (ruido marrón filtrado que respira) + «pings» de consola lejanos cada 9-22 s. Va por
+// musicBus, así el slider de Música lo controla. start/stop son idempotentes.
+let ambience = null
+export function startAmbience() {
+  if (!ctx || !musicBus || ambience) return
+  const t = ctx.currentTime
+  const out = ctx.createGain()
+  out.gain.setValueAtTime(0.0001, t)
+  out.gain.linearRampToValueAtTime(0.5, t + 4)
+  out.connect(musicBus)
+  const stoppables = []
+  for (const [f, det, g] of [[55, 0, 0.09], [55, 7, 0.07], [82.4, -5, 0.05], [110.5, 3, 0.025]]) {
+    const o = ctx.createOscillator()
+    o.type = 'sine'
+    o.frequency.value = f
+    o.detune.value = det
+    const og = ctx.createGain()
+    og.gain.value = g
+    const lfo = ctx.createOscillator()
+    lfo.frequency.value = 0.03 + Math.random() * 0.05
+    const lg = ctx.createGain()
+    lg.gain.value = g * 0.5
+    lfo.connect(lg); lg.connect(og.gain)
+    o.connect(og); og.connect(out)
+    o.start(t); lfo.start(t)
+    stoppables.push(o, lfo)
+  }
+  const len = ctx.sampleRate * 4
+  const nb = ctx.createBuffer(2, len, ctx.sampleRate)
+  for (let c = 0; c < 2; c++) {
+    const d = nb.getChannelData(c)
+    let last = 0
+    for (let i = 0; i < len; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last * 3.5 }
+  }
+  const ns = ctx.createBufferSource()
+  ns.buffer = nb
+  ns.loop = true
+  const bp = ctx.createBiquadFilter()
+  bp.type = 'bandpass'
+  bp.frequency.value = 320
+  bp.Q.value = 0.7
+  const sweepLfo = ctx.createOscillator()
+  sweepLfo.frequency.value = 0.045
+  const sweepG = ctx.createGain()
+  sweepG.gain.value = 140
+  sweepLfo.connect(sweepG); sweepG.connect(bp.frequency)
+  const wg = ctx.createGain()
+  wg.gain.value = 0.16
+  ns.connect(bp); bp.connect(wg); wg.connect(out)
+  ns.start(t); sweepLfo.start(t)
+  stoppables.push(ns, sweepLfo)
+  ambience = { out, stoppables, timer: 0 }
+  const ping = () => {
+    if (!ambience) return
+    const list = banks.computer
+    if (list?.length && ctx.state === 'running') {
+      const src = ctx.createBufferSource()
+      src.buffer = list[(Math.random() * list.length) | 0]
+      src.playbackRate.value = 0.7 + Math.random() * 0.5
+      const g = ctx.createGain()
+      g.gain.value = 0.05 + Math.random() * 0.05
+      src.connect(g)
+      if (ctx.createStereoPanner) {
+        const p = ctx.createStereoPanner()
+        p.pan.value = Math.random() * 2 - 1
+        g.connect(p); p.connect(out)
+        if (reverbBus) { const wet = ctx.createGain(); wet.gain.value = 1.5; p.connect(wet); wet.connect(reverbBus) }
+      } else g.connect(out)
+      src.start()
+    }
+    ambience.timer = setTimeout(ping, 9000 + Math.random() * 13000)
+  }
+  ambience.timer = setTimeout(ping, 6000)
+}
+
+export function stopAmbience() {
+  if (!ambience || !ctx) return
+  const a = ambience
+  ambience = null
+  clearTimeout(a.timer)
+  const t = ctx.currentTime
+  a.out.gain.cancelScheduledValues(t)
+  a.out.gain.setValueAtTime(a.out.gain.value, t)
+  a.out.gain.linearRampToValueAtTime(0.0001, t + 1.2)
+  for (const n of a.stoppables) { try { n.stop(t + 1.3) } catch { /* ya parado */ } }
 }
