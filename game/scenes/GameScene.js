@@ -713,7 +713,7 @@ export class GameScene extends Phaser.Scene {
     // (intermission = transición → Transition.mp3; combate → inGame.mp3).
     const wv = this.cam.worldView
     updateSound(wv.centerX, wv.centerY, wv.width)
-    setMusicState(this.wave?.state === 'intermission' ? 'transition' : 'ingame')
+    setMusicState(this.wave?.state === 'intermission' ? 'voidCalm' : gameState.bossWave ? 'bossDark' : 'ingame')
     // Motores de naves enemigas: un sonido por tipo, solo de las naves cerca del centro de la
     // cámara (peso cuadrático: 1 encima, 0 a ~media pantalla), sumado por tipo.
     const engines = this._engineW || (this._engineW = {})

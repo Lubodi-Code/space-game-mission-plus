@@ -10,6 +10,10 @@
 
 import inGameUrl from './sounds/ambient/inGame.mp3'
 import transitionUrl from './sounds/ambient/Transition.mp3'
+import bossDarkUrl from './sounds/ambient/bossDark.mp3'
+import voidCalmUrl from './sounds/ambient/voidCalm.mp3'
+import disintegratorUrl from './sounds/disintegrator.mp3'
+import machinegunUrl from './sounds/machinegun.mp3'
 import laserTurretUrl from './sounds/laserLarge_002.ogg'
 import enemyBeamUrl from './sounds/laserLarge_001.ogg'
 import missileUrl from './sounds/trhowlasermisil.ogg'
@@ -41,7 +45,7 @@ for (const [path, url] of Object.entries(import.meta.glob('./sounds/kenney/*/*.o
 }
 const banks = {}              // banco → AudioBuffer[]
 
-const MUSIC = { ingame: inGameUrl, transition: transitionUrl }
+const MUSIC = { ingame: inGameUrl, transition: transitionUrl, bossDark: bossDarkUrl, voidCalm: voidCalmUrl }
 const SAMPLES = {
   laser: laserTurretUrl,
   enemybeam: enemyBeamUrl,
@@ -49,6 +53,8 @@ const SAMPLES = {
   explosion: explosionUrl,
   mine: collectorUrl,
   speed: speedUrl,
+  disintegrator: disintegratorUrl,
+  machinegun: machinegunUrl,
   ...SHIP_ENGINE_URLS,
 }
 const MUSIC_VOL = 0.5
@@ -623,6 +629,7 @@ export function sfxRail(x, y) {
   if (!ctx || !throttle('rail', 120)) return
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
+  if (playSample('disintegrator', x, y, { gain: 0.9, reverb: 0.3, throttleMs: 0 })) return // impacto desintegrador
   if (TONE_SHOTS && playTone('rail', pan, vol)) return
   if (playBank('laser', x, y, { gain: 0.9, rate: 0.6, bass: 10, reverb: 0.4, throttleMs: 0 })) return
   sweep({ type: 'sawtooth', f0: 3000, f1: 120, dur: 0.35, gain: 0.12, pan, vol })
@@ -632,6 +639,7 @@ export function sfxFlak(x, y) {
   if (!ctx || !throttle('flak', 80)) return
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
+  if (playSample('machinegun', x, y, { gain: 0.8, maxDur: 0.4, throttleMs: 0 })) return // ráfaga de metralleta
   if (TONE_SHOTS && playTone('flak', pan, vol)) return
   if (playBank('hitHeavy', x, y, { gain: 0.8, bass: 6, throttleMs: 0 })) return
   noise({ dur: 0.16, gain: 0.3, lp: 1800, pan, vol })
