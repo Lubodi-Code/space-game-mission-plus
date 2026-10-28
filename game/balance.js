@@ -306,10 +306,6 @@ export function buildWaves(difficultyKey = 'normal', waveCount = WAVE_TOTAL, opt
       for (let k = 0; k < count; k++) list.push(type)
     }
 
-    // COMMANDSHIP: la nave nodriza aparece UNA sola vez por partida (oleada 6).
-    // push() directo para que countMult de dificultad no la duplique.
-    if (i === 6) list.push(EnemyType.COMMANDSHIP)
-
     // Orden secuencial: artillería y brutes primero después de la nodriza
     if (i >= 3) push(EnemyType.BRUTE, 2 + (i - 3) * 2)
     if (i >= 5) push(EnemyType.ARTILLERY, 2 + (i - 4) * 2)
@@ -335,14 +331,20 @@ export function buildWaves(difficultyKey = 'normal', waveCount = WAVE_TOTAL, opt
 
     shuffle(list)
 
-    const hasBoss = (i >= 6)
-    // Direcciones aleatorias: oleadas 4+ tienen 2 sectores, oleadas 8+ tienen 3 sectores
+    // COMMANDSHIP: una nave nodriza por oleada desde la 5 (antes solo una en toda la partida).
+    // unshift después de mezclar: entra primera y, como es lenta, llega detrás de la horda.
+    // Directo, sin push(), para que countMult de dificultad no la duplique.
+    const hasBoss = i >= 5
+    if (hasBoss) list.unshift(EnemyType.COMMANDSHIP)
+    // Direcciones de respaldo (aleatorias). En partida el director (systems/waveDirector.js) elige
+    // los lados al empezar la oleada; maxDirs es su tope: 2 al principio, hasta 4 en oleadas altas.
     const numDirs = i >= 8 ? 3 : (i >= 4 ? 2 : 1)
+    const maxDirs = i >= 8 ? 4 : (i >= 4 ? 3 : 2)
     const dirs = []
     for (let d = 0; d < numDirs; d++) {
       dirs.push(Math.random() * Math.PI * 2)
     }
-    waves.push({ list, gap: Math.max(50, 300 - i * 25) * gapMult, hasBoss, dirs })
+    waves.push({ list, gap: Math.max(50, 300 - i * 25) * gapMult, hasBoss, dirs, maxDirs })
   }
   return waves
 }

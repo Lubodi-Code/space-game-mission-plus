@@ -434,6 +434,12 @@ export function getUpgradesFor(role, currentUpgrades) {
   })
 }
 
+// Única validación de compra (UI local e intents de clientes): rol correcto, no repetida,
+// prerequisito, investigación y rama excluyente. Devuelve la mejora o null.
+export function purchasableUpgrade(role, currentUpgrades, upgradeId) {
+  return getUpgradesFor(role, currentUpgrades).find((u) => u.id === upgradeId) || null
+}
+
 // Árbol completo de un rol para el HUD: ramas → nodos con su estado.
 // state: 'owned' | 'available' | 'locked' (falta el anterior) | 'research' | 'excluded'
 export function buildUpgradeTree(role, currentUpgrades) {

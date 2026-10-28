@@ -7,13 +7,14 @@ import { bus } from '~/game/bus.js'
 import { createStructure } from '~/game/structures/StructureRegistry.js'
 import { drawPolygon, darken } from '~/game/structures/draw.js'
 import { REGISTRY } from '~/game/enemies/EnemyType.js'
+import { makeMissileSprite, orientMissile, MISSILE_STYLE_KEYS } from '~/game/enemies/EnemyProjectiles.js'
 import { createMeteorite } from '~/game/systems/worldgen.js'
 import { drawLinks } from '~/game/systems/energyNet.js'
 import { tryPlace } from '~/game/systems/placement.js'
 import { explosion, hitFlash, drawBeam, spawnMarker, auraBurst, drawPlayerCursor, HEAL_ORB_COLOR, orbScale } from '~/game/render/fx.js'
 import { glowBlend } from '~/game/render/blend.js'
 import { GEN_TINTS } from '~/game/General.js'
-import { UPGRADES } from '~/game/structures/upgrades.js'
+import { UPGRADES, purchasableUpgrade } from '~/game/structures/upgrades.js'
 import { ABILITY_IDS } from '~/game/net/protocol.js'
 import { ABILITIES, abilityCooldownsFor, requestAbility } from '~/game/systems/abilities.js'
 import { callWaveEarly } from '~/game/systems/waves.js'
@@ -47,10 +48,8 @@ export function onIntent(scene, d, nc) {
   } else if (d.t === 'upgrade') {
     // Misma validación y efectos de applyUpgrade, sin seleccionar en el HUD del host.
     const s = scene.structures.find((x) => x.id === d.sid)
-    const upg = UPGRADES.find((u) => u.id === d.uid)
-    if (!s || s.dead || !s.applyUpgrade || !upg ||
-      (upg.requires && !(s.upgrades || []).includes(upg.requires)) ||
-      (s.upgrades || []).includes(upg.id) || gameState.minerals < (upg.cost || 0)) return
+    const upg = s && purchasableUpgrade(s.role, s.upgrades || [], d.uid)
+    if (!s || s.dead || !s.applyUpgrade || !upg || gameState.minerals < (upg.cost || 0)) return
     gameState.minerals -= upg.cost || 0
     s.applyUpgrade(upg)
     s.applyUpgradeVisual?.(upg)
@@ -100,7 +99,7 @@ export function buildSnapshot(scene) {
     structs: scene.structures.map((s) => [s.id, s.key, Math.round(s.x), Math.round(s.y), Math.round(s.hp), Math.round(s.maxHp), s.powered ? 1 : 0, s.building ? 1 : 0, s.building && s.buildTime ? Math.round((s.buildProgress / s.buildTime) * 100) / 100 : 1, (s.upgrades || []).join(',')]),
     // misiles del jugador: sprite 'missile_rod' orientado → mando rotación; enemigos: sprite 'star'
     missiles: scene.projectiles.map((p) => [p.id, Math.round(p.x), Math.round(p.y), p.color, Math.round(p.vx || 0), Math.round(p.vy || 0)]),
-    emissiles: scene.epSystem.projectiles.map((p) => [p.id, Math.round(p.x), Math.round(p.y), p.color, Math.round(p.vx || 0), Math.round(p.vy || 0)]),
+    emissiles: scene.epSystem.projectiles.map((p) => [p.id, Math.round(p.x), Math.round(p.y), p.color, Math.round(p.vx || 0), Math.round(p.vy || 0), Math.max(0, MISSILE_STYLE_KEYS.indexOf(p.style))]),
     links: scene.links.map(([a, b]) => [a.id, b.id]),
     // [x, y, radio, especial] especial: 0 normal · 1 gigante · 2 explosivo armado
     meteors: scene.meteorites.filter((m) => !m.depleted).map((m) => [Math.round(m.x), Math.round(m.y), m.radius, m.special === 'giant' ? 1 : m.special === 'explosive' ? 2 : 0]),
@@ -178,7 +177,8 @@ export function createRemote(scene) {
 export function applySnapshot(scene, snap) {
   scene._snap = snap
   scene._fx = snap.fx
-  Object.assign(gameState, snap.eco)
+  // Solo campos que ya existen en gameState: una clave '__proto__' del host no cambia el prototipo.
+  for (const [k, v] of Object.entries(snap.eco || {})) if (k !== '__proto__' && Object.hasOwn(gameState, k)) gameState[k] = v
 
   // Estructuras: instancias REALES → mismo render que el host (núcleo animado incluido).
   const seenS = new Set()
@@ -317,17 +317,18 @@ export function applySnapshot(scene, snap) {
   for (const [id, s] of scene.pMissiles) if (!seenP.has(id)) { s.destroy(); scene.pMissiles.delete(id) }
 
   const seenEM = new Set()
-  for (const [id, x, y, color, vx, vy] of (snap.emissiles || [])) {
+  for (const [id, x, y, color, vx, vy, style = 0] of (snap.emissiles || [])) {
     seenEM.add(id)
     let s = scene.eMissiles.get(id)
     if (!s) {
-      s = scene.add.image(x, y, 'star').setScale(0.8).setBlendMode(Phaser.BlendModes.ADD).setDepth(20).setTint(color)
+      s = makeMissileSprite(scene, x, y, MISSILE_STYLE_KEYS[style], color)
       scene.eMissiles.set(id, s)
     } else {
       s.x += (x - s.x) * 0.5
       s.y += (y - s.y) * 0.5
     }
     s.vx = vx; s.vy = vy
+    orientMissile(s, vx, vy)
   }
   for (const [id, s] of scene.eMissiles) if (!seenEM.has(id)) { s.destroy(); scene.eMissiles.delete(id) }
 

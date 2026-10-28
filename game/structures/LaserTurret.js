@@ -98,7 +98,7 @@ export class LaserTurret extends Structure {
     if (this.style === 'spread') {
       const targets = this.nearestEnemies(world, 3)
       for (const t of targets) {
-        t.hit(this.laserDamage, world)
+        t.hit(this.laserDamage, world, 'beam')
         this.pushBeam(t.x, t.y, false)
       }
       return
@@ -113,12 +113,12 @@ export class LaserTurret extends Structure {
       this.lastTarget = target
       // Daño exponencial: empieza muy débil, crece fuerte al mantener el rayo
       const expMult = Math.pow(1.08, this.damageRamp * 10)
-      target.hit(Math.round(this.laserDamage * expMult), world)
+      target.hit(Math.round(this.laserDamage * expMult), world, 'beam')
       this.pushBeam(target.x, target.y, true)
       return
     }
 
-    target.hit(this.laserDamage, world)
+    target.hit(this.laserDamage, world, 'beam')
     this.pushBeam(target.x, target.y, false)
   }
 

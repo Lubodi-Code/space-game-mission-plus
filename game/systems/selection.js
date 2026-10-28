@@ -1,6 +1,6 @@
 import { bus } from '~/game/bus.js'
 import { gameState } from '~/game/gameState.js'
-import { UPGRADES } from '~/game/structures/upgrades.js'
+import { UPGRADES, purchasableUpgrade } from '~/game/structures/upgrades.js'
 import { upgradeBurst } from '~/game/render/fx.js'
 import { sfxUpgrade, sfxUi } from '~/game/sound.js'
 
@@ -49,11 +49,9 @@ export function deselectStructure(scene) {
 export function applyUpgrade(scene, structureId, upgradeId) {
   const s = scene.structures.find((x) => x.id === structureId)
   if (!s || s.dead || !s.applyUpgrade) return
-  const upg = UPGRADES.find((u) => u.id === upgradeId)
+  // Safety: misma validación que los intents de clientes aunque la UI ya lo filtre.
+  const upg = purchasableUpgrade(s.role, s.upgrades || [], upgradeId)
   if (!upg) return
-  // Safety: verificar prerequisito aunque la UI ya lo filtre
-  if (upg.requires && !(s.upgrades || []).includes(upg.requires)) return
-  if ((s.upgrades || []).includes(upg.id)) return
   const cost = upg.cost || 0
   if (gameState.minerals < cost) { sfxUi('error'); return }
   gameState.minerals -= cost

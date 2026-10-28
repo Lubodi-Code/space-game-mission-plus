@@ -3,9 +3,9 @@ import { explosion, auraBurst } from '~/game/render/fx.js'
 
 // Misiles del jugador (torreta de misiles). delta en MS; dt en segundos para el movimiento.
 
-export function damageEnemy(scene, e, dmg) {
+export function damageEnemy(scene, e, dmg, type = 'missile') {
   if (e.dead) return
-  e.hit(dmg, scene.world)
+  e.hit(dmg, scene.world, type)
 }
 
 export function updateProjectiles(scene, delta) {

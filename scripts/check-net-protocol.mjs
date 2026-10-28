@@ -54,3 +54,12 @@ const huge = {}; for (let i = 0; i < 100000; i++) huge['k' + i] = 'v'
 assert.equal(Object.keys(parseIntent({ t: 'hello', equipped: huge }).equipped).length <= 12, true)
 assert.deepEqual(parseIntent({ t: 'ready', ready: 'yes' }), { t: 'ready', ready: false })
 console.log('OK net protocol')
+
+// Snap de un host malicioso: filas con tipos fuera de catálogo se descartan (no crashean al cliente).
+{
+  const snap = parseHostMessage({ t: 'snap', enemies: [[1, 'grunt', 0, 0, 1, 1, 0], [2, 'noexiste', 0, 0, 1, 1, 0], 5], structs: [[1, 'core', 0, 0, 1, 1, 1, 0, 1, ''], [2, 'clave_falsa', 0, 0, 1, 1, 1, 0, 1, ''], 123] })
+  assert.deepEqual(snap.enemies.map((r) => r[1]), ['grunt'])
+  assert.deepEqual(snap.structs.map((r) => r[1]), ['core'])
+  assert.equal(parseHostMessage({ t: 'snap', eco: [] }), null)
+  console.log('OK snap filtrado')
+}

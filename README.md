@@ -6,52 +6,54 @@ sobrevive a 10 oleadas.
 
 ## Stack
 
-- **Vue 3 + Vite** — UI, lobby, HUD y estado de la app.
+- **Nuxt 4 / Vue 3** — UI, lobby, HUD, estado de la app y API de servidor.
 - **Phaser 3** — motor del juego (render WebGL, física arcade, input mouse/táctil).
-- **Tailwind CSS v4** — estilos del HUD y menús.
+- **Three.js** — modelos 3D.
+- **Tailwind CSS 3** — estilos del HUD y menús.
+- **PeerJS** — cooperativo (WebRTC).
+- **Supabase** — cuentas y persistencia.
+- **Electron** — app de escritorio.
 
 ## Desarrollo
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173
-npm run build    # build de producción en /dist
+npm run dev      # nuxt dev (http://localhost:3000)
+npm run build    # build de producción (salida en .output/)
 npm run preview  # previsualizar el build
+npm run desktop:generate  # genera la SPA para escritorio
+npm run desktop           # genera y abre Electron
+npm run desktop:dist      # instalador Windows (release/)
 ```
 
 ## Estructura
 
 ```
-src/
-  main.js                 # bootstrap de Vue
-  App.vue                 # layout raíz (canvas + HUD)
-  style.css               # estilos globales + Tailwind
-  components/
-    GameCanvas.vue        # monta/desmonta el juego Phaser
-    Hud.vue               # overlay de UI (barra superior + barra de construcción)
-  game/
-    createGame.js         # configuración e instancia de Phaser
-    gameState.js          # estado reactivo compartido Phaser <-> Vue
-    scenes/
-      BootScene.js        # genera texturas (estrellas, glow) procedurales
-      GameScene.js        # starfield parallax + Núcleo (Nave Principal)
+app.vue               # layout raíz
+pages/                # index.vue (portada), jugar.vue (juego)
+components/           # Hud.vue, Lobby.vue, Shop.vue, Research.vue, etc.
+game/                 # lógica Phaser (appState.js, gameState.js, bus.js, scenes/, systems/, etc.)
+server/               # API de Nuxt (pagos, cuentas)
+supabase/migrations/  # base de datos
+desktop/              # main.cjs (Electron)
+scripts/              # scripts de utilidad/CI
+docs/                 # documentación técnica
 ```
 
 ## Estado actual
 
 **Juego jugable completo** (Hitos 1–3):
 
-- Starfield parallax, Núcleo neón animado, HUD.
+- Starfield parallax, Núcleo neón animado, HUD, modos de juego (Rápido/Clásico), 10 oleadas, 10 sectores.
 - Colocación de estructuras con red de energía (flood-fill desde el Núcleo); lo
   desconectado se desactiva. Nodos extienden alcance.
 - Recolectores que minan meteoritos; Baterías que suben el cap de minerales.
-- 10 oleadas de enemigos pixel-art (verde básico, amarillo rápido, rojo tanque,
-  morado jefe) con enjambre y ataque a estructuras.
-- Torretas láser y Lanzamisiles (homing + AoE); HP por estructura; Enjambre
-  Sanador que repara. Game Over al perder el Núcleo, Victoria al limpiar la ola 10.
+- Torretas base y del Arsenal (se desbloquean con Chatarra); armas del General equipables.
+- Enemigos con resistencias a misiles o a rayos y un director que elige por dónde atacar.
+- Tienda de cosméticos, investigación y progreso por sectores.
+- Cooperativo vía PeerJS.
+- Lanzamiento como App de escritorio (Windows) y web.
 
 ## Próximos pasos
 
-1. Lobby / pantalla de inicio (menú, dificultad, instrucciones).
-2. Controles de velocidad funcionales (Pausa/Lenta/Normal/Rápida) y sonido.
-3. Balanceo de economía y curva de dificultad; persistencia de récords.
+Ver `docs/PLAN-*` y el `CHANGELOG.md`.

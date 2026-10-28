@@ -152,11 +152,15 @@ export class Enemy {
     }
   }
 
-  hit(dmg, world) {
+  // type: 'beam' (láser, tesla, cryo, riel, General) | 'missile' (misiles, flak, mortero) | sin tipo
+  // (habilidades, meteoritos). def.resist multiplica el daño de ese tipo; un golpe resistido
+  // destella gris en vez de blanco.
+  hit(dmg, world, type) {
     if (this.dead) return
-    this.hp -= dmg
+    const mult = (type && this.def.resist?.[type]) ?? 1
+    this.hp -= dmg * mult
     this.flash = 70
-    this.sprite.setTintFill(0xffffff)
+    this.sprite.setTintFill(mult < 1 ? 0x8a93a6 : 0xffffff)
     if (this.hp <= 0) world.killEnemy(this)
   }
 

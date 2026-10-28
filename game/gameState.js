@@ -25,7 +25,7 @@ export const gameState = reactive({
   bossWave: false,
   general: { alive: true, hp: 120, hpMax: 120, respawnIn: 0, damage: 8, atkRange: 160, collectRate: 18 },
   generalMode: null, // null | 'selected'
-  generalWeapon: 'laser', // 'laser' | 'missile' — estilo de disparo del General (tecla T)
+  generalWeapon: 'laser', // 'laser' | 'missile' | 'sunrae' — arma del General, elegida en la tienda (solo lectura en partida)
   generalUpgrades: [], // ids de mejoras compradas para el General
   multiSelCount: 0, // torretas en multi-selección (shift+clic)
   waveTimeLeft: 0, // s hasta que entra la siguiente oleada aunque queden enemigos (modo con presupuesto)

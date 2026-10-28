@@ -62,7 +62,8 @@ export const REGISTRY = {
     movement: 'STRAIGHT',
     attack: 'LIGHT_LASER',
     attackRange: 160, atkCooldown: 900, damage: 9,
-    beamColor: 0xff6b3d,
+    beamColor: 0xff6b3d, beamWidth: 4.5, // cañón pesado: rayo grueso
+    resist: { missile: 0.5 }, // blindaje: los misiles le hacen la mitad
     maxForce: 200,
     agility: 0.1,
     risk: 'BRAVE',
@@ -77,7 +78,7 @@ export const REGISTRY = {
     movement: 'KEEP_DISTANCE',
     attack: 'MISSILE',
     attackRange: 260, atkCooldown: 1800, damage: 12,
-    splash: 40, projSpeed: 160,
+    splash: 40, projSpeed: 175, projStyle: 'rod', // cohete fino, algo más veloz
     maxForce: 320,
     agility: 0.3,
     evasion: 'STRAFE_BURST',
@@ -91,8 +92,10 @@ export const REGISTRY = {
     targetSecondary: 'DEFENSE',
     movement: 'KEEP_DISTANCE',
     attack: 'MISSILE',
-    attackRange: 260, atkCooldown: 1800, damage: 12,
-    splash: 40, projSpeed: 160,
+    // Ráfaga de plasma: dispara más seguido, menos daño y área que el saboteador.
+    attackRange: 240, atkCooldown: 1100, damage: 7,
+    splash: 24, projSpeed: 210, projStyle: 'orb',
+    resist: { beam: 0.5 }, // casco espejado: los rayos le hacen la mitad
     maxForce: 320,
     agility: 0.3,
     evasion: 'STRAFE_BURST',
@@ -100,14 +103,14 @@ export const REGISTRY = {
     evasionChance: 0.80,
   },
   [EnemyType.ARTILLERY]: {
-    hp: 40, speed: 18, scale: 0.85, reward: 30,
+    hp: 40, speed: 24, scale: 0.85, reward: 30, // un poco más rápida que antes (18)
     color: 0xffb02e, textureKey: 'enemy_artillery',
     targetPriority: 'NODE',
     targetSecondary: 'CORE',
     movement: 'STANDOFF',
     attack: 'MISSILE',
     attackRange: 500, atkCooldown: 2200, damage: 20,
-    splash: 50, projSpeed: 140,
+    splash: 50, projSpeed: 140, projStyle: 'shell', projColor: 0xffd27a, // obús de halo grande
     preferredRange: 600,
     maxForce: 150,
     agility: 0.12,
@@ -129,6 +132,7 @@ export const REGISTRY = {
     spawnCount: 3,
     spawnTypes: ['grunt', 'runner'],
     spawnInterval: 8000,
+    resist: { beam: 0.6 },
     boss: true,
     maxForce: 160,
     agility: 0.08,
@@ -138,11 +142,10 @@ export const REGISTRY = {
   },
   // Nave Nodriza: jefe único de la partida. Vida masiva, múltiples láseres que
   // atacan objetivos independientes, misil EMP periódico que paraliza estructuras.
-  // Velocidad y maxForce subidos: a 22px/s tardaba 4+ min en cruzar el mapa desde el
-  // borde de spawn hasta el núcleo y quedaba "perdida" entre los ~300 enemigos de la
-  // oleada — parecía que nunca aparecía.
+  // Una por oleada desde la 5. Muy lenta (antes 60): para que no tarde minutos en llegar
+  // aparece más cerca que la horda (spawnDistMult en waves.js) y no la retira el seguro anti-atasco.
   [EnemyType.COMMANDSHIP]: {
-    hp: 12000, speed: 60, scale: 5.5, reward: 1200,
+    hp: 12000, speed: 20, scale: 5.5, reward: 1200, spawnDistMult: 0.55,
     color: 0xb06bff, textureKey: 'enemy_commandship',
     targetPriority: 'CORE',
     targetSecondary: 'DEFENSE',
@@ -188,7 +191,8 @@ export const REGISTRY = {
     attack: 'SHIELD_AURA',
     attackRange: 150, atkCooldown: 1100, damage: 7,
     beamColor: 0x7fb2ff,
-    auraRadius: 150, auraHeal: 0.05, auraInterval: 1000,
+    auraRadius: 150, auraHeal: 0.05, auraInterval: 1000, beamTwin: true,
+    resist: { missile: 0.6 },
     maxForce: 160,
     agility: 0.08,
     risk: 'BRAVE',
@@ -204,6 +208,7 @@ export const REGISTRY = {
     movement: 'WEAVE',
     attack: 'DRAIN',
     attackRange: 0, atkCooldown: 700, damage: 5, drain: 8,
+    resist: { beam: 0.6 },
     maxForce: 340,
     agility: 0.3,
     risk: 'CAUTIOUS',
@@ -219,7 +224,8 @@ export const REGISTRY = {
     movement: 'STANDOFF',
     attack: 'MISSILE',
     attackRange: 420, atkCooldown: 3000, damage: 26,
-    splash: 90, projSpeed: 120,
+    splash: 90, projSpeed: 120, projStyle: 'bomb', projColor: 0xff7a2e,
+    resist: { missile: 0.5 },
     preferredRange: 380,
     maxForce: 150,
     agility: 0.1,
@@ -238,7 +244,7 @@ export const REGISTRY = {
     movement: 'WEAVE',
     attack: 'LIGHT_LASER',
     attackRange: 140, atkCooldown: 800, damage: 6,
-    beamColor: 0xdfe8ff,
+    beamColor: 0xdfe8ff, beamTwin: true, beamWidth: 1.6, // dos haces finos
     maxForce: 260,
     agility: 0.25,
     risk: 'BRAVE',
