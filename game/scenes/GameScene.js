@@ -38,7 +38,7 @@ import { grantRunRewards } from '~/game/meta/profile.js'
 import { equipped, claimUnlocks } from '~/game/meta/cosmetics.js'
 import { currentMode } from '~/game/modes/index.js'
 import { sfxLevelUp, sfxUpgrade, sfxHit, sfxUi } from '~/game/sound.js'
-import { equippedWeaponId } from '~/game/meta/generalWeapons.js'
+import { equippedWeaponId, weaponFromRemote } from '~/game/meta/generalWeapons.js'
 import { saveSoloSnapshot, loadSoloSnapshot, restoreSoloSnapshot, clearSoloSnapshot } from '~/game/systems/persist.js'
 
 
@@ -231,6 +231,8 @@ export class GameScene extends Phaser.Scene {
     }
     const g = new General(this, this.core.x - 60, this.core.y, GEN_TINTS[nc.pid % GEN_TINTS.length])
     g.pid = nc.pid
+    // Arma que el cliente equipó en su tienda (la mandó en el 'hello' del lobby).
+    g.weapon = weaponFromRemote(appState.mp.players.find((p) => p.pid === nc.pid)?.equipped?.weapon)
     g.setLabel(nc.name || ('Aliado ' + nc.pid))
     // Mejoras ya compradas, para que un jugador que entra tarde no quede atrás.
     for (const id of gameState.generalUpgrades) {

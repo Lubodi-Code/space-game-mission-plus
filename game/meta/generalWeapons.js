@@ -37,6 +37,13 @@ export function equippedWeaponId() {
   return ownsWeapon(id) ? id : 'laser'
 }
 
+// Arma de un aliado en cooperativo: viene del 'hello' del cliente (equipped.weapon). El host solo
+// acepta ids conocidos; la propiedad de la Sunrei vive en el perfil local del cliente y no se puede
+// comprobar desde el host (se compra con Chatarra, no con dinero).
+export function weaponFromRemote(id) {
+  return typeof id === 'string' && Object.hasOwn(GENERAL_WEAPONS, id) ? id : 'laser'
+}
+
 export function equipWeapon(id) {
   if (!ownsWeapon(id)) return false
   profile.cosmetics.equipped.weapon = id
