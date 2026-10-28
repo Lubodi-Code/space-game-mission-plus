@@ -11,7 +11,7 @@ import { ROLE_GROUPS, REGISTRY } from '~/game/enemies/EnemyType.js'
 import { Enemy } from '~/game/enemies/Enemy.js'
 import { EnemyProjectileSystem } from '~/game/enemies/EnemyProjectiles.js'
 import { createStructure } from '~/game/structures/StructureRegistry.js'
-import { UPGRADES } from '~/game/structures/upgrades.js'
+import { UPGRADES, purchasableUpgrade } from '~/game/structures/upgrades.js'
 import { SpatialGrid } from '~/game/enemies/SpatialGrid.js'
 import { General, GEN_TINTS } from '~/game/General.js'
 import { net } from '~/game/net.js'
@@ -642,10 +642,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   applyGeneralUpgrade(upgradeId) {
-    const upg = UPGRADES.find((u) => u.id === upgradeId)
-    if (!upg || upg.forRole !== 'general') return
-    if (gameState.generalUpgrades.includes(upgradeId)) return
-    if (gameState.minerals < upg.cost) return
+    // Rol, prerequisito e investigación (también llega desde intents de clientes).
+    const upg = purchasableUpgrade('general', gameState.generalUpgrades, upgradeId)
+    if (!upg || gameState.minerals < upg.cost) return
     gameState.minerals -= upg.cost
     gameState.generalUpgrades.push(upgradeId)
     for (const g of this.generals.values()) g.applyUpgrade(upg)

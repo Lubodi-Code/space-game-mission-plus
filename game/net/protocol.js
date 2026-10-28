@@ -8,7 +8,8 @@
 //
 // Host → clientes: 'welcome', 'start', 'roster', 'snap', 'ping', 'quick', 'bye'.
 
-import { WORLD } from '../balance.js'
+import { WORLD, structureByKey } from '../balance.js'
+import { REGISTRY } from '../enemies/EnemyType.js'
 
 export const PROTOCOL_VERSION = 2
 
@@ -153,8 +154,15 @@ export function parseHostMessage(d) {
     case 'snap':
       // Forma mínima: applySnapshot itera estos arreglos directamente.
       for (const k of ['structs', 'enemies', 'gen']) if (d[k] != null && !Array.isArray(d[k])) return null
-      if (d.eco != null && typeof d.eco !== 'object') return null
-      return { ...d, structs: d.structs || [], enemies: d.enemies || [], gen: d.gen || [] }
+      if (d.eco != null && (typeof d.eco !== 'object' || Array.isArray(d.eco))) return null
+      // Filas con tipo de catálogo: un snap con una clave desconocida haría crashear al cliente
+      // (REGISTRY[type].textureKey / createStructure). Se descartan las filas, no el snap entero.
+      return {
+        ...d,
+        structs: (d.structs || []).filter((r) => Array.isArray(r) && (r[1] === 'core' || !!structureByKey(r[1]))),
+        enemies: (d.enemies || []).filter((r) => Array.isArray(r) && Object.hasOwn(REGISTRY, r[1])),
+        gen: (d.gen || []).filter(Array.isArray),
+      }
     default:
       return null
   }

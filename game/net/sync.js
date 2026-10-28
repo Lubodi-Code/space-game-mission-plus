@@ -14,7 +14,7 @@ import { tryPlace } from '~/game/systems/placement.js'
 import { explosion, hitFlash, drawBeam, spawnMarker, auraBurst, drawPlayerCursor, HEAL_ORB_COLOR, orbScale } from '~/game/render/fx.js'
 import { glowBlend } from '~/game/render/blend.js'
 import { GEN_TINTS } from '~/game/General.js'
-import { UPGRADES } from '~/game/structures/upgrades.js'
+import { UPGRADES, purchasableUpgrade } from '~/game/structures/upgrades.js'
 import { ABILITY_IDS } from '~/game/net/protocol.js'
 import { ABILITIES, abilityCooldownsFor, requestAbility } from '~/game/systems/abilities.js'
 import { callWaveEarly } from '~/game/systems/waves.js'
@@ -48,10 +48,8 @@ export function onIntent(scene, d, nc) {
   } else if (d.t === 'upgrade') {
     // Misma validación y efectos de applyUpgrade, sin seleccionar en el HUD del host.
     const s = scene.structures.find((x) => x.id === d.sid)
-    const upg = UPGRADES.find((u) => u.id === d.uid)
-    if (!s || s.dead || !s.applyUpgrade || !upg ||
-      (upg.requires && !(s.upgrades || []).includes(upg.requires)) ||
-      (s.upgrades || []).includes(upg.id) || gameState.minerals < (upg.cost || 0)) return
+    const upg = s && purchasableUpgrade(s.role, s.upgrades || [], d.uid)
+    if (!s || s.dead || !s.applyUpgrade || !upg || gameState.minerals < (upg.cost || 0)) return
     gameState.minerals -= upg.cost || 0
     s.applyUpgrade(upg)
     s.applyUpgradeVisual?.(upg)
@@ -179,7 +177,8 @@ export function createRemote(scene) {
 export function applySnapshot(scene, snap) {
   scene._snap = snap
   scene._fx = snap.fx
-  Object.assign(gameState, snap.eco)
+  // Solo campos que ya existen en gameState: una clave '__proto__' del host no cambia el prototipo.
+  for (const [k, v] of Object.entries(snap.eco || {})) if (k !== '__proto__' && Object.hasOwn(gameState, k)) gameState[k] = v
 
   // Estructuras: instancias REALES → mismo render que el host (núcleo animado incluido).
   const seenS = new Set()
