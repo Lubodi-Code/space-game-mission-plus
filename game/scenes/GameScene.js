@@ -103,9 +103,13 @@ export class GameScene extends Phaser.Scene {
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.render3D, this)
 
     this.scale.on('resize', this.handleResize, this)
-    // game.destroy (volver al menú) emite DESTROY, no SHUTDOWN: apagar motores en ambos.
-    this.events.once(Phaser.Scenes.Events.DESTROY, stopShipEngines)
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+    // game.destroy (volver al menú) emite DESTROY, no SHUTDOWN: la limpieza corre en ambos. Sin esto
+    // las suscripciones al bus de la escena vieja quedaban vivas y, en la partida siguiente, fallaban
+    // primero (input null) y cortaban el aviso: no se podía construir.
+    let cleaned = false
+    const cleanup = () => {
+      if (cleaned) return
+      cleaned = true
       stopShipEngines()
       this.scale.off('resize', this.handleResize, this)
       this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.render3D, this)
@@ -113,7 +117,9 @@ export class GameScene extends Phaser.Scene {
       this.busOff?.forEach((off) => off())
       if (this.epSystem) this.epSystem.clear()
       for (const g of this.generals.values()) g.destroy()
-    })
+    }
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanup)
+    this.events.once(Phaser.Scenes.Events.DESTROY, cleanup)
 
     if (this.remote) { createRemote(this); return }
 

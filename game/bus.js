@@ -14,6 +14,9 @@ export const bus = {
     listeners.get(event)?.delete(fn)
   },
   emit(event, payload) {
-    listeners.get(event)?.forEach((fn) => fn(payload))
+    // Un oyente que falla no debe dejar sin el aviso a los demás (p. ej. una escena ya destruida).
+    listeners.get(event)?.forEach((fn) => {
+      try { fn(payload) } catch (err) { console.error(`[bus] ${event}:`, err) }
+    })
   },
 }
