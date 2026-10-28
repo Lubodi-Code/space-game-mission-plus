@@ -9,12 +9,19 @@ export const ATTACK = {
     if (d > (enemy.def.attackRange || 120)) return
     enemy.atkTimer -= dt * 1000
     if (enemy.atkTimer > 0) return
-    world.fireEnemyBeam({
-      from: enemy, to: t,
-      damage: enemy.damage,
-      color: enemy.def.beamColor || enemy.def.color,
-      width: 2.5,
-    })
+    const color = enemy.def.beamColor || enemy.def.color
+    const width = enemy.def.beamWidth || 2.5
+    if (enemy.def.beamTwin) {
+      // Cañones gemelos: dos rayos finos desde los costados de la nave, mismo daño total.
+      const a = Math.atan2(t.y - enemy.y, t.x - enemy.x) + Math.PI / 2
+      const off = (enemy.radius || 8) * 0.7
+      for (const side of [-1, 1]) {
+        const from = { x: enemy.x + Math.cos(a) * off * side, y: enemy.y + Math.sin(a) * off * side }
+        world.fireEnemyBeam({ from, to: t, damage: enemy.damage / 2, color, width })
+      }
+    } else {
+      world.fireEnemyBeam({ from: enemy, to: t, damage: enemy.damage, color, width })
+    }
     world.damageStructure(t, enemy.damage)
     enemy.atkTimer = enemy.def.atkCooldown
   },
@@ -63,7 +70,8 @@ export const ATTACK = {
       speed: enemy.def.projSpeed || 160,
       damage: enemy.damage,
       splash: enemy.def.splash || 0,
-      color: enemy.def.color || 0xffd24a,
+      color: enemy.def.projColor || enemy.def.color || 0xffd24a,
+      style: enemy.def.projStyle,
     })
     enemy.atkTimer = enemy.def.atkCooldown
   },

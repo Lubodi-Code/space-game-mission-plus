@@ -38,6 +38,7 @@ import { grantRunRewards } from '~/game/meta/profile.js'
 import { equipped, claimUnlocks } from '~/game/meta/cosmetics.js'
 import { currentMode } from '~/game/modes/index.js'
 import { sfxLevelUp, sfxUpgrade, sfxHit, sfxUi } from '~/game/sound.js'
+import { equippedWeaponId } from '~/game/meta/generalWeapons.js'
 import { saveSoloSnapshot, loadSoloSnapshot, restoreSoloSnapshot, clearSoloSnapshot } from '~/game/systems/persist.js'
 
 
@@ -178,6 +179,8 @@ export class GameScene extends Phaser.Scene {
 
     this.general = new General(this, this.core.x + 60, this.core.y, equipped('hull').tint ?? GEN_TINTS[0])
     this.general.beamSkin = true // el rayo del comandante local usa el cosmético equipado
+    // Arma elegida en la tienda; fija toda la partida. Los generales de los clientes usan láser.
+    this.general.weapon = gameState.generalWeapon = equippedWeaponId()
     this.general.pid = 0
     this.general.setLabel(appState.playerName || 'Comandante')
     this.generals.set(0, this.general)
@@ -594,7 +597,6 @@ export class GameScene extends Phaser.Scene {
       bus.on('selectGeneral', () => this.selectGeneral()),
       bus.on('restart', () => { clearSoloSnapshot(); this.scene.restart() }),
       bus.on('speed', (v) => { this.setSpeed(v); sfxSpeed() }),
-      bus.on('generalWeapon', (w) => { gameState.generalWeapon = w === 'missile' ? 'missile' : 'laser'; sfxUi('switch') }),
       bus.on('demolish', ({ structureId }) => this.demolishStructure(structureId)),
       bus.on('upgrade', ({ structureId, upgradeId }) => applyUpgrade(this, structureId, upgradeId)),
       bus.on('upgradeGeneral', (upgradeId) => this.applyGeneralUpgrade(upgradeId)),

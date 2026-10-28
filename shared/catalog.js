@@ -91,6 +91,8 @@ export const COSMETICS = [
   { id: 'design_phantom', slot: 'design', name: 'Fantasma', rarity: 'epic', design: 'phantom', unlock: { level: 9 } },
   { id: 'design_twin', slot: 'design', name: 'Gemela', rarity: 'legendary', design: 'twin', unlock: { sector: 5 } },
   { id: 'design_crown', slot: 'design', name: 'Corona', rarity: 'legendary', design: 'crown', price: { crystals: 350 } },
+  // Sunrei: se compra con Chatarra (da ventaja: trae el arma Sunrae láser, ver game/meta/generalWeapons.js).
+  { id: 'design_sunrei', slot: 'design', name: 'Sunrei', rarity: 'legendary', design: 'sunrei', price: { scrap: 1500 } },
 
   // ---- Explosiones (bajas enemigas)
   { id: 'boom_default', slot: 'explosion', name: 'Según la nave', rarity: 'common', price: null },

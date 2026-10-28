@@ -13,6 +13,7 @@ import { levelFromXp, profile } from '~/game/meta/profile'
 import { appState } from '~/game/appState'
 import { IS_TOUCH } from '~/game/quality'
 import { EnemyType, REGISTRY } from '~/game/enemies/EnemyType'
+import { GENERAL_WEAPONS } from '~/game/meta/generalWeapons'
 import { sfxWaveStart, sfxCoreAlarm, sfxVictory, sfxDefeat } from '~/game/sound'
 import Settings from './Settings.vue'
 import GameIcon from './GameIcon.vue'
@@ -45,6 +46,16 @@ const ENEMY_LABELS = {
   [EnemyType.WARDEN]: { label: 'Guardián', color: '#7fb2ff' },
   [EnemyType.LEECH]: { label: 'Sanguijuela', color: '#ff3dbd' },
   [EnemyType.BOMBER]: { label: 'Bombardero', color: '#ffb02e' },
+  [EnemyType.PRISM]: { label: 'Prisma', color: '#dfe8ff' },
+}
+
+// Resistencia por tipo de daño (REGISTRY.resist) en texto corto para la ficha de la oleada.
+function resistNote(type) {
+  const def = REGISTRY[type]
+  if (def?.laserImmune) return 'inmune a láser'
+  const r = def?.resist
+  if (!r) return ''
+  return [r.missile < 1 && 'resiste misiles', r.beam < 1 && 'resiste rayos'].filter(Boolean).join(' · ')
 }
 
 import { buildableStructures, WEAPON_ROLES } from '~/game/meta/arsenal'
@@ -163,7 +174,7 @@ const nextWaveAnalysis = computed(() => {
   for (const [type, count] of Object.entries(nw.counts)) {
     const info = ENEMY_LABELS[type]
     if (info) {
-      types.push({ ...info, count })
+      types.push({ ...info, count, resist: resistNote(type) })
     }
   }
   // Ordenar por cantidad descendente
@@ -345,9 +356,8 @@ const sectorInfo = computed(() => sectorByN(appState.sector))
 const levelInfo = computed(() => levelFromXp(profile.xp))
 
 // Teclas de habilidades (Z/C/V/B), definidas en systems/abilities.js.
-// Estilo de disparo del General: láser (rápido, un blanco) o misiles (lento, daño en área).
-// Solo host/solo: el arma del General vive en la simulación del host (el cliente no tiene intent para ella).
-function toggleGeneralWeapon() { if (appState.mp.role === 'client') return; bus.emit('generalWeapon', gameState.generalWeapon === 'missile' ? 'laser' : 'missile') }
+// Arma del General: se elige en la tienda antes de la partida; en partida solo se muestra.
+const generalWeaponLabel = computed(() => GENERAL_WEAPONS[gameState.generalWeapon]?.label || 'Láser')
 
 const ABILITY_KEYS = Object.fromEntries(Object.values(ABILITIES).map((a) => [a.key.toLowerCase(), a.id]))
 
@@ -394,7 +404,6 @@ function onKey(e) {
   if (e.key === 'n' || e.key === 'N') { callWave(); return }
   switch (e.key) {
     case 'g': case 'G': pickGeneral(); break
-    case 't': case 'T': toggleGeneralWeapon(); break  // láser ↔ misiles del General
     case 'p': case 'P': togglePause(); break
     case ',': case '<': stepSpeed(-1); break
     case '.': case '>': stepSpeed(1); break
@@ -532,6 +541,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
           <span class="flex items-center gap-1.5">
             <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: t.color }"></span>
             <span class="opacity-90">{{ t.label }}</span>
+            <span v-if="t.resist" class="text-[9px] text-slate-400/80">{{ t.resist }}</span>
           </span>
           <span class="font-semibold tabular-nums opacity-80">×{{ t.count }}</span>
         </div>
@@ -756,15 +766,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
         <div class="font-bold text-sm" style="color: #8be9fd">General</div>
         <button class="sheet-close" aria-label="Cerrar" @click="cancelAll">✕</button>
       </div>
-      <button
+      <div
         v-if="appState.mp.role !== 'client'"
-        class="w-full flex items-center justify-between px-2 py-1.5 rounded-lg ring-1 ring-cyan-400/30 bg-cyan-400/10 hover:bg-cyan-400/20 text-cyan-100"
-        :aria-label="'Estilo de disparo: ' + (gameState.generalWeapon === 'missile' ? 'misiles' : 'láser') + '. Cambiar (T)'"
-        @click="toggleGeneralWeapon"
+        class="w-full flex items-center justify-between px-2 py-1.5 rounded-lg ring-1 ring-cyan-400/30 bg-cyan-400/10 text-cyan-100"
+        title="Se cambia en la tienda, antes de la partida"
       >
-        <span>Disparo: <b>{{ gameState.generalWeapon === 'missile' ? 'Misiles' : 'Láser' }}</b></span>
-        <span class="opacity-60">T</span>
-      </button>
+        <span>Arma: <b>{{ generalWeaponLabel }}</b></span>
+        <span class="opacity-60 text-[10px]">tienda</span>
+      </div>
       <div class="space-y-1" aria-label="Estadísticas del General">
         <div v-for="row in generalRows" :key="row.title" class="stat-row" :title="row.title">
           <GameIcon :name="row.icon" :size="15" :title="row.title" />

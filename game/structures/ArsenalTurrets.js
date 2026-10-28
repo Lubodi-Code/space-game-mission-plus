@@ -89,7 +89,7 @@ export class TeslaTurret extends WeaponTurret {
     let cur = target
     let dmg = this.dmg
     for (let i = 0; i <= (this.chains || 0) && cur; i++) {
-      cur.hit(Math.round(dmg), world)
+      cur.hit(Math.round(dmg), world, 'beam')
       if (this.slowMs) { cur.slowMs = Math.max(cur.slowMs || 0, this.slowMs); cur.slowFactor = 0.6 }
       this.beam(from.x, from.y, cur.x, cur.y, this.fxColor, 2.2, { jag: true })
       from = cur
@@ -113,7 +113,7 @@ export class CryoTurret extends WeaponTurret {
     const apply = (e) => {
       e.slowMs = Math.max(e.slowMs || 0, this.slowMs)
       e.slowFactor = Math.min(e.slowFactor || 1, this.slowFactor)
-      e.hit(this.dmg, world)
+      e.hit(this.dmg, world, 'beam')
     }
     apply(target)
     this.beam(this.x, this.y, target.x, target.y, this.fxColor, 3, { ttl: 160 })
@@ -143,7 +143,7 @@ export class RailTurret extends WeaponTurret {
     hits.sort((a, b) => a.t - b.t)
     const max = 1 + (this.pierce || 0)
     let dmg = this.dmg
-    for (const h of hits.slice(0, max)) { h.e.hit(Math.round(dmg), world); dmg *= 0.85 }
+    for (const h of hits.slice(0, max)) { h.e.hit(Math.round(dmg), world, 'beam'); dmg *= 0.85 }
     const last = hits[Math.min(hits.length, max) - 1]
     const ex = last ? last.e.x : x2; const ey = last ? last.e.y : y2
     this.beam(this.x, this.y, ex, ey, this.fxColor, 5, { ttl: 260 })
@@ -209,7 +209,7 @@ export class FlakTurret extends WeaponTurret {
         })
       }
       if (hit) {
-        hit.hit(this.dmg, world)
+        hit.hit(this.dmg, world, 'missile')
         g.fillStyle(0xfff0c0, 0.9).fillCircle(b.x, b.y, 2.5)
         this.bullets.splice(i, 1)
         continue
@@ -288,7 +288,7 @@ export class MortarTurret extends WeaponTurret {
       const left = 1 - waited / sh.fuse
       if (left <= 0) {
         for (const e of world.enemies) {
-          if (!e.dead && Math.hypot(e.x - sh.x, e.y - sh.y) <= sh.splash + e.radius) e.hit(Math.round(sh.dmg), world)
+          if (!e.dead && Math.hypot(e.x - sh.x, e.y - sh.y) <= sh.splash + e.radius) e.hit(Math.round(sh.dmg), world, 'missile')
         }
         this.scene.explosion(sh.x, sh.y, this.fxColor, sh.splash, sh.r > 4 ? 'big' : 'small')
         this.shellsInAir.splice(i, 1)

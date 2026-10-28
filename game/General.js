@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { GENERAL } from './balance.js'
 import { gameState } from './gameState.js'
+import { GENERAL_WEAPONS } from './meta/generalWeapons.js'
 import { spawnFloatingText } from './render/fx.js'
 import { sfxGeneralShot, sfxMissile } from './sound.js'
 import { glowBlend } from './render/blend.js'
@@ -11,8 +12,8 @@ import { RENDER_SCALE } from './quality.js'
 // para que cada general se vea igual en ambas pantallas.
 export const GEN_TINTS = [0xffaa44, 0x8be9fd, 0x9bff8b, 0xd49bff]
 
-// Estilo «misiles» del General: más daño y área, a cambio de cadencia (la torreta de misiles es la referencia).
-const MISSILE = { cooldown: 2.6, damage: 2.4, splash: 38, speed: 240 }
+// Arma del General: datos en meta/generalWeapons.js (láser, misiles o Sunrae).
+const MISSILE = GENERAL_WEAPONS.missile
 
 export class General {
   constructor(scene, x, y, tint = 0x8be9fd) {
@@ -29,6 +30,7 @@ export class General {
     this.mineTarget = null
     this.minedAccum = 0
     this.atkTimer = 0
+    this.weapon = 'laser' // GameScene pone el arma equipada del comandante local
     this.buffActive = false
     this.gmining = null
     this.upgrades = []
@@ -180,28 +182,31 @@ export class General {
 
     this.atkTimer -= dt * 1000
     if (this.atkTimer <= 0) {
-      let best = null, bestD = this.atkRange
+      const w = GENERAL_WEAPONS[this.weapon] || GENERAL_WEAPONS.laser
+      const range = this.atkRange * w.range
+      // Blancos en alcance, del más cercano al más lejano (la Sunrae usa varios).
+      const near = []
       for (const e of world.enemies) {
         if (e.dead) continue
         const ed = Math.hypot(e.x - this.x, e.y - this.y) - e.radius
-        if (ed < bestD) { bestD = ed; best = e }
+        if (ed < range) near.push({ e, ed })
       }
-      if (best && gameState.generalWeapon === 'missile') {
-        this.fireMissile(best)
-        this.atkTimer = (this.cooldown * MISSILE.cooldown) / mult
-      } else if (best) {
-        sfxGeneralShot(this.x, this.y)
-        best.hp -= this.damage
-        if (best.hp <= 0) world.killEnemy(best)
-        this.atkTimer = this.cooldown / mult
-        const bc = this.beamSkin ? equippedBeam().color : this.tint
-        this.scene.beamGraphics.lineStyle(2, bc, 0.95)
-        this.scene.beamGraphics.lineBetween(this.x, this.y, best.x, best.y)
-        this.scene.beamGraphics.fillStyle(bc, 0.8)
-        this.scene.beamGraphics.fillCircle(best.x, best.y, 3)
-        if (this.scene.netHost && this.scene._beamQueue) {
-          this.scene._beamQueue.push([Math.round(this.x), Math.round(this.y), Math.round(best.x), Math.round(best.y), bc, 2, 90, 90])
+      if (near.length) {
+        near.sort((a, b) => a.ed - b.ed)
+        if (w.id === 'missile') {
+          this.fireMissile(near[0].e)
+        } else {
+          sfxGeneralShot(this.x, this.y)
+          // Sunrae: color propio salvo que el comandante tenga un rayo cosmético equipado distinto del base.
+          const skin = this.beamSkin ? equippedBeam() : null
+          const bc = w.color && (!skin || skin.id === 'beam_default') ? w.color : skin ? skin.color : this.tint
+          const width = w.beams > 1 ? 1.5 : 2
+          for (const { e } of near.slice(0, w.beams)) {
+            this.beamTo(e, bc, width)
+            e.hit(this.damage * w.damage, world, w.type)
+          }
         }
+        this.atkTimer = (this.cooldown * w.cooldown) / mult
       }
     }
 
@@ -240,6 +245,17 @@ export class General {
     this.sprite.setVisible(true).setPosition(this.x, this.y)
     this.mineTarget = null
     this.minedAccum = 0
+  }
+
+  beamTo(e, color, width) {
+    const g = this.scene.beamGraphics
+    g.lineStyle(width, color, 0.95)
+    g.lineBetween(this.x, this.y, e.x, e.y)
+    g.fillStyle(color, 0.8)
+    g.fillCircle(e.x, e.y, width + 1)
+    if (this.scene.netHost && this.scene._beamQueue) {
+      this.scene._beamQueue.push([Math.round(this.x), Math.round(this.y), Math.round(e.x), Math.round(e.y), color, width, 90, 90])
+    }
   }
 
   // Misil teledirigido del General: misma estructura que MissileTurret.fireMissile, así lo mueve

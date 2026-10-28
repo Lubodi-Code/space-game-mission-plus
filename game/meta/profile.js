@@ -24,7 +24,7 @@ function blank() {
     sectorUnlocked: 1,
     maxSectorWon: 0,
     bestWave: {}, // `${mode}:${sector}` → mejor oleada alcanzada
-    cosmetics: { owned: ['beam_default', 'trail_none', 'hull_default'], equipped: { beam: 'beam_default', trail: 'trail_none', hull: 'hull_default', design: 'design_falcon', explosion: 'boom_default', nexus: 'nexus_default', turret: 'turret_default' } },
+    cosmetics: { owned: ['beam_default', 'trail_none', 'hull_default'], equipped: { beam: 'beam_default', trail: 'trail_none', hull: 'hull_default', design: 'design_falcon', explosion: 'boom_default', nexus: 'nexus_default', turret: 'turret_default', weapon: 'laser' } },
     stats: { runs: 0, wins: 0, kills: 0, bosses: 0, playtimeMs: 0, bestWaveAll: 0, structuresBuilt: 0, abilitiesUsed: 0, coopRuns: 0, giantsMined: 0 },
   }
 }

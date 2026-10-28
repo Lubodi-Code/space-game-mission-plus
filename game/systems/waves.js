@@ -5,6 +5,8 @@ import { buildWaves, FIRST_WAVE_MS, WORLD } from '~/game/balance.js'
 import { currentMode } from '../modes/index.js'
 import { sectorByN } from '../meta/sectors.js'
 import { Enemy } from '~/game/enemies/Enemy.js'
+import { REGISTRY, ROLE_GROUPS } from '~/game/enemies/EnemyType.js'
+import { planAttack } from './waveDirector.js'
 import { MOVEMENT } from '~/game/enemies/behaviors/movement.js'
 import { spawnMarker } from '~/game/render/fx.js'
 
@@ -43,7 +45,9 @@ export function updateWaves(scene, delta) {
       if (next) {
         const counts = {}
         for (const t of next.list) counts[t] = (counts[t] || 0) + 1
-        gameState.nextWave = { counts, dirs: next.dirs, hasBoss: next.hasBoss }
+        // Lados previstos según las defensas de ahora; al empezar la oleada el director vuelve a mirar.
+        const dirs = scene.core ? directWave(scene, next).dirs : next.dirs
+        gameState.nextWave = { counts, dirs, hasBoss: next.hasBoss }
       }
     }
     if (w.timer <= 0) startNextWave(scene)
@@ -52,7 +56,10 @@ export function updateWaves(scene, delta) {
     w.elapsed += delta
     w.spawnTimer -= delta
     if (w.spawnTimer <= 0 && w.queue.length) {
-      spawnEnemy(scene, w.queue.shift())
+      const next = w.queue.shift()
+      // Partidas guardadas antes del director: la cola son tipos sueltos.
+      if (typeof next === 'string') spawnEnemy(scene, next, 0)
+      else spawnEnemy(scene, next.type, next.dir)
       w.spawnTimer = w.gap
     }
     if (w.queue.length === 0) w.state = 'clearing'
@@ -74,9 +81,11 @@ export function updateWaves(scene, delta) {
         e.movement = MOVEMENT.STRAIGHT // STANDOFF/KEEP_DISTANCE se quedarían lejos
         e.maxSpeed *= 2
       }
+      // Los jefes no se retiran: la nodriza es lenta a propósito y hay que derribarla.
       if (w.elapsed > 210000) {
-        for (const e of scene.enemies) { e.dead = true; e.destroy() }
-        scene.enemies.length = 0
+        for (const e of scene.enemies) if (!e.def.boss) { e.dead = true; e.destroy() }
+        // En el lugar: world.enemies apunta a este mismo array.
+        for (let i = scene.enemies.length - 1; i >= 0; i--) if (scene.enemies[i].dead) scene.enemies.splice(i, 1)
       }
     }
     if (scene.enemies.length === 0) {
@@ -95,11 +104,13 @@ export function startNextWave(scene) {
   w.index++
   gameState.wave = w.index
   const def = scene.waves[w.index - 1]
-  w.queue = [...def.list]
   w.gap = def.gap * (scene.mode.spawnGapMult ?? 1)
   w.spawnTimer = 0
-  w.dirs = def.dirs || [Math.random() * Math.PI * 2]
-  w.spawnDirIndex = 0
+  // Director: mira las defensas de este momento y reparte la oleada (misma cantidad de naves)
+  // entre los lados más débiles. Cada entrada de la cola lleva su dirección.
+  const plan = scene.core ? directWave(scene, def) : { dirs: def.dirs, assign: def.list.map((_, i) => i % def.dirs.length) }
+  w.dirs = plan.dirs
+  w.queue = def.list.map((type, i) => ({ type, dir: plan.assign[i] }))
   w.elapsed = 0
   w.state = 'spawning'
   gameState.bossWave = def.hasBoss || false
@@ -107,15 +118,48 @@ export function startNextWave(scene) {
   gameState.nextWave = null
 }
 
-export function spawnEnemy(scene, type) {
+// Objetivo preferido de cada tipo, en las categorías del director.
+const DIRECTOR_TAG = { DEFENSE: 'defense', SUPPLY: 'economy', GENERATOR: 'economy', INFRA: 'economy', NODE: 'relay', CORE: 'core' }
+
+function structureKind(s) {
+  if (s.isCore) return 'core'
+  if (ROLE_GROUPS.DEFENSE(s)) return 'defense'
+  if (ROLE_GROUPS.NODE(s)) return 'relay'
+  return 'economy'
+}
+
+function spawnRadius(scene, type) {
+  return Math.hypot(WORLD.width, WORLD.height) * 0.48 * (scene.mode?.spawnDistMult ?? 1) * (REGISTRY[type]?.spawnDistMult ?? 1)
+}
+
+function directWave(scene, def) {
+  const structures = scene.structures.filter((s) => !s.dead).map((s) => ({
+    x: s.x, y: s.y, kind: structureKind(s),
+    range: s.atkRange || 0,
+    // Una torreta sin energía o en obra defiende poco.
+    power: ((s.def?.cost || 100) / 100) * (s.powered && !s.building ? 1 : 0.3),
+  }))
+  const tags = {}
+  for (const type of new Set(def.list)) {
+    const r = REGISTRY[type]
+    tags[type] = r?.boss && type === 'commandship' ? 'boss' : DIRECTOR_TAG[r?.targetPriority] || 'core'
+  }
+  return planAttack({
+    core: scene.core, structures, list: def.list, tags,
+    maxDirs: def.maxDirs || def.dirs.length,
+    spawnRadius: spawnRadius(scene, 'grunt'),
+  })
+}
+
+export function spawnEnemy(scene, type, dirIndex) {
   const cx = scene.core.x
   const cy = scene.core.y
   // spawnDistMult: el modo rápido acerca la horda (gran parte de la duración es el viaje).
-  const radius = Math.hypot(WORLD.width, WORLD.height) * 0.48 * (scene.mode?.spawnDistMult ?? 1)
+  // def.spawnDistMult: la nodriza, muy lenta, aparece más cerca para no tardar minutos en llegar.
+  const radius = spawnRadius(scene, type)
   const spread = 0.45
   const w = scene.wave
-  const dir = w.dirs[w.spawnDirIndex % w.dirs.length]
-  w.spawnDirIndex++
+  const dir = w.dirs[dirIndex ?? 0] ?? w.dirs[0]
   const angle = dir + Phaser.Math.FloatBetween(-spread, spread)
   const ex = Phaser.Math.Clamp(cx + Math.cos(angle) * radius, 40, WORLD.width - 40)
   const ey = Phaser.Math.Clamp(cy + Math.sin(angle) * radius, 40, WORLD.height - 40)

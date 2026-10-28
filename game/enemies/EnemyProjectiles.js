@@ -2,6 +2,29 @@ import { enemyImpactAt } from '~/game/systems/specialMeteors.js'
 import Phaser from 'phaser'
 import { sfxEnemyBeam } from '~/game/sound.js'
 
+// Diseño del proyectil enemigo según la nave (def.projStyle). El orden fija el índice que viaja
+// en el snapshot, así el cliente remoto dibuja el mismo proyectil que el host.
+export const MISSILE_STYLES = {
+  orb: { tex: 'star', scale: 0.8, add: true },             // bola de plasma (por defecto)
+  rod: { tex: 'missile_rod', scale: 0.42, rotate: true },  // cohete fino orientado
+  shell: { tex: 'glow', scale: 0.1, add: true },           // obús de artillería, halo grande
+  bomb: { tex: 'star', scale: 1.5, add: true },            // bomba pesada
+}
+export const MISSILE_STYLE_KEYS = Object.keys(MISSILE_STYLES)
+
+export function makeMissileSprite(scene, x, y, style, color) {
+  const st = MISSILE_STYLES[style] || MISSILE_STYLES.orb
+  const sprite = scene.add.image(x, y, st.tex).setTint(color).setScale(st.scale).setDepth(20)
+  if (st.add) sprite.setBlendMode(Phaser.BlendModes.ADD)
+  sprite.rotates = !!st.rotate
+  return sprite
+}
+
+// Orienta el sprite según su velocidad (solo los estilos que rotan).
+export function orientMissile(sprite, vx, vy) {
+  if (sprite.rotates && (vx || vy)) sprite.setRotation(Math.atan2(vy, vx) + Math.PI / 2)
+}
+
 export class EnemyProjectileSystem {
   constructor(scene) {
     this.scene = scene
@@ -10,9 +33,8 @@ export class EnemyProjectileSystem {
   }
 
   spawnMissile(opts) {
-    const { x, y, target, speed, damage, splash, color, stunMs } = opts
-    const sprite = this.scene.add.image(x, y, 'star')
-      .setTint(color).setScale(0.8).setBlendMode(Phaser.BlendModes.ADD).setDepth(20)
+    const { x, y, target, speed, damage, splash, color, stunMs, style } = opts
+    const sprite = makeMissileSprite(this.scene, x, y, style, color)
     const dx = target.x - x
     const dy = target.y - y
     const d = Math.hypot(dx, dy) || 1
@@ -23,6 +45,7 @@ export class EnemyProjectileSystem {
       x, y, tx: predX, ty: predY,
       target, speed: speed || 160,
       damage, splash: splash || 0, color, stunMs: stunMs || 0,
+      style: MISSILE_STYLES[style] ? style : 'orb',
       sprite, alive: true,
       _dir: { x: dx / d, y: dy / d },
       id: (this.scene._missileSeq = (this.scene._missileSeq || 0) + 1),
@@ -99,6 +122,7 @@ export class EnemyProjectileSystem {
         p.x += newDir.x * step
         p.y += newDir.y * step
         p.sprite.setPosition(p.x, p.y)
+        orientMissile(p.sprite, p.vx, p.vy)
       }
     }
 

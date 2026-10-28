@@ -7,6 +7,8 @@ import { sfxUi, sfxPurchase } from '~/game/sound'
 import { CRYSTAL_PACKS } from '~/shared/catalog'
 import { ARSENAL, arsenalState, buyArsenal } from '~/game/meta/arsenal'
 import { buildUpgradeTree } from '~/game/structures/upgrades'
+import { GENERAL_WEAPONS, WEAPON_ORDER, ownsWeapon, equippedWeaponId, equipWeapon } from '~/game/meta/generalWeapons'
+import { GENERAL } from '~/game/balance'
 import { account, initAccount, loginGoogle, loginEmail, logout, buyCosmeticWithCrystals, syncAccount } from '~/game/meta/account'
 
 onMounted(() => { initAccount(); syncAccount(); claimUnlocks() })
@@ -40,6 +42,43 @@ function buyTurret() {
   if (buyArsenal(d.key)) { sfxPurchase(); flash(`¡${d.label} desbloqueada! Ya aparece en tu barra de construcción`) }
   else { sfxUi('error'); flash(arsenalState(d) === 'level' ? `Necesitás nivel ${d.arsenal.level}` : 'No te alcanza la Chatarra') }
 }
+// ---- Arma del General: se elige acá, antes de la partida; en partida no se cambia.
+const selWeapon = ref<string>(equippedWeaponId())
+const weaponDef = computed(() => (GENERAL_WEAPONS as any)[selWeapon.value])
+const weaponStats = computed(() => {
+  const w: any = weaponDef.value
+  if (!w) return []
+  const out = [`Daño: ${+(GENERAL.damage * w.damage).toFixed(1)}${w.beams > 1 ? ` × ${w.beams} rayos` : ''}`,
+    `Cadencia: ${(1000 / (GENERAL.cooldown * w.cooldown)).toFixed(2)}/s`,
+    `Alcance: ${Math.round(GENERAL.atkRange * w.range)}`]
+  if (w.splash) out.push(`Área: ${w.splash}`)
+  out.push(w.type === 'missile' ? 'Daño de misil' : 'Daño de rayo')
+  return out
+})
+const weaponReq = computed(() => (weaponDef.value?.requires ? COSMETIC_BY_ID[weaponDef.value.requires] : null))
+function pickWeapon(id: string) {
+  selWeapon.value = id
+  const req = (GENERAL_WEAPONS as any)[id]?.requires
+  if (req) selected.value = req // la vitrina muestra la nave que trae el arma
+  sfxUi('click')
+}
+function actWeapon() {
+  const w = weaponDef.value
+  if (!w) return
+  if (ownsWeapon(w.id)) { equipWeapon(w.id); sfxUi('click'); flash(`${w.label} equipada para la próxima partida`); return }
+  const req = weaponReq.value
+  if (req && buyWithScrap(req.id)) {
+    equip(req.id); equipWeapon(w.id); sfxPurchase()
+    flash(`¡${req.name} desbloqueada! ${w.label} equipada`)
+  } else { sfxUi('error'); flash('No te alcanza la Chatarra') }
+}
+const weaponLabel = computed(() => {
+  const w = weaponDef.value
+  if (!w) return ''
+  if (ownsWeapon(w.id)) return equippedWeaponId() === w.id ? 'Equipada' : 'Equipar'
+  return `Comprar ${weaponReq.value?.name} · ⚙ ${weaponReq.value?.price?.scrap}`
+})
+
 const TURRET_BTN: Record<string, string> = { owned: '✔ Desbloqueada', level: '🔒 Nivel', poor: 'Falta Chatarra', available: 'Desbloquear' }
 const email = ref('')
 const emailSent = ref(false)
@@ -66,7 +105,7 @@ const rewards = computed(() => COSMETICS.filter((c) => c.unlock)
 const rewardsDone = computed(() => rewards.value.filter((r) => r.p.done).length)
 const items = computed(() => (tab.value === 'featured' ? featured
   : tab.value === 'rewards' ? rewards.value.map((r) => r.c)
-  : tab.value === 'crystals' || tab.value === 'arsenal' ? [] : COSMETICS.filter((c) => c.slot === tab.value)))
+  : tab.value === 'crystals' || tab.value === 'arsenal' || tab.value === 'weapons' ? [] : COSMETICS.filter((c) => c.slot === tab.value)))
 const sel = computed(() => COSMETIC_BY_ID[selected.value])
 
 // La vitrina muestra lo equipado, reemplazando el slot del ítem que se está mirando.
@@ -179,6 +218,12 @@ function back() {
             <template v-else>Desbloquear · ⚙ {{ turretDef.arsenal.scrap }}<span v-if="arsenalState(turretDef) === 'level'"> · Nv {{ turretDef.arsenal.level }}</span></template>
           </button>
         </div>
+        <div v-else-if="tab === 'weapons' && weaponDef" class="showcase-info">
+          <div class="text-[11px] font-bold tracking-widest text-sky-200">ARMA DEL GENERAL</div>
+          <div class="text-2xl sm:text-3xl font-extrabold text-white leading-tight">{{ weaponDef.label }}</div>
+          <button class="act-btn" :class="{ 'act-btn--done': weaponLabel === 'Equipada' }"
+                  :disabled="weaponLabel === 'Equipada'" @click="actWeapon">{{ weaponLabel }}</button>
+        </div>
         <div v-else-if="sel" class="showcase-info">
           <div class="text-[11px] font-bold tracking-widest" :style="{ color: RARITY[sel.rarity].css }">
             {{ RARITY[sel.rarity].label.toUpperCase() }} · {{ SLOTS.find((s) => s.id === sel.slot)?.label }}
@@ -201,6 +246,7 @@ function back() {
         <nav class="flex gap-1.5 overflow-x-auto pb-1">
           <button class="tab" :class="{ 'tab--on': tab === 'featured' }" @click="tab = 'featured'; sfxUi('click')">★ Destacado</button>
           <button v-for="s in SLOTS" :key="s.id" class="tab" :class="{ 'tab--on': tab === s.id }" @click="tab = s.id; sfxUi('click')">{{ s.label }}</button>
+          <button class="tab tab--weapon" :class="{ 'tab--on': tab === 'weapons' }" @click="tab = 'weapons'; sfxUi('click')">✦ Arma del General</button>
           <button class="tab tab--arsenal" :class="{ 'tab--on': tab === 'arsenal' }" @click="tab = 'arsenal'; sfxUi('click')">⚔ Arsenal</button>
           <button class="tab tab--gift" :class="{ 'tab--on': tab === 'rewards' }" @click="tab = 'rewards'; sfxUi('click')">🎁 Recompensas {{ rewardsDone }}/{{ rewards.length }}</button>
           <button class="tab tab--gem" :class="{ 'tab--on': tab === 'crystals' }" @click="tab = 'crystals'; sfxUi('click')">◆ Cristales</button>
@@ -236,6 +282,32 @@ function back() {
               </div>
             </div>
             <p class="text-[10px] text-cyan-200/40">Las dos ramas son excluyentes en cada torreta. Las mejoras se compran con minerales durante la partida.</p>
+          </div>
+        </div>
+
+        <!-- Arma del General: láser, misiles o Sunrae (con la nave Sunrei). Fija toda la partida. -->
+        <div v-if="tab === 'weapons'" class="mt-3 overflow-y-auto pb-4 space-y-3">
+          <div class="grid grid-cols-3 gap-2.5">
+            <button v-for="id in WEAPON_ORDER" :key="id" class="card" :class="{ 'card--sel': selWeapon === id }"
+                    :style="{ '--rar': id === 'sunrae' ? '#ffb347' : id === 'missile' ? '#ff8a3d' : '#8be9fd' }" @click="pickWeapon(id)">
+              <span class="card-art text-4xl">{{ id === 'sunrae' ? '✺' : id === 'missile' ? '➶' : '⟶' }}</span>
+              <span class="card-foot">
+                <span class="block text-[12px] font-bold text-white truncate">{{ (GENERAL_WEAPONS as any)[id].label }}</span>
+                <span class="card-price">
+                  <template v-if="equippedWeaponId() === id">✔ Equipada</template>
+                  <template v-else-if="ownsWeapon(id)">Tuya</template>
+                  <template v-else>⚙ {{ COSMETIC_BY_ID[(GENERAL_WEAPONS as any)[id].requires]?.price?.scrap }}</template>
+                </span>
+              </span>
+            </button>
+          </div>
+          <div v-if="weaponDef" class="p-3 rounded-xl bg-black/55 ring-1 ring-white/10 text-sm space-y-2">
+            <p class="text-cyan-100/85">{{ weaponDef.desc }}</p>
+            <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-cyan-200/70">
+              <span v-for="st in weaponStats" :key="st">{{ st }}</span>
+            </div>
+            <p v-if="weaponReq" class="text-[11px] text-amber-200/80">Viene con la nave {{ weaponReq.name }}, que se compra con Chatarra.</p>
+            <p class="text-[10px] text-cyan-200/40">El arma se elige antes de la partida y no se cambia durante ella. Las mejoras del General la potencian igual.</p>
           </div>
         </div>
 
@@ -347,6 +419,7 @@ function back() {
 .tab--on { @apply bg-white text-[#05070f] ring-white; }
 .tab--gem { @apply ring-fuchsia-300/50 text-fuchsia-100; }
 .tab--gift { @apply ring-amber-300/50 text-amber-100; }
+.tab--weapon { @apply ring-sky-300/50 text-sky-100; }
 .tab--arsenal { @apply ring-orange-300/50 text-orange-100; }
 .unlock-bar { @apply block mt-1 h-1 rounded-full bg-white/10 overflow-hidden; }
 .unlock-bar > span { @apply block h-full bg-amber-300; }

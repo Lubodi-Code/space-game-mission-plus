@@ -81,6 +81,7 @@ export const SHIP_DESIGNS = [
   { id: 'phantom', name: 'Phantom' },
   { id: 'twin', name: 'Twin' },
   { id: 'crown', name: 'Crown' },
+  { id: 'sunrei', name: 'Sunrei' },
 ]
 
 // Polygons are deliberately simple: a closed n-point plate costs 4n-4 triangles.
@@ -156,6 +157,20 @@ const VARIANTS = {
       [2, [[-20, -5], [-27, -12], [-25, -4]], 1.4],
       [2, [[-20, 5], [-25, 4], [-27, 12]], 1.4],
     ], cockpit: [11, 0, 3.1], engine: [-27, 0, 0], engineScale: [2.2, 2.6, 1.7],
+    ring: true,
+  },
+  // Sunrei: casco en punta de lanza con un abanico de alas-rayo, como un sol naciente detrás.
+  sunrei: {
+    plates: [
+      [0, [[-22, -4], [-8, -7], [14, -5], [30, 0], [14, 5], [-8, 7], [-22, 4]], 3.6],
+      [1, [[-4, -6], [-14, -24], [-19, -22], [-12, -6]], 1],
+      [1, [[-4, 6], [-12, 6], [-19, 22], [-14, 24]], 1],
+      [1, [[-10, -6], [-24, -17], [-27, -13], [-17, -5]], 1],
+      [1, [[-10, 6], [-17, 5], [-27, 13], [-24, 17]], 1],
+      [2, [[6, -5], [-2, -13], [-6, -12], [-1, -5]], 1.2, 1.6],
+      [2, [[6, 5], [-1, 5], [-6, 12], [-2, 13]], 1.2, 1.6],
+      [2, [[-20, -3], [-28, -6], [-28, 6], [-20, 3]], 1.6],
+    ], cockpit: [13, 0, 2.6], engine: [-28, 0, 0], engineScale: [2.2, 2.4, 1.6],
     ring: true,
   },
 }
