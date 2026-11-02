@@ -10,6 +10,8 @@ import { ARSENAL } from '~/game/meta/arsenal'
 import { SECTORS } from '~/game/meta/sectors'
 import { MODES } from '~/game/modes/index'
 import GameIcon from './GameIcon.vue'
+import BadgeIcon from './BadgeIcon.vue'
+import { BADGE_TIERS, BADGE_MAX_LEVELS, getBadge, badgeLevels } from '~/game/meta/badges'
 import LoginSheet from './LoginSheet.vue'
 
 type Tab = 'stats' | 'collection' | 'friends'
@@ -45,6 +47,13 @@ const cards = computed(() => [
   { icon: 'mining', label: 'Gigantes minados', value: s.value.giantsMined || 0 },
   { icon: 'commander', label: 'Co-op', value: s.value.coopRuns || 0 },
 ])
+
+// Vitrina de insignias: una por sector (0 = bloqueada)
+const badges = computed(() => SECTORS.map((sc) => {
+  const tier = getBadge(sc.n, profile.stats)
+  return { n: sc.n, name: sc.name, tier, tierName: BADGE_TIERS[tier]?.name || 'Sin ganar' }
+}))
+const badgeTotal = computed(() => badgeLevels(profile.stats))
 
 const records = computed(() =>
   Object.entries(profile.bestWave || {})
@@ -175,6 +184,14 @@ async function signOut() {
             <GameIcon :name="c.icon" :size="20" class="card-icon" />
             <div class="card-value">{{ c.value }}<small v-if="c.sub">{{ c.sub }}</small></div>
             <div class="card-label">{{ c.label }}</div>
+          </div>
+        </div>
+        <h2 class="h2">Insignias <small class="badge-count">{{ badgeTotal }}/{{ BADGE_MAX_LEVELS }} niveles de insignia</small></h2>
+        <div class="badges">
+          <div v-for="b in badges" :key="b.n" class="badge-cell" :class="{ 'badge-cell--off': !b.tier }">
+            <BadgeIcon :sector="b.n" :tier="b.tier" :size="64" />
+            <span class="badge-name">{{ b.name }}</span>
+            <span class="badge-tier">{{ b.tierName }}</span>
           </div>
         </div>
         <h2 class="h2">Récords por modo y sector</h2>
@@ -326,6 +343,11 @@ async function signOut() {
 .card-value small { margin-left: 0.35rem; font-size: 0.75rem; color: #50fa7b; }
 .card-label { font-size: 0.72rem; color: rgba(139,233,253,0.65); }
 .h2 { margin: 1.5rem 0 0.6rem; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; color: #8be9fd; }
+.badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 0.6rem; }
+.badge-cell { display: flex; flex-direction: column; align-items: center; gap: 0.15rem; padding: 0.6rem 0.3rem; border-radius: 0.75rem; background: rgba(139,233,253,0.06); border: 1px solid rgba(139,233,253,0.18); text-align: center; }
+.badge-cell--off { opacity: 0.7; }
+.badge-name { font-size: 0.68rem; color: #cffafe; line-height: 1.1; }
+.badge-tier { font-size: 0.65rem; color: rgba(139,233,253,0.6); }
 .h2 small { margin-left: 0.5rem; letter-spacing: normal; text-transform: none; font-weight: 600; color: #50fa7b; }
 .empty, .hint { font-size: 0.85rem; color: rgba(207,232,255,0.6); }
 .hint { margin-top: 0.5rem; font-size: 0.75rem; }

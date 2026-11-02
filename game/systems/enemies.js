@@ -57,4 +57,12 @@ export function killEnemy(scene, e) {
   if (!IS_TOUCH || e.def.boss) spawnFloatingText(scene, e.x, e.y, `+${e.def.reward}`, '#49e07a') // móvil: solo jefes
   explosion(scene, e.x, e.y, explosionColor(e.def.color), 14 * e.def.scale)
   e.destroy()
+  // Colmena: se divide en drones (los drones no tienen deathSpawn, no se encadena).
+  const ds = e.def.deathSpawn
+  if (ds && scene.world?.spawnSmallShip) {
+    for (let i = 0; i < ds.count; i++) {
+      const a = (i / ds.count) * Math.PI * 2 + Math.random() * 0.5
+      scene.world.spawnSmallShip(ds.type, e.x + Math.cos(a) * ds.radius, e.y + Math.sin(a) * ds.radius)
+    }
+  }
 }

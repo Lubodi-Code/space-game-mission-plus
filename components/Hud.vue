@@ -17,8 +17,14 @@ import { GENERAL_WEAPONS } from '~/game/meta/generalWeapons'
 import { sfxWaveStart, sfxCoreAlarm, sfxVictory, sfxDefeat } from '~/game/sound'
 import Settings from './Settings.vue'
 import GameIcon from './GameIcon.vue'
+import VictoryFx from './VictoryFx.vue'
+import BadgeIcon from './BadgeIcon.vue'
+import { BADGE_TIERS } from '~/game/meta/badges'
 
 const settingsOpen = ref(false)
+// Insignia ganada al terminar el sector (aparece cuando VictoryFx ya se apagó)
+const runBadge = computed(() => (gameState.status === 'victory' ? gameState.runRewards?.badge : null) || null)
+const badgeName = computed(() => BADGE_TIERS[runBadge.value?.tier]?.name || '')
 const exitOpen = ref(false)
 const coreExpanded = ref(false)
 const buildbarExpanded = ref(true)
@@ -47,6 +53,12 @@ const ENEMY_LABELS = {
   [EnemyType.LEECH]: { label: 'Sanguijuela', color: '#ff3dbd' },
   [EnemyType.BOMBER]: { label: 'Bombardero', color: '#ffb02e' },
   [EnemyType.PRISM]: { label: 'Prisma', color: '#dfe8ff' },
+  [EnemyType.HUNTER]: { label: 'Cazador', color: '#ff4040' },
+  [EnemyType.PHANTOM]: { label: 'Espectro', color: '#9aa8ff' },
+  [EnemyType.AEGIS]: { label: 'Égida', color: '#4dd6ff' },
+  [EnemyType.GRAVITON]: { label: 'Gravitón', color: '#b388ff' },
+  [EnemyType.HIVE]: { label: 'Colmena', color: '#ffd23f' },
+  [EnemyType.DRONE]: { label: 'Dron', color: '#ffe680' },
 }
 
 // Resistencia por tipo de daño (REGISTRY.resist) en texto corto para la ficha de la oleada.
@@ -576,6 +588,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
       </div>
     </div>
 
+    <!-- Animación de victoria: encima del overlay de fin, se desvanece sola -->
+    <VictoryFx v-if="gameState.status === 'victory'" />
+
     <!-- Game over / Victory overlay -->
     <div
       v-if="gameState.status === 'gameover' || gameState.status === 'victory'"
@@ -605,6 +620,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
             <div class="h-2 rounded-full bg-white/10 overflow-hidden mt-0.5">
               <div class="h-full bg-cyan-300 transition-[width] duration-700" :style="{ width: (100 * levelInfo.into / levelInfo.need) + '%' }"></div>
             </div>
+          </div>
+          <div v-if="runBadge" class="badge-reveal mx-auto flex flex-col items-center">
+            <BadgeIcon :sector="runBadge.sector" :tier="runBadge.tier" :size="120" />
+            <template v-if="runBadge.isNew">
+              <div class="text-amber-300 font-bold text-sm">¡Nueva insignia!</div>
+              <div class="text-[11px] text-cyan-100/80">Sector {{ runBadge.sector }} · {{ badgeName }}</div>
+            </template>
+            <div v-else class="text-[11px] text-cyan-100/70">Insignia: {{ badgeName }} (ya la tenías)</div>
           </div>
           <div v-if="gameState.runRewards.levelUp" class="text-amber-300 font-bold animate-pulse">¡Subiste a nivel {{ gameState.runRewards.levelUp }}!</div>
           <div v-if="gameState.runRewards.sectorUnlocked" class="text-fuchsia-300 font-semibold">Sector {{ gameState.runRewards.sectorUnlocked }} desbloqueado</div>
@@ -1052,5 +1075,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 @keyframes sheetUp {
   from { transform: translateY(24px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
+}
+
+/* Entrada de la insignia: espera a que VictoryFx (~3.6 s) se apague */
+.badge-reveal { opacity: 0; animation: badgeReveal 0.9s cubic-bezier(0.2, 1.2, 0.4, 1) 3.5s both; }
+@keyframes badgeReveal {
+  0% { opacity: 0; transform: scale(0.3); filter: brightness(3) drop-shadow(0 0 24px #fff); }
+  60% { opacity: 1; transform: scale(1.15); }
+  100% { opacity: 1; transform: scale(1); filter: brightness(1) drop-shadow(0 0 0 transparent); }
 }
 </style>

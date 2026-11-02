@@ -1,4 +1,6 @@
 import { reactive, watch } from 'vue'
+import { appState } from '../appState.js'
+import { awardBadge } from './badges.js'
 
 // Perfil persistente del comandante (entre partidas). Vive en localStorage; en 10E se
 // sincroniza con la cuenta. Lo que se compra con dinero real NO se decide aquí: este
@@ -76,7 +78,7 @@ export function hasResearch(id) {
 }
 
 // Recompensa de fin de partida. Devuelve el resumen para el overlay de fin.
-export function grantRunRewards({ mode, sector, wave, waveTotal, victory, kills, sectorReward, bosses = 0, playtimeMs = 0, structuresBuilt = 0, abilitiesUsed = 0, coop = false, giantsMined = 0 }) {
+export function grantRunRewards({ mode, sector, wave, waveTotal, victory, kills, sectorReward, bosses = 0, playtimeMs = 0, structuresBuilt = 0, abilitiesUsed = 0, coop = false, giantsMined = 0, difficulty = appState.difficulty }) {
   const before = levelFromXp(profile.xp).level
   const modeMult = mode === 'quick' ? 0.7 : 1
   const xp = Math.round((wave * 30 + kills * 0.5 + (victory ? 250 : 0)) * (1 + 0.1 * (sector - 1)) * modeMult)
@@ -95,12 +97,14 @@ export function grantRunRewards({ mode, sector, wave, waveTotal, victory, kills,
   const key = `${mode}:${sector}`
   profile.bestWave[key] = Math.max(profile.bestWave[key] || 0, wave)
   let unlocked = null
+  let badge = null
   if (victory) {
+    badge = awardBadge(sector, difficulty, profile.stats) // insignia del sector (stats.badgeS<n>)
     profile.stats.wins++
     profile.maxSectorWon = Math.max(profile.maxSectorWon || 0, sector)
     if (sector >= profile.sectorUnlocked && sector < 10) { profile.sectorUnlocked = sector + 1; unlocked = sector + 1 }
   }
   const after = levelFromXp(profile.xp).level
   import('./cloudSave.js').then(({ flushCloud }) => flushCloud()).catch(() => {})
-  return { xp, scrap, levelUp: after > before ? after : null, sectorUnlocked: unlocked, waveTotal }
+  return { xp, scrap, levelUp: after > before ? after : null, sectorUnlocked: unlocked, waveTotal, badge }
 }

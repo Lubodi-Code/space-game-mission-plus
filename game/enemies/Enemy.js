@@ -7,10 +7,12 @@ import { RISK } from './behaviors/risk.js'
 import { separate, avoidObstacles, wander } from './behaviors/steering.js'
 import { STEERING } from '~/game/balance.js'
 import { glowBlend } from '~/game/render/blend.js'
+import { spawnFloatingText } from '~/game/render/fx.js'
 import Phaser from 'phaser'
 
 export class Enemy {
   constructor(typeKey, x, y, scene) {
+    this.scene = scene
     this.type = typeKey
     this.def = REGISTRY[typeKey]
     this.x = x
@@ -32,6 +34,12 @@ export class Enemy {
     this.maxSpeed = this.def.speed
     this.maxForce = this.def.maxForce || this.maxSpeed * 3
     this.retargetTimer = Math.random() * 400
+    // Habilidades: shield (Égida lo reparte), phased (Espectro; el render puede leerlo).
+    this.shield = 0
+    this.maxShield = 0
+    this.phased = false
+    this.phaseTimer = this.def.phaseInterval ? this.def.phaseInterval * (0.4 + Math.random() * 0.6) : 0
+    this.phaseText = 0
 
     const key = this.def.textureKey
     this.sprite = scene.add.image(x, y, key)
@@ -64,6 +72,19 @@ export class Enemy {
   update(dt, world, time) {
     if (this.dead) return
 
+    // Espectro: alterna entre tangible (phaseInterval) e intangible (phaseMs).
+    if (this.def.phaseInterval) {
+      this.phaseTimer -= dt * 1000
+      if (this.phaseTimer <= 0) {
+        this.phased = !this.phased
+        this.phaseTimer = this.phased ? this.def.phaseMs : this.def.phaseInterval
+        const a = this.phased ? 0.3 : 1
+        this.sprite.setAlpha(a)
+        if (this.phased) this.glow.setAlpha(0.1)
+      }
+    }
+    if (this.phaseText > 0) this.phaseText -= dt * 1000
+
     // Parálisis (Pulso EMP): no se mueve ni ataca; parpadea.
     if (this.stunMs > 0) {
       this.stunMs -= dt * 1000
@@ -74,7 +95,7 @@ export class Enemy {
     }
 
     this.retargetTimer -= dt * 1000
-    if (!this.target || this.target.dead || this.retargetTimer <= 0) {
+    if (!this.target || this.target.dead || this.target.alive === false || this.retargetTimer <= 0) {
       this.target = resolveTarget(this, world)
       this.retargetTimer = 400
     }
@@ -157,8 +178,23 @@ export class Enemy {
   // destella gris en vez de blanco.
   hit(dmg, world, type) {
     if (this.dead) return
+    // Fase del Espectro: intangible, ignora el golpe (texto «FASE» con tope para no saturar).
+    if (this.phased) {
+      if (this.phaseText <= 0 && this.scene) {
+        this.phaseText = 600
+        spawnFloatingText(this.scene, this.x, this.y, 'FASE', '#9aa8ff')
+      }
+      return
+    }
     const mult = (type && this.def.resist?.[type]) ?? 1
-    this.hp -= dmg * mult
+    let real = dmg * mult
+    // Escudo (Égida): se consume antes que el hp.
+    if (this.shield > 0) {
+      const absorbed = Math.min(this.shield, real)
+      this.shield -= absorbed
+      real -= absorbed
+    }
+    this.hp -= real
     this.flash = 70
     this.sprite.setTintFill(mult < 1 ? 0x8a93a6 : 0xffffff)
     if (this.hp <= 0) world.killEnemy(this)

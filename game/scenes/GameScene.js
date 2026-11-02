@@ -23,6 +23,7 @@ import { ThreeLayer } from '~/game/three/ThreeLayer.js'
 import { IS_TOUCH } from '~/game/quality.js'
 import { installTiltInput } from '~/game/input/tiltInput.js'
 import { explosion as explosionFx, drawFx, drawPlayerCursor, upgradeBurst } from '~/game/render/fx.js'
+import { createMinimap, updateMinimap, destroyMinimap } from '~/game/render/minimap.js'
 import { updateProjectiles } from '~/game/systems/projectiles.js'
 import { updateHealers } from '~/game/systems/healers.js'
 import { updateEnemies, nearestStructure, killEnemy } from '~/game/systems/enemies.js'
@@ -100,6 +101,7 @@ export class GameScene extends Phaser.Scene {
       this.game._tiltInputInstalled = true
     }
     initSound(this)
+    createMinimap(this) // antes del return temprano de remote
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.render3D, this)
 
     this.scale.on('resize', this.handleResize, this)
@@ -111,6 +113,7 @@ export class GameScene extends Phaser.Scene {
       if (cleaned) return
       cleaned = true
       stopShipEngines()
+      destroyMinimap(this)
       this.scale.off('resize', this.handleResize, this)
       this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.render3D, this)
       if (this.three) { this.three.dispose(); this.three = null }
@@ -181,6 +184,7 @@ export class GameScene extends Phaser.Scene {
         this.enemies.push(enemy)
       },
       enemyGrid: this.enemyGrid,
+      generals: this.generals, // Map pid -> General (lo lee el targeting del Cazador)
     }
 
     this.general = new General(this, this.core.x + 60, this.core.y, equipped('hull').tint ?? GEN_TINTS[0])
@@ -690,6 +694,7 @@ export class GameScene extends Phaser.Scene {
 
   // ------------------------------------------------------------------ loop
   update(time, delta) {
+    updateMinimap(this, delta) // antes de cualquier return temprano: también en pausa/remote/game over
     const d = delta * (this.speed ?? 1)
 
     if (this._touchInertia) {

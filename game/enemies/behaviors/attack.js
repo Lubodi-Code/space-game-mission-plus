@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
 import { gameState } from '~/game/gameState.js'
+import { explosion } from '~/game/render/fx.js'
 
 export const ATTACK = {
   LIGHT_LASER: (enemy, world, dt) => {
@@ -193,5 +194,71 @@ export const ATTACK = {
     world.damageStructure(t, enemy.damage)
     gameState.energy = Math.max(0, gameState.energy - (enemy.def.drain || 6))
     enemy.atkTimer = enemy.def.atkCooldown
+  },
+
+  // Cazador: láser corto. Contra un General daña su hp directo (General.update lo mata/respawnea);
+  // si cayó a un objetivo de estructura, daña como el láser ligero. Nunca dispara a un General muerto.
+  HUNT_LASER: (enemy, world, dt) => {
+    const t = enemy.target
+    if (!t) return
+    const isGeneral = typeof t.alive === 'boolean' && typeof t.respawn === 'number'
+    if (isGeneral && !t.alive) return
+    const d = Phaser.Math.Distance.Between(enemy.x, enemy.y, t.x, t.y)
+    if (d > (enemy.def.attackRange || 100)) return
+    enemy.atkTimer -= dt * 1000
+    if (enemy.atkTimer > 0) return
+    world.fireEnemyBeam({
+      from: enemy, to: t, damage: enemy.damage,
+      color: enemy.def.beamColor || enemy.def.color, width: enemy.def.beamWidth || 2,
+    })
+    if (isGeneral) t.hp -= enemy.damage
+    else world.damageStructure(t, enemy.damage)
+    enemy.atkTimer = enemy.def.atkCooldown
+  },
+
+  // Égida: cada pulseInterval da escudo a hasta pulseMax aliados cercanos (no égidas ni jefes)
+  // y entre pulsos dispara un láser débil.
+  SHIELD_PULSE: (enemy, world, dt) => {
+    enemy.pulseTimer = (enemy.pulseTimer ?? enemy.def.pulseInterval * 0.5) - dt * 1000
+    if (enemy.pulseTimer <= 0 && world.enemyGrid) {
+      const found = []
+      world.enemyGrid.forEachNear(enemy.x, enemy.y, enemy.def.pulseRadius || 180, (e) => {
+        if (e.dead || e === enemy || e.type === enemy.type || e.def.boss) return
+        const cap = e.maxHp * (enemy.def.shieldCap || 0.4)
+        if (e.shield >= cap) return
+        found.push({ e, d: Phaser.Math.Distance.Between(enemy.x, enemy.y, e.x, e.y) })
+      })
+      found.sort((a, b) => a.d - b.d)
+      for (const { e } of found.slice(0, enemy.def.pulseMax || 5)) {
+        e.maxShield = e.maxHp * (enemy.def.shieldCap || 0.4)
+        e.shield = Math.min(e.maxShield, e.shield + e.maxHp * (enemy.def.shieldGive || 0.25))
+      }
+      if (found.length && enemy.scene) explosion(enemy.scene, enemy.x, enemy.y, enemy.def.color, 30, 'emp')
+      enemy.pulseTimer = enemy.def.pulseInterval || 4000
+    }
+    ATTACK.LIGHT_LASER(enemy, world, dt)
+  },
+
+  // Gravitón: cada pulseInterval paraliza (s.stunMs, que GameScene.update respeta) las estructuras
+  // en radio, salvo el núcleo. Entre pulsos dispara un láser ligero.
+  GRAVITY_PULSE: (enemy, world, dt) => {
+    enemy.pulseTimer = (enemy.pulseTimer ?? enemy.def.pulseInterval * 0.5) - dt * 1000
+    if (enemy.pulseTimer <= 0) {
+      const r = enemy.def.pulseRadius || 200
+      let hit = 0
+      for (const s of world.structures) {
+        if (s.dead || s.isCore) continue
+        if (Phaser.Math.Distance.Between(enemy.x, enemy.y, s.x, s.y) > r + s.radius) continue
+        s.stunMs = Math.max(s.stunMs || 0, enemy.def.pulseStunMs || 2500)
+        hit++
+      }
+      if (hit) {
+        if (enemy.scene) explosion(enemy.scene, enemy.x, enemy.y, enemy.def.color, r * 0.6, 'emp')
+        enemy.pulseTimer = enemy.def.pulseInterval || 6000
+      } else {
+        enemy.pulseTimer = 500 // sin estructuras a tiro: reintenta pronto
+      }
+    }
+    ATTACK.LIGHT_LASER(enemy, world, dt)
   },
 }

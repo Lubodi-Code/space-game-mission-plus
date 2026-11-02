@@ -23,6 +23,12 @@ export class BootScene extends Phaser.Scene {
       [EnemyType.WARDEN]: 'ship_warden',
       [EnemyType.LEECH]: 'ship_leech',
       [EnemyType.BOMBER]: 'ship_bomber',
+      hunter: 'ship_hunter',
+      phantom: 'ship_phantom',
+      aegis: 'ship_aegis',
+      graviton: 'ship_graviton',
+      hive: 'ship_hive',
+      drone: 'ship_drone',
     }
     for (const [typeKey, def] of Object.entries(REGISTRY)) {
       const file = map[typeKey]

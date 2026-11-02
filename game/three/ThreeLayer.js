@@ -586,8 +586,12 @@ export class ThreeLayer {
       const turn = st.last == null ? 0 : Math.atan2(Math.sin(heading - st.last), Math.cos(heading - st.last))
       st.last = heading
       st.bank = st.bank * 0.88 + Math.max(-0.36, Math.min(0.36, turn * 5))
+      // Espectro en fase: parpadea (casi invisible). Escudo de Égida: halo celeste más fuerte.
+      if (!remote && enemy.phased && Math.sin(now * 0.045) < 0.3) continue
+      const shielded = !remote && enemy.shield > 0
       const stun = !remote && enemy.stunMs > 0
-      I.push(st, st.type, def.color, enemy.x, enemy.y, heading, st.bank, stun, 0.24 + Math.sin(now * 0.008 + heading) * 0.08)
+      I.push(st, st.type, def.color, enemy.x, enemy.y, heading, st.bank, stun || shielded,
+        shielded ? 0.5 + Math.sin(now * 0.012) * 0.1 : 0.24 + Math.sin(now * 0.008 + heading) * 0.08)
     }
     I.end(this.far)
   }

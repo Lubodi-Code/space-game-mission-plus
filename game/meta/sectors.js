@@ -18,11 +18,11 @@ const DEFS = [
   { name: 'Fosa de Hielo', roster: [EnemyType.WARDEN] },
   { name: 'Colmena Lejana', roster: [EnemyType.LEECH] },
   { name: 'Frente Ámbar', roster: [EnemyType.BOMBER] },
-  { name: 'Anillo Roto', roster: [] },
-  { name: 'Vacío Silente', roster: [] },
-  { name: 'Corona Estelar', roster: [] },
-  { name: 'Horizonte de Eventos', roster: [] },
-  { name: 'Núcleo del Enjambre', roster: [] },
+  { name: 'Anillo Roto', roster: [EnemyType.HUNTER] },
+  { name: 'Vacío Silente', roster: [EnemyType.PHANTOM] },
+  { name: 'Corona Estelar', roster: [EnemyType.AEGIS] },
+  { name: 'Horizonte de Eventos', roster: [EnemyType.GRAVITON] },
+  { name: 'Núcleo del Enjambre', roster: [EnemyType.HIVE] },
 ]
 
 export const SECTORS = DEFS.map((d, i) => {

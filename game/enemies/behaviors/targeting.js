@@ -16,8 +16,25 @@ function nearestInGroup(enemy, world, groupFn) {
   return best
 }
 
+// General vivo más cercano (world.generals: Map pid -> General). null si no hay ninguno vivo.
+function nearestGeneral(enemy, world) {
+  if (!world.generals) return null
+  let best = null
+  let bestD = Infinity
+  for (const g of world.generals.values()) {
+    if (!g.alive) continue
+    const d = Phaser.Math.Distance.Between(enemy.x, enemy.y, g.x, g.y)
+    if (d < bestD) {
+      bestD = d
+      best = g
+    }
+  }
+  return best
+}
+
 function nearestInGroupName(enemy, world, groupName) {
   if (groupName === 'CORE') return world.core
+  if (groupName === 'GENERAL') return nearestGeneral(enemy, world)
   const fn = ROLE_GROUPS[groupName]
   if (!fn) return null
   return nearestInGroup(enemy, world, fn)
@@ -53,4 +70,6 @@ export const TARGETING = {
   DEFENSE: (enemy, world) => nearestInGroup(enemy, world, ROLE_GROUPS.DEFENSE),
 
   GENERATOR: (enemy, world) => nearestInGroup(enemy, world, ROLE_GROUPS.GENERATOR),
+
+  GENERAL: (enemy, world) => nearestGeneral(enemy, world),
 }

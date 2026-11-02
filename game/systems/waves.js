@@ -20,10 +20,37 @@ export function enemyStatMult() {
   return { hp: diff.hpMult * sec.hpMult, dmg: diff.dmgMult * sec.dmgMult }
 }
 
+// Naves de los sectores 6-10 (buildWaves vive en balance.js y no las conoce): se mezclan en la
+// lista de cada oleada con el mismo escalado de cantidad. [oleada mínima, base, crecimiento/oleada].
+const SECTOR_SHIPS = {
+  hunter:   [2, 0.3, 0.12],
+  phantom:  [3, 0.3, 0.12],
+  aegis:    [3, 0.2, 0.06],
+  graviton: [4, 0.2, 0.07],
+  hive:     [5, 0.1, 0.04],
+}
+
+export function addSectorShips(waves, sector, baseMult = 1) {
+  const countMult = baseMult * (sector?.countMult ?? 1)
+  waves.forEach((w, idx) => {
+    const i = idx + 1
+    for (const [type, [from, base, grow]] of Object.entries(SECTOR_SHIPS)) {
+      if (!sector?.roster.includes(type) || i < from) continue
+      const n = Math.max(1, Math.round((base + (i - from) * grow) * countMult))
+      for (let k = 0; k < n; k++) {
+        // Posición al azar, pero la nodriza (si hay) sigue primera.
+        const min = w.hasBoss ? 1 : 0
+        w.list.splice(min + Math.floor(Math.random() * (w.list.length - min + 1)), 0, type)
+      }
+    }
+  })
+}
+
 export function initWaves(scene) {
   scene.mode = currentMode()
   scene.sector = sectorByN(appState.sector)
   scene.waves = buildWaves(appState.difficulty, scene.mode.waveCount, { countScale: scene.mode.countScale, sector: scene.sector })
+  addSectorShips(scene.waves, scene.sector, (DIFFICULTY[appState.difficulty] || DIFFICULTY.normal).countMult * (scene.mode.countScale ?? 1))
   const first = scene.mode.firstWaveMs ?? FIRST_WAVE_MS
   scene.wave = { index: 0, queue: [], spawnTimer: 0, gap: 0, dirs: [], spawnDirIndex: 0, state: 'intermission', timer: first, elapsed: 0 }
   gameState.wave = 0

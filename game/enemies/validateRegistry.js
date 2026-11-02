@@ -4,7 +4,7 @@ import { ATTACK } from './behaviors/attack.js'
 import { EVASION } from './behaviors/evasion.js'
 import { RISK } from './behaviors/risk.js'
 
-const VALID_GROUPS = new Set(['CORE', ...Object.keys(ROLE_GROUPS)])
+const VALID_GROUPS = new Set(['CORE', 'GENERAL', ...Object.keys(ROLE_GROUPS)])
 
 export function validateRegistry() {
   const maps = [
@@ -23,13 +23,18 @@ export function validateRegistry() {
     if (!VALID_GROUPS.has(def.targetPriority)) {
       throw new Error(
         'Enemy "' + typeKey + '": targetPriority "' + def.targetPriority + '" invalido. ' +
-        'Validos: CORE, ' + Object.keys(ROLE_GROUPS).join(', ')
+        'Validos: CORE, GENERAL, ' + Object.keys(ROLE_GROUPS).join(', ')
       )
     }
     if (!VALID_GROUPS.has(def.targetSecondary)) {
       throw new Error(
         'Enemy "' + typeKey + '": targetSecondary "' + def.targetSecondary + '" invalido. ' +
         'Validos: CORE, ' + Object.keys(ROLE_GROUPS).join(', ')
+      )
+    }
+    if (def.deathSpawn && !REGISTRY[def.deathSpawn.type]) {
+      throw new Error(
+        'Enemy "' + typeKey + '": deathSpawn.type "' + def.deathSpawn.type + '" no existe en REGISTRY.'
       )
     }
     if (def.evasion && typeof EVASION[def.evasion] !== 'function') {

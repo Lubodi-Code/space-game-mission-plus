@@ -12,6 +12,11 @@ import inGameUrl from './sounds/ambient/inGame.mp3'
 import transitionUrl from './sounds/ambient/Transition.mp3'
 import bossDarkUrl from './sounds/ambient/bossDark.mp3'
 import voidCalmUrl from './sounds/ambient/voidCalm.mp3'
+// Pistas sintetizadas por scripts/gen-audio.py (sin samples ajenos).
+import combatPulseUrl from './sounds/gen/music/combatPulse.ogg'
+import orbitDriftUrl from './sounds/gen/music/orbitDrift.ogg'
+import bossSiegeUrl from './sounds/gen/music/bossSiege.ogg'
+import victoryThemeUrl from './sounds/gen/music/victoryTheme.ogg'
 import disintegratorUrl from './sounds/disintegrator.mp3'
 import machinegunUrl from './sounds/machinegun.mp3'
 import laserTurretUrl from './sounds/laserLarge_002.ogg'
@@ -28,11 +33,20 @@ const SHIP_ENGINE_URLS = Object.fromEntries(
   Object.entries(import.meta.glob('./sounds/ships/*.ogg', { eager: true, query: '?url', import: 'default' }))
     .map(([path, url]) => ['ship_' + path.split('/').pop().replace('.ogg', ''), url]),
 )
+// Tipos nuevos sin ogg propio: reutilizan el loop de otro tipo.
+const SHIP_ENGINE_ALIAS = {
+  hunter: 'runner', phantom: 'leech', aegis: 'warden', graviton: 'commandship', hive: 'mothership', drone: 'kamikaze',
+}
+for (const [type, base] of Object.entries(SHIP_ENGINE_ALIAS)) {
+  if (SHIP_ENGINE_URLS['ship_' + base]) SHIP_ENGINE_URLS['ship_' + type] ||= SHIP_ENGINE_URLS['ship_' + base]
+}
 // Volumen por nave cercana y techo de cada tipo: las grandes pesan más y suenan más graves.
 const SHIP_ENGINE_MIX = {
   grunt: [0.0175, 0.06], runner: [0.015, 0.055], skirmisher: [0.0175, 0.06], kamikaze: [0.025, 0.07],
   saboteur: [0.02, 0.06], leech: [0.02, 0.06], bomber: [0.025, 0.07], warden: [0.025, 0.065],
   brute: [0.035, 0.08], artillery: [0.03, 0.075], commandship: [0.04, 0.085], mothership: [0.05, 0.1],
+  hunter: [0.015, 0.055], phantom: [0.02, 0.06], aegis: [0.025, 0.065], graviton: [0.04, 0.085],
+  hive: [0.05, 0.1], drone: [0.025, 0.07],
 }
 
 // Bancos de variantes (Kenney, CC0 — ver sounds/kenney/LICENSE.txt): carpeta = banco, archivos NN.ogg.
@@ -43,9 +57,19 @@ for (const [path, url] of Object.entries(import.meta.glob('./sounds/kenney/*/*.o
   const bank = path.split('/')[3]
   ;(BANK_URLS[bank] ||= []).push(url)
 }
+// Bancos sintetizados (scripts/gen-audio.py): game/sounds/gen/<banco>/NN.ogg. La carpeta music no es un banco.
+for (const [path, url] of Object.entries(import.meta.glob('./sounds/gen/*/*.ogg', { eager: true, query: '?url', import: 'default' }))) {
+  const bank = path.split('/')[3]
+  if (bank === 'music') continue
+  ;(BANK_URLS[bank] ||= []).push(url)
+}
 const banks = {}              // banco → AudioBuffer[]
 
 const MUSIC = { ingame: inGameUrl, transition: transitionUrl, bossDark: bossDarkUrl, voidCalm: voidCalmUrl }
+// Pistas extra (se decodifican después de las originales para no retrasar el arranque de la música).
+const MUSIC_EXTRA = { combatPulse: combatPulseUrl, orbitDrift: orbitDriftUrl, bossSiege: bossSiegeUrl, victoryTheme: victoryThemeUrl }
+// Cada estado del juego alterna al azar entre sus pistas; se elige al ENTRAR al estado, no a mitad de pista.
+const MUSIC_VARIANTS = { ingame: ['ingame', 'combatPulse'], voidCalm: ['voidCalm', 'orbitDrift'], bossDark: ['bossDark', 'bossSiege'] }
 const SAMPLES = {
   laser: laserTurretUrl,
   enemybeam: enemyBeamUrl,
@@ -177,7 +201,10 @@ async function loadAudio() {
     try { music.buffers[name] = await decode(url) } catch { /* ignora pista fallida */ }
   }
   music.loaded = true
-  if (music.want) swapMusic(music.want)
+  if (music.want) swapMusic(pickTrack(music.want))
+  for (const [name, url] of Object.entries(MUSIC_EXTRA)) {
+    try { music.buffers[name] = await decode(url) } catch { /* ignora pista fallida */ }
+  }
   for (const [name, url] of Object.entries(SAMPLES)) {
     try { buffers[name] = await decode(url) } catch { /* ignora sample fallido */ }
   }
@@ -249,7 +276,19 @@ export function setMusicState(name) {
   if (!ctx) return
   music.want = name
   startAmbience()
-  if (music.loaded) swapMusic(name)
+  if (music.loaded) swapMusic(pickTrack(name))
+}
+
+// Elige la pista del estado una sola vez por entrada al estado (setMusicState se llama seguido).
+let musicState = null
+let musicPick = null
+function pickTrack(state) {
+  if (state !== musicState || !musicPick) {
+    musicState = state
+    const opts = (MUSIC_VARIANTS[state] || [state]).filter((n) => music.buffers[n])
+    musicPick = opts.length ? opts[(Math.random() * opts.length) | 0] : state
+  }
+  return musicPick
 }
 
 function swapMusic(name, fade = 1.4) {
@@ -288,6 +327,7 @@ function swapMusic(name, fade = 1.4) {
 // reach: alcance relativo a media pantalla (1.7 = se oye bastante fuera de cuadro). near: caída
 // cuadrática, para sonidos de ambiente que solo deben oírse cuando la cámara está encima.
 function spatial(x, y, reach = 1.7, near = false) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return { pan: 0, vol: 0 } // NaN congelaba el juego (gain.value = NaN)
   const half = view.w * 0.5 || 960
   const dx = x - view.cx
   const dy = y - view.cy
@@ -381,8 +421,11 @@ function toneShot(kind, x, y, gain, ms) {
   return playTone(kind, pan, gain * vol)
 }
 
+let laserAlt = false // alterna sintetizado / Kenney
 export function sfxLaser(x, y) {
   if (toneShot('laser', x, y, 0.9, 35)) return
+  laserAlt = !laserAlt
+  if (laserAlt && playBank('laserGen', x, y, { gain: 0.75, bass: 4, reverb: 0.2, detune: 0.1, throttleMs: 0 })) return
   if (!playBank('laser', x, y, { gain: 0.8, bass: 5, reverb: 0.25, detune: 0.08, throttleMs: 0 })) playSample('laser', x, y, { gain: 0.9, bass: 8, throttleMs: 0 })
 }
 export function sfxMissile(x, y) {
@@ -396,6 +439,8 @@ export function sfxImpact(x, y, size = 1) {                                     
   const big = Math.min(1, Math.max(0, (size - 0.8) / 1.6))
   const rate = (0.62 - big * 0.17) * (0.95 + Math.random() * 0.1)
   playSample('missile', x, y, { gain: 0.38 + big * 0.17, rate, bass: 7 + big * 4, reverb: 0.9, echo: 0.9 + big * 0.4, throttleMs: 45 + big * 80 })
+  // Explosiones grandes (mortero, núcleo): a veces suma el impacto sintetizado.
+  if (size >= 1.3 && Math.random() < 0.5) playBank('mortarImpact', x, y, { gain: 0.5, detune: 0.1, throttleMs: 150 })
   if (size >= 1.5 && ctx) {
     const { pan, vol } = at(x, y)
     if (vol > 0.02) playExplosion(pan, vol * Math.min(size, 2))
@@ -405,6 +450,9 @@ export function sfxImpact(x, y, size = 1) {                                     
 export function sfxMine(x, y) { playSample('mine', x, y, { gain: 0.2, throttleMs: 500, reach: 0.75, near: true }) } // bajito; sube solo al acercarse                      // recolector
 export function sfxEnemyBeam(x, y) {
   if (toneShot('enemyBeam', x, y, 0.6, 40)) return
+  // 80 % disparo alienígena, 20 % cañón pesado
+  const heavy = Math.random() < 0.2
+  if (heavy ? playBank('enemyHeavyShot', x, y, { gain: 0.5, detune: 0.1, throttleMs: 0 }) : playBank('enemyShot', x, y, { gain: 0.5, detune: 0.1, throttleMs: 0 })) return
   if (!playBank('laserSmall', x, y, { gain: 0.45, rate: 0.85, reverb: 0.2, throttleMs: 0 })) playSample('enemybeam', x, y, { gain: 0.6, throttleMs: 0 })
 }
 export function sfxGeneralShot(x, y) {
@@ -629,6 +677,7 @@ export function sfxRail(x, y) {
   if (!ctx || !throttle('rail', 120)) return
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
+  if (Math.random() < 0.7 && playBank('laserHeavy', x, y, { gain: 0.8, detune: 0.08, reverb: 0.3, throttleMs: 0 })) return
   if (playSample('disintegrator', x, y, { gain: 0.9, reverb: 0.3, throttleMs: 0 })) return // impacto desintegrador
   if (TONE_SHOTS && playTone('rail', pan, vol)) return
   if (playBank('laser', x, y, { gain: 0.9, rate: 0.6, bass: 10, reverb: 0.4, throttleMs: 0 })) return
@@ -651,6 +700,10 @@ export function sfxMortar(x, y) {
   const { pan, vol } = at(x, y)
   if (vol <= 0.03) return
   if (TONE_SHOTS && playTone('mortar', pan, vol)) return
+  if (playBank('mortarLaunch', x, y, { gain: 0.85, bass: 4, reverb: 0.3, throttleMs: 0 })) {
+    if (Math.random() < 0.25) playBank('mortarWhistle', x, y, { gain: 0.35, throttleMs: 0 })
+    return
+  }
   if (playBank('boom', x, y, { gain: 0.7, bass: 8, reverb: 0.4, throttleMs: 0 })) return
   sweep({ type: 'sine', f0: 180, f1: 55, dur: 0.38, gain: 0.2, pan, vol })
   noise({ dur: 0.18, gain: 0.12, lp: 1100, pan, vol })
@@ -716,6 +769,27 @@ export function sfxCoreAlarm() {
 
 export function sfxVictory() {
   if (!ctx) return
+  // Tema de victoria sintetizado por el bus de música; baja la música de fondo mientras suena.
+  const theme = music.buffers.victoryTheme
+  if (theme && musicBus) {
+    const t = ctx.currentTime
+    const src = ctx.createBufferSource()
+    src.buffer = theme
+    const g = ctx.createGain()
+    g.gain.value = 0.8
+    src.connect(g)
+    g.connect(musicBus)
+    src.start(t)
+    if (music.gain) {
+      const mg = music.gain.gain
+      mg.cancelScheduledValues(t)
+      mg.setValueAtTime(Math.max(0.0001, mg.value), t)
+      mg.linearRampToValueAtTime(MUSIC_VOL * 0.2, t + 0.4)
+      mg.setValueAtTime(MUSIC_VOL * 0.2, t + theme.duration)
+      mg.linearRampToValueAtTime(MUSIC_VOL, t + theme.duration + 1.5)
+    }
+    return
+  }
   if (playBank('jingleWin', null, null, { gain: 0.7, detune: 0, throttleMs: 0 })) return
   ;[[392, 0], [494, 0.32], [587, 0.64], [784, 0.96]].forEach(([f, delay]) => {
     sweep({ type: 'triangle', f0: f, f1: f * 1.005, dur: 0.65, gain: 0.075, at: delay })
@@ -726,6 +800,7 @@ export function sfxVictory() {
 
 export function sfxDefeat() {
   if (!ctx) return
+  if (playBank('defeat', null, null, { gain: 0.8, detune: 0, throttleMs: 0 })) return
   if (playBank('jingleLose', null, null, { gain: 0.7, detune: 0, throttleMs: 0 })) return
   ;[[392, 0], [330, 0.33], [262, 0.66], [196, 0.99]].forEach(([f, delay]) => {
     sweep({ type: 'triangle', f0: f, f1: f * 0.94, dur: 0.75, gain: 0.07, at: delay })
