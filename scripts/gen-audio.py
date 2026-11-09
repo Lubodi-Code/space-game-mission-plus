@@ -532,7 +532,9 @@ def combat_pulse():
         if bar in (10, 18):
             S.add('riser', t0, v_riser(S.bar * 2 / SR, seed=51 + bar), 0, 0.7)
         if bar % 4 == 1:
-            S.add('shim', t0 + S.beat * 0.5, v_metal_echo(midi(scale[int(r.integers(3, 8))] + 24), 5.0), r.uniform(-0.7, 0.7), 0.3)
+            # Campana aguda ('shim') quitada a pedido de Luis (2026-11-09): sonaba como un «tiiing» cada rato.
+            # Se siguen consumiendo los números al azar para que el resto de la pista no cambie.
+            r.integers(3, 8); r.uniform(-0.7, 0.7)
     return master(S, {'drone': 0.9, 'ost': 0.8, 'taiko': 1.0, 'boom': 0.9, 'brass': 0.65, 'choir': 0.6, 'riser': 0.5, 'shim': 0.5},
                   rev={'taiko': 0.9, 'brass': 0.5, 'choir': 0.8, 'riser': 0.5, 'shim': 1.0, 'ost': 0.15},
                   dly={'shim': (S.beat * 1.5 / SR, 0.5, 0.5)}, peak_db=-3.0, drive=1.1, rng=r, rev_dur=3.2)
@@ -557,7 +559,7 @@ def orbit_drift():
             nn = scale[int(r.integers(0, len(scale)))] + 12 * int(r.integers(0, 2))
             S.add('note', t0 + r.uniform(0, S.bar * 0.7), v_bell(midi(nn), r.uniform(3.5, 5.0), 2.76, 1.2), r.uniform(-0.8, 0.8), 0.45)
         if bar % 4 == 0:
-            S.add('shim', t0 + S.beat, v_metal_echo(midi(root + 48), 6.0), r.uniform(-0.6, 0.6), 0.3)
+            r.uniform(-0.6, 0.6)  # campana aguda quitada (2026-11-09); se consume el azar igual
         if bar in (6, 14):
             S.add('riser', t0, v_riser(S.bar * 2 / SR, 200, 4500, seed=60 + bar), 0, 0.25)
         if bar % 8 == 0:
@@ -604,7 +606,7 @@ def boss_siege():
         if bar in (8, 16):
             S.add('riser', t0, v_riser(S.bar * 2 / SR, 150, 6000, seed=70 + bar), 0, 0.7)
         if bar % 4 == 2:
-            S.add('shim', t0, v_metal_echo(midi(root + 36 + (1 if bar % 8 == 2 else 0)), 4.5), r.uniform(-0.6, 0.6), 0.28)
+            r.uniform(-0.6, 0.6)  # campana aguda quitada (2026-11-09); se consume el azar igual
     return master(S, {'drone': 0.9, 'ost': 0.85, 'taiko': 1.0, 'boom': 1.0, 'brass': 0.7, 'choir': 0.6, 'siren': 0.5, 'riser': 0.5, 'shim': 0.5},
                   rev={'taiko': 0.8, 'brass': 0.5, 'choir': 0.8, 'riser': 0.5, 'shim': 1.0, 'siren': 0.7},
                   dly={'shim': (S.beat * 1.5 / SR, 0.5, 0.5)}, peak_db=-3.0, drive=1.3, rng=r, rev_dur=3.2)

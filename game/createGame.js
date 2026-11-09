@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
 import { BootScene } from './scenes/BootScene.js'
 import { GameScene } from './scenes/GameScene.js'
-import { RENDER_SCALE } from './quality.js'
+import { IS_TOUCH, RENDER_SCALE } from './quality.js'
 import { phaserHeightFor } from './three/tilt.js'
 import { sharedAudioContext } from './sound.js'
 
@@ -32,7 +32,8 @@ export function createGameConfig(parent) {
     // Contexto compartido con sound.js: con él Phaser lo suspende al destruirse en vez de cerrarlo.
     audio: { context: sharedAudioContext() },
     render: {
-      antialias: true,
+      antialias: !IS_TOUCH,
+      powerPreference: IS_TOUCH ? 'high-performance' : 'default',
       roundPixels: false,
       // Sin preserveDrawingBuffer: el canvas ya no se copia a una textura de Three cada frame.
       preserveDrawingBuffer: false,

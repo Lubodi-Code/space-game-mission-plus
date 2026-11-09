@@ -122,5 +122,5 @@ function effectChip(fx: string) {
   @apply mt-1 w-full px-1 py-1 rounded text-[10px] font-semibold bg-emerald-400/15 text-emerald-200
          hover:bg-emerald-400/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed;
 }
-.effect-chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 3px; border-radius: 4px; background: rgba(139,233,253,.09); font-size: 9px; line-height: 1.1; white-space: nowrap; text-decoration: none; }
+.effect-chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 3px; border-radius: 4px; background: rgba(139,233,253,.09); font-size: 10px; line-height: 1.15; white-space: nowrap; text-decoration: none; }
 </style>

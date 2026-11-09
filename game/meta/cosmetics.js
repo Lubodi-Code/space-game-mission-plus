@@ -7,8 +7,8 @@ import { premium } from './premium.js'
 // solo la acredita el servidor tras un pago confirmado (Fase 10E).
 // rarity: common | rare | epic | legendary (color del marco en la tienda)
 
-export { RARITY, COSMETICS } from '../../shared/catalog.js'
-import { COSMETICS } from '../../shared/catalog.js'
+export { RARITY, COSMETICS } from '~~/shared/catalog.js'
+import { COSMETICS } from '~~/shared/catalog.js'
 
 export const COSMETIC_BY_ID = Object.fromEntries(COSMETICS.map((c) => [c.id, c]))
 

@@ -10,7 +10,7 @@ import { UPGRADES_BY_ID } from '~/game/structures/upgrades.js'
 import { nexusColor, equipped } from '~/game/meta/cosmetics.js'
 import { appState } from '~/game/appState.js'
 import { WORLD } from '~/game/balance.js'
-import { IS_TOUCH, LOW_GFX, RENDER_SCALE } from '~/game/quality.js'
+import { IS_TOUCH, LOW_GFX, RENDER_SCALE, THREE_SCALE } from '~/game/quality.js'
 import { REGISTRY } from '~/game/enemies/EnemyType.js'
 import { updateTiltCamera } from './tilt.js'
 
@@ -23,6 +23,8 @@ import { updateTiltCamera } from './tilt.js'
 
 // Zoom (sin RENDER_SCALE) por debajo del cual la cámara cuenta como lejana (vista inicial: 0.55).
 const LOD_FAR = 0.42
+const REDUCED_FX = LOW_GFX || IS_TOUCH
+const EMPTY = []
 
 const ASSET = {
   meteor3D: {
@@ -113,10 +115,17 @@ export class ThreeLayer {
     this.pendingRender = false
     this.tickPrev = performance.now()
     this.viewCenter = { x: WORLD.width / 2, y: WORLD.height / 2 }
+    this.threeScale = THREE_SCALE
+    this.frameMsAvg = 1000 / 60
+    this.slowMs = 0
+    this._cameraView = { x: 0, y: 0, width: 0, height: 0 }
+    this._viewport = { w: 0, h: 0 }
+    this._remoteStructures = []
+    this._generals = []
+    this._hueColor = new THREE.Color()
 
     const renderer = new THREE.WebGLRenderer({ antialias: !IS_TOUCH && RENDER_SCALE < 2, alpha: false, powerPreference: 'high-performance' })
-    // En móvil renderizar a 1x: el DPR 2-3x de los celulares multiplica los píxeles x4-9 y hunde los FPS.
-    // resize() usa el ancho físico de Phaser y el alto físico visible del contenedor.
+    // resize() convierte el ancho físico de Phaser a la escala independiente de Three.
     renderer.setPixelRatio(1)
     renderer.autoClear = false
     renderer.setClearColor(0x010104, 1)
@@ -183,9 +192,11 @@ export class ThreeLayer {
     rim.position.set(0.6, 0.5, 0.4)
     this.scene.add(rim)
     // Resplandor suave del núcleo sobre los meteoritos cercanos.
-    const coreGlow = new THREE.PointLight(0x4488ff, 0.7, 700)
-    coreGlow.position.set(0, 0, 100)
-    this.scene.add(coreGlow)
+    if (!REDUCED_FX) {
+      const coreGlow = new THREE.PointLight(0x4488ff, 0.7, 700)
+      coreGlow.position.set(0, 0, 100)
+      this.scene.add(coreGlow)
+    }
   }
 
   // ------------------------------------------------------------- fondo parallax
@@ -197,7 +208,7 @@ export class ThreeLayer {
     this.bgGroups = []
 
     // Fondo animado propio del sector (shader). Va detrás de todo lo demás.
-    this.backdrop = createSectorBackdrop(appState.sector || 1, LOW_GFX)
+    this.backdrop = createSectorBackdrop(appState.sector || 1, REDUCED_FX)
     this.bgScene.add(this.backdrop.mesh)
 
     // Fondo: nube procedural (canvas, sin PNG externo), oscura y muy tenue — solo textura,
@@ -218,28 +229,27 @@ export class ThreeLayer {
     this.bgGroups.push(plane)
 
     // Banda galáctica tenue, diagonal, procedural
-    const galZ = -900
-    const galW = Math.abs(galZ) * 8
-    const galMat = new THREE.MeshBasicMaterial({
-      map: cloudTex, alphaMap: this.nebulaAlpha, transparent: true, opacity: 0.11, color: 0x384870,
-      blending: THREE.NormalBlending, depthWrite: false, depthTest: false,
-    })
-    const galaxy = new THREE.Mesh(new THREE.PlaneGeometry(galW * 4, galW), galMat)
-    galaxy.position.set(0, 0, galZ)
-    galaxy.rotation.z = -0.5 // Diagonal
-    galaxy.userData.factor = 0.02
-    galaxy.userData.drift = 0.00008 // Rotación muy lenta
-    this.bgScene.add(galaxy)
-    this.bgGroups.push(galaxy)
+    if (!REDUCED_FX) {
+      const galZ = -900
+      const galW = Math.abs(galZ) * 8
+      const galMat = new THREE.MeshBasicMaterial({
+        map: cloudTex, alphaMap: this.nebulaAlpha, transparent: true, opacity: 0.11, color: 0x384870,
+        blending: THREE.NormalBlending, depthWrite: false, depthTest: false,
+      })
+      const galaxy = new THREE.Mesh(new THREE.PlaneGeometry(galW * 4, galW), galMat)
+      galaxy.position.set(0, 0, galZ)
+      galaxy.rotation.z = -0.5 // Diagonal
+      galaxy.userData.factor = 0.02
+      galaxy.userData.drift = 0.00008 // Rotación muy lenta
+      this.bgScene.add(galaxy)
+      this.bgGroups.push(galaxy)
+    }
 
     // Nebulosas de color a distintas profundidades — mucho más oscuras/tenues que antes.
-    // En móvil una sola nebulosa de color: cada plano es un fullscreen quad con blending (caro en fill-rate).
+    // En móvil queda solo la nube base: cada plano con blending consume fill-rate.
     // Más capas a distintas profundidades con factores de parallax escalonados (sensación 3D)
     // + capas de niebla cercanas (factor alto = se mueven más rápido que el fondo).
-    const nebulaConfigs = LOW_GFX ? [
-      { z: -1200, color: 0x342050, opacity: 0.10, factor: 0.07, scale: 1.2, drift: 0.00012 },
-      { z: -520, color: 0x223652, opacity: 0.07, factor: 0.20, scale: 2.2, drift: -0.00003 },
-    ] : [
+    const nebulaConfigs = REDUCED_FX ? [] : [
       { z: -1200, color: 0x342050, opacity: 0.10, factor: 0.07, scale: 1.2, drift: 0.00012 },
       { z: -1500, color: 0x102838, opacity: 0.09, factor: 0.09, scale: 1.5, drift: 0.00006 },
       { z: -1350, color: 0x3a2018, opacity: 0.05, factor: 0.06, scale: 0.9, drift: -0.00009 },
@@ -264,7 +274,7 @@ export class ThreeLayer {
     }
 
     // Estrellas titilantes (Points con shader de twinkle).
-    const N = LOW_GFX ? 1500 : 2400
+    const N = REDUCED_FX ? 600 : 2400
     const pos = new Float32Array(N * 3)
     const phase = new Float32Array(N)
     const size = new Float32Array(N)
@@ -286,18 +296,18 @@ export class ThreeLayer {
     geo.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1))
     geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1))
     geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3))
-    this.starUniforms = { uTime: { value: 0 } }
+    this.starUniforms = { uTime: { value: 0 }, uScale: { value: this.threeScale } }
     const starMat = new THREE.ShaderMaterial({
       uniforms: this.starUniforms,
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
       vertexShader: `
         attribute float aPhase; attribute float aSize; attribute vec3 aColor;
-        uniform float uTime; varying float vTw; varying vec3 vCol;
+        uniform float uTime; uniform float uScale; varying float vTw; varying vec3 vCol;
         void main(){
           vCol = aColor;
           vTw = 0.35 + 0.65 * pow(0.5 + 0.5*sin(uTime*1.8 + aPhase), 2.0);
           vec4 mv = modelViewMatrix * vec4(position,1.0);
-          gl_PointSize = aSize * ${RENDER_SCALE.toFixed(2)} * (300.0 / -mv.z);
+          gl_PointSize = aSize * uScale * (300.0 / -mv.z);
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: `
@@ -316,7 +326,7 @@ export class ThreeLayer {
 
     // Galaxias lejanas (sprites pequeños eliptales)
     this.galaxies = []
-    const galCount = LOW_GFX ? 3 : 6
+    const galCount = REDUCED_FX ? 0 : 6
     for (let i = 0; i < galCount; i++) {
       const gMat = new THREE.SpriteMaterial({
         map: this.glowTex, color: 0x6a7690, transparent: true, opacity: 0.22,
@@ -335,7 +345,7 @@ export class ThreeLayer {
     }
 
     // Polvo cercano (puntos grandes tenues para sensación de velocidad)
-    const dustN = LOW_GFX ? 180 : 300
+    const dustN = REDUCED_FX ? 40 : 300
     const dustPos = new Float32Array(dustN * 3)
     const dustSize = new Float32Array(dustN)
     for (let i = 0; i < dustN; i++) {
@@ -348,12 +358,13 @@ export class ThreeLayer {
     dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3))
     dustGeo.setAttribute('aSize', new THREE.BufferAttribute(dustSize, 1))
     const dustMat = new THREE.ShaderMaterial({
+      uniforms: this.starUniforms,
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
       vertexShader: `
-        attribute float aSize;
+        attribute float aSize; uniform float uScale;
         void main(){
           vec4 mv = modelViewMatrix * vec4(position,1.0);
-          gl_PointSize = aSize * ${RENDER_SCALE.toFixed(2)} * (300.0 / -mv.z);
+          gl_PointSize = aSize * uScale * (300.0 / -mv.z);
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: `void main(){ vec2 c = gl_PointCoord - 0.5; float d = length(c); if(d>0.5) discard; float a = smoothstep(0.5,0.2,d) * 0.04; gl_FragColor = vec4(1,1,1,a); }`,
@@ -430,18 +441,20 @@ export class ThreeLayer {
 
     // Viñeta oscura (mantiene el centro de juego claro y bordes oscuros).
     // Comienza antes y termina en negro sólido para ocultar cualquier borde cuadrado residual.
-    const vig = radialTexture([
-      [0.0, 'rgba(0,0,0,0)'],
-      [0.35, 'rgba(2,4,10,0.0)'],
-      [0.75, 'rgba(1,2,6,0.75)'],
-      [1.0, 'rgba(0,0,0,1.0)'],
-    ])
-    const vmat = new THREE.MeshBasicMaterial({ map: vig, transparent: true, depthWrite: false, depthTest: false })
-    // El plano se hace mucho mayor que el frustum para cubrir siempre los bordes,
-    // ya que con la cámara en perspectiva un 2x2 quedaba como un pequeño cuadrado central.
-    this.vignette = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), vmat)
-    this.vignette.position.z = -50
-    this.bgScene.add(this.vignette)
+    if (!REDUCED_FX) {
+      const vig = radialTexture([
+        [0.0, 'rgba(0,0,0,0)'],
+        [0.35, 'rgba(2,4,10,0.0)'],
+        [0.75, 'rgba(1,2,6,0.75)'],
+        [1.0, 'rgba(0,0,0,1.0)'],
+      ])
+      const vmat = new THREE.MeshBasicMaterial({ map: vig, transparent: true, depthWrite: false, depthTest: false })
+      // El plano se hace mucho mayor que el frustum para cubrir siempre los bordes,
+      // ya que con la cámara en perspectiva un 2x2 quedaba como un pequeño cuadrado central.
+      this.vignette = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), vmat)
+      this.vignette.position.z = -50
+      this.bgScene.add(this.vignette)
+    }
   }
 
   // --------------------------------------------------------------- sincronizar
@@ -453,9 +466,12 @@ export class ThreeLayer {
     const sk = cam.shakeEffect
     const ox = sk && sk.isRunning ? sk._offsetX : 0
     const oy = sk && sk.isRunning ? sk._offsetY : 0
-    const view = { x: wv.x - ox, y: wv.y - oy, width: wv.width, height: wv.height }
+    const view = this._cameraView
+    view.x = wv.x - ox; view.y = wv.y - oy
+    view.width = wv.width; view.height = wv.height
     const canvas = this.renderer.domElement
-    updateTiltCamera(this.camera, view, { w: canvas.width, h: canvas.height })
+    this._viewport.w = canvas.width; this._viewport.h = canvas.height
+    updateTiltCamera(this.camera, view, this._viewport)
     this.viewCenter.x = wv.x + wv.width / 2
     this.viewCenter.y = wv.y + wv.height / 2
     // Nivel de detalle: con la cámara alejada los contornos, cabinas y cristales miden 1-2 px y
@@ -499,6 +515,7 @@ export class ThreeLayer {
         }))
         halo.scale.set(m.radius * 5.5, m.radius * 5.5, 1)
         halo.position.z = -2
+        halo.visible = !REDUCED_FX
         root.add(halo, model)
         this.scene.add(root)
         e = {
@@ -517,7 +534,13 @@ export class ThreeLayer {
   // la última mejora en 3D y animación al mejorar. El núcleo sigue con _syncNexus. Las formas 2D
   // de Phaser se ocultan de la cámara principal; barras de vida/construcción siguen en 2D.
   _syncStructures(scene) {
-    const structures = scene?.remote ? [...(scene.sById?.values() || [])] : scene?.structures
+    let structures = scene?.structures
+    if (scene?.remote) {
+      structures = this._remoteStructures
+      let count = 0
+      for (const s of scene.sById?.values() || EMPTY) structures[count++] = s
+      structures.length = count
+    }
     if (!structures) return
     this.structs ||= new Map()
     const now = performance.now()
@@ -544,7 +567,7 @@ export class ThreeLayer {
       if (s._accent && !e.accentHidden) { scene.cam?.ignore(s._accent); e.accentHidden = true }
       const col = s.fxColor || s.def.color
       if (col !== e.color) { u.setColor(col); e.color = col }
-      const ups = s.upgrades || []
+      const ups = s.upgrades || EMPTY
       if (ups.length !== e.decorN) {
         const last = UPGRADES_BY_ID[ups[ups.length - 1]]
         if (last) u.setDecor(last.decor, last.tint || col)
@@ -568,7 +591,7 @@ export class ThreeLayer {
     const remote = !!scene?.remote
     const enemies = remote ? scene.eById?.values() : scene?.enemies
     if (!enemies) return
-    const I = this.enemyInst ||= createEnemyInstances(this.scene, this.glowTex, { haloScale: LOW_GFX ? 3.6 : 4.4 })
+    const I = this.enemyInst ||= createEnemyInstances(this.scene, this.glowTex, { haloScale: REDUCED_FX ? 2.2 : 4.4 })
     const now = performance.now()
     I.begin()
     for (const enemy of enemies) {
@@ -624,7 +647,11 @@ export class ThreeLayer {
   // Misma nave que la vitrina de la tienda (shipModel.js). El sprite 2D se oculta de la
   // cámara principal pero sigue en el minimapa. Solo host/solo (scene.generals).
   _syncGenerals(scene) {
-    const generals = scene?.remote ? [...(scene.genSprites?.values() || [])] : [...(scene.generals?.values() || [])]
+    const generals = this._generals
+    const source = scene?.remote ? scene.genSprites : scene?.generals
+    let count = 0
+    for (const g of source?.values() || EMPTY) generals[count++] = g
+    generals.length = count
     if (!generals.length) return
     this.gens ||= new Map()
     for (const [g, e] of this.gens) {
@@ -663,7 +690,7 @@ export class ThreeLayer {
   _updateTrail(e, g, rot) {
     const td = equipped('trail')
     if (!td?.style) { if (e.trail) e.trail.visible = false; return }
-    const N = LOW_GFX ? 36 : 60
+    const N = REDUCED_FX ? 18 : 60
     if (!e.trail) {
       const geo = new THREE.BufferGeometry()
       geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3).fill(-9999), 3))
@@ -672,6 +699,7 @@ export class ThreeLayer {
       e.trail.frustumCulled = false
       e.trailParts = Array.from({ length: N }, () => ({ x: 0, y: 0, life: 0 }))
       e.trailI = 0
+      e.trailPrev = { x: g.x, y: g.y }
       this.scene.add(e.trail)
     }
     e.trail.visible = g.alive
@@ -680,7 +708,7 @@ export class ThreeLayer {
     mat.size = (td.style === 'pixel' ? 9 : td.style === 'comet' ? 8 : 7) * RENDER_SCALE
     // Movimiento real (no la distancia al destino): también cuenta si lo empuja otra cosa.
     const moving = e.trailPrev ? Math.hypot(g.x - e.trailPrev.x, g.y - e.trailPrev.y) > 0.4 : false
-    e.trailPrev = { x: g.x, y: g.y }
+    e.trailPrev.x = g.x; e.trailPrev.y = g.y
     if (moving) {
       const p = e.trailParts[e.trailI++ % N]
       p.x = g.x - Math.cos(rot) * 10 + (Math.random() - 0.5) * 3
@@ -772,6 +800,7 @@ export class ThreeLayer {
     }))
     glow.scale.set(core.radius * 6, core.radius * 6, 1)
     glow.position.z = -3
+    glow.visible = !REDUCED_FX
 
     root.add(glow, body, edges, ring, inner)
     this.scene.add(root)
@@ -795,7 +824,7 @@ export class ThreeLayer {
     n.inner.rotation.x += dt * 0.7
     n.glow.material.opacity = 0.45 + 0.15 * Math.sin(t * 1.8)
     if (n.hue) {
-      const c = (this._hueColor ||= new THREE.Color()).setHSL((t / 2.4) % 1, 0.8, 0.6)
+      const c = this._hueColor.setHSL((t / 2.4) % 1, 0.8, 0.6)
       n.body.material.emissive.copy(c)
       n.ring.material.emissive?.copy(c)
       n.glow.material.color.copy(c)
@@ -929,6 +958,10 @@ export class ThreeLayer {
   // ----------------------------------------------------------------- explosión
   // Explosiones nuevas (fxModels.js, Codex). kind opcional: small|big|plasma|emp|meteor|boss.
   explode(x, y, color, radius, kind) {
+    if (REDUCED_FX) {
+      if (this.explosions.length < 6) this._explodeLegacy(x, y, color, radius)
+      return
+    }
     kind ||= radius >= 110 ? 'boss' : radius >= 45 ? 'big' : 'small'
     this.fx ||= []
     if (this.fx.length >= (LOW_GFX ? 10 : 24)) this.fx.shift().dispose()
@@ -942,9 +975,9 @@ export class ThreeLayer {
     }
   }
 
-  // Versión anterior (Points + anillos); queda por si hace falta comparar.
+  // Variante liviana: una nube de puntos y una onda, sin humo ni flashes de pantalla completa.
   _explodeLegacy(x, y, color, radius) {
-    const n = Math.min(LOW_GFX ? 40 : 90, (LOW_GFX ? 15 : 30) + Math.round(radius * 1.6))
+    const n = REDUCED_FX ? Math.min(24, 12 + Math.round(radius * 0.4)) : Math.min(90, 30 + Math.round(radius * 1.6))
     const pos = new Float32Array(n * 3)
     const vel = []
     const c = new THREE.Color(color)
@@ -963,7 +996,7 @@ export class ThreeLayer {
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
     const mat = new THREE.PointsMaterial({
-      size: Math.max(6, radius * 0.6) * RENDER_SCALE, map: this.sparkTex, vertexColors: true,
+      size: Math.max(6, radius * 0.6) * this.threeScale, map: this.sparkTex, vertexColors: true,
       transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, alphaTest: 0.01,
     })
     const pts = new THREE.Points(geo, mat)
@@ -976,21 +1009,25 @@ export class ThreeLayer {
     this.scene.add(ring)
 
     // segunda onda más lenta y fina (da sensación de profundidad)
-    const ring2 = new THREE.Mesh(
-      new THREE.RingGeometry(radius * 0.2, radius * 0.28, 32),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
-    )
-    ring2.position.set(x, y, 11)
-    this.scene.add(ring2)
+    let ring2 = null
+    let flash = null
+    if (!REDUCED_FX) {
+      ring2 = new THREE.Mesh(
+        new THREE.RingGeometry(radius * 0.2, radius * 0.28, 32),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+      )
+      ring2.position.set(x, y, 11)
+      this.scene.add(ring2)
 
-    // flash central blanco-caliente que muere rápido
-    const flash = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: this.glowTex, color: 0xffffff, transparent: true, opacity: 1,
-      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
-    }))
-    flash.position.set(x, y, 13)
-    flash.scale.set(radius * 3.5, radius * 3.5, 1)
-    this.scene.add(flash)
+      // flash central blanco-caliente que muere rápido
+      flash = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: this.glowTex, color: 0xffffff, transparent: true, opacity: 1,
+        blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+      }))
+      flash.position.set(x, y, 13)
+      flash.scale.set(radius * 3.5, radius * 3.5, 1)
+      this.scene.add(flash)
+    }
 
     this.explosions.push({ pts, vel, ring, ring2, flash, life: 0, max: 0.7, baseSize: mat.size })
   }
@@ -1045,13 +1082,30 @@ export class ThreeLayer {
   _onPostRender() {
     if (!this.pendingRender) return
     this.pendingRender = false
+    // tiltInput usa RENDER_SCALE y el buffer de Three como viewport; compensar solo sus coordenadas.
+    if (!this._inputTransform) {
+      const input = this.game.input
+      this._originalInputTransform = input.transformPointer
+      this._inputTransform = (pointer, pageX, pageY, wasMove) => {
+        if (this.game.scene.isActive('Game')) {
+          const rect = this.game.canvas.getBoundingClientRect()
+          const left = rect.left + window.scrollX, top = rect.top + window.scrollY
+          pageX = left + (pageX - left) * this.renderer.domElement.width / this._phaserWidth
+          pageY = top + (pageY - top) * this.renderer.domElement.height / this._screenHeight
+        }
+        return this._originalInputTransform.call(input, pointer, pageX, pageY, wasMove)
+      }
+      input.transformPointer = this._inputTransform
+    }
     this._renderFrame()
   }
 
   _renderFrame() {
     const now = performance.now()
-    const dt = Math.min(0.05, (now - this.tickPrev) / 1000)
+    const frameMs = now - this.tickPrev
+    const dt = Math.min(0.05, frameMs / 1000)
     this.tickPrev = now
+    if (IS_TOUCH) this._updateResolution(frameMs)
 
     this.starUniforms.uTime.value = now * 0.001
     this._updateExplosions(dt)
@@ -1061,7 +1115,7 @@ export class ThreeLayer {
 
     // Estrellas fugaces (cada 6-14s)
     this.shootingStarTimer += dt * 1000
-    if (this.shootingStarTimer >= this.shootingStarNext) {
+    if (!REDUCED_FX && this.shootingStarTimer >= this.shootingStarNext) {
       this.shootingStarTimer = 0
       this.shootingStarNext = 6000 + Math.random() * 8000
       this._createShootingStar()
@@ -1087,10 +1141,29 @@ export class ThreeLayer {
     r.render(this.scene, this.camera)
   }
 
+  _updateResolution(frameMs) {
+    // Ignorar la vuelta de una pestaña suspendida; usar tiempo real, sin el clamp de animación.
+    if (document.hidden || frameMs <= 0 || frameMs > 250) {
+      this.frameMsAvg = 1000 / 60
+      this.slowMs = 0
+      return
+    }
+    this.frameMsAvg += (frameMs - this.frameMsAvg) * Math.min(1, frameMs / 500)
+    this.slowMs = this.frameMsAvg > 25 ? this.slowMs + frameMs : 0
+    if (this.slowMs >= 2000 && this.threeScale > 0.6) {
+      this.threeScale = Math.max(0.6, Math.round((this.threeScale - 0.15) * 100) / 100)
+      this.slowMs = 0
+      this.resize(this._phaserWidth)
+    }
+  }
+
   resize(w, _phaserHeight) {
-    const screenHeight = Math.round((this.parent.clientHeight || window.innerHeight) * RENDER_SCALE)
-    this.renderer.setSize(w, screenHeight, false)
-    this.bgCamera.aspect = w / screenHeight
+    this._phaserWidth = w
+    this._screenHeight = Math.round((this.parent.clientHeight || window.innerHeight) * RENDER_SCALE)
+    this.renderer.setSize(Math.max(1, Math.round(w * this.threeScale / RENDER_SCALE)),
+      Math.max(1, Math.round(this._screenHeight * this.threeScale / RENDER_SCALE)), false)
+    this.starUniforms.uScale.value = this.threeScale
+    this.bgCamera.aspect = w / this._screenHeight
     this.bgCamera.updateProjectionMatrix()
     this.backdrop?.fit(this.bgCamera)
   }
@@ -1154,6 +1227,9 @@ export class ThreeLayer {
   dispose() {
     this._meteorDisposed = true
     this.game?.events.off('postrender', this._onPostRender, this)
+    if (this._inputTransform && this.game?.input?.transformPointer === this._inputTransform) {
+      this.game.input.transformPointer = this._originalInputTransform
+    }
     if (this.nexus) { this._dispose(this.nexus); this.nexus = null; this.nexusCore = null }
     for (const [, e] of this.meshes) this._dispose(e)
     this.meshes.clear()
@@ -1165,8 +1241,7 @@ export class ThreeLayer {
     this.meteorMat?.map?.dispose()
     this.meteorMat?.normalMap?.dispose()
     this.meteorMat?.roughnessMap?.dispose()
-    for (const ex of this.explosions) { this.scene.remove(ex.pts); this.scene.remove(ex.ring) }
-    this.explosions = []
+    this._updateExplosions(1)
     if (this.vignette) {
       this.vignette.material.map?.dispose()
       this.vignette.material.dispose()

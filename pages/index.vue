@@ -54,6 +54,7 @@ useHead({
       <GameCanvas />
       <!-- Vue HUD overlay on top of the canvas -->
       <Hud />
+      <RotateHint v-if="appState.view === 'game'" />
       <Tutorial v-if="appState.view === 'game' && appState.mp.status !== 'lost'" :solo="appState.mp.role === 'solo'" />
       <div v-if="appState.mp.status === 'reconnecting'" class="net-banner">
         Reconectando con el anfitrión… (intento {{ appState.mp.attempt }})

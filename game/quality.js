@@ -1,7 +1,5 @@
-// Calidad gráfica. Antes, "táctil" = gama baja (render a 1x, sin antialias): en celulares con
-// pantalla 3x todo se veía borroso. Ahora se separan dos cosas:
-// - RENDER_SCALE: píxeles reales por píxel CSS (nitidez). Hasta 2x; 1.5x en equipos modestos.
-// - LOW_GFX: solo recorta cantidades (partículas, estrellas, capas), no la resolución.
+// Calidad gráfica: Phaser conserva más nitidez que el fondo 3D en celulares con calidad auto.
+// LOW_GFX recorta cantidades; RENDER_SCALE y THREE_SCALE controlan los píxeles por píxel CSS.
 
 const hasWindow = typeof window !== 'undefined'
 
@@ -20,7 +18,8 @@ export const QUALITY_PREF = pref
 export const LOW_GFX = pref === 'low' || pref === 'medium' || (pref === 'auto' && IS_TOUCH)
 
 const maxScale = { high: 2, medium: 1.5, low: 1 }[pref] ??
-  (pref === 'auto' && IS_TOUCH ? (WEAK_DEVICE ? 1.25 : 1.5) : (WEAK_DEVICE ? 1.5 : 2))
+  (pref === 'auto' && IS_TOUCH ? (WEAK_DEVICE ? 1 : 1.25) : (WEAK_DEVICE ? 1.5 : 2))
 export const RENDER_SCALE = hasWindow
   ? Math.max(1, Math.min(window.devicePixelRatio || 1, maxScale))
   : 1
+export const THREE_SCALE = pref === 'auto' && IS_TOUCH ? (WEAK_DEVICE ? 0.85 : 1) : RENDER_SCALE

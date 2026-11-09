@@ -21,6 +21,7 @@ import VictoryFx from './VictoryFx.vue'
 import BadgeIcon from './BadgeIcon.vue'
 import { BADGE_TIERS } from '~/game/meta/badges'
 
+const { canFullscreen, isFullscreen, isTouch, preferLandscape, toggleFullscreen } = useScreenMode()
 const settingsOpen = ref(false)
 // Insignia ganada al terminar el sector (aparece cuando VictoryFx ya se apagó)
 const runBadge = computed(() => (gameState.status === 'victory' ? gameState.runRewards?.badge : null) || null)
@@ -453,14 +454,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
       </div>
 
       <div class="ml-auto flex items-center gap-5 text-sm">
-        <span class="text-cyan-300/80 flex items-center gap-1" title="Tiempo">
+        <span class="topbar-optional text-cyan-300/80 flex items-center gap-1" title="Tiempo">
           <GameIcon name="time" :size="15" title="Tiempo" /> <span class="text-white font-semibold tabular-nums">{{ timeLabel }}</span>
         </span>
         <span class="text-emerald-300/80 flex items-center gap-1" title="Minerales">
           <GameIcon name="minerals" :size="15" title="Minerales" />
           <span class="text-emerald-200 font-semibold tabular-nums">{{ gameState.minerals }}</span>
         </span>
-        <span class="text-fuchsia-300/80 flex items-center gap-1" title="Oleada">
+        <span class="topbar-optional text-fuchsia-300/80 flex items-center gap-1" title="Oleada">
           <GameIcon name="wave" :size="15" title="Oleada" />
           <span class="text-fuchsia-200 font-semibold">{{ gameState.wave }}/{{ gameState.waveTotal }}</span>
         </span>
@@ -470,6 +471,16 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
         <span class="meta-currency text-cyan-300/80 flex items-center gap-1" title="Cristales">
           <GameIcon name="crystals" :size="15" title="Cristales" /><span class="tabular-nums">{{ profile.crystals }}</span>
         </span>
+        <button
+          v-if="canFullscreen"
+          class="hud-btn shrink-0 inline-flex items-center justify-center"
+          :aria-label="isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'"
+          :title="isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'"
+          @click="toggleFullscreen"
+        >
+          <svg v-if="!isFullscreen" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
+          <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /></svg>
+        </button>
         <button class="hud-btn shrink-0" aria-label="Ajustes" title="Ajustes" @click="settingsOpen = true">⚙ <span class="hidden sm:inline">Ajustes</span></button>
         <button class="hud-btn shrink-0" aria-label="Salir de la partida" title="Salir de la partida" @click="exitOpen = true">⏏ <span class="hidden sm:inline">Salir</span></button>
       </div>
@@ -830,7 +841,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
     <button v-if="cancelable" class="cancel-fab pointer-events-auto" @click="cancelAll">✕ Cancelar</button>
 
     <!-- Aviso de orientación vertical -->
-    <div v-if="portrait && !portraitDismissed" class="portrait-hint pointer-events-none">
+    <div v-if="portrait && !portraitDismissed && !(isTouch && preferLandscape)" class="portrait-hint pointer-events-none">
       <span class="text-2xl">⟳</span>
       <span>Girá el celular para ver más mapa</span>
       <button class="portrait-close pointer-events-auto" aria-label="Cerrar aviso" @click="portraitDismissed = true">✕</button>
@@ -1071,6 +1082,35 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   :deep(.ability-under-sheet) { display: none; }
   .hud-hint, .hud-sector { display: none; }
   :global(#nuxt-devtools-anchor) { display: none !important; }
+}
+/* Táctil: objetivos de toque >= 40px y la barra superior (más alta) empuja los paneles hacia abajo. */
+@media (pointer: coarse) {
+  .hud-btn { min-height: 2.5rem; min-width: 2.5rem; }
+  .hud-topbar .hud-btn { min-height: 2.5rem; min-width: 2.5rem; }
+  .hud-core { top: calc(3rem + env(safe-area-inset-top)); }
+  .sheet-close, .event-close, .portrait-close { width: 2.5rem; height: 2.5rem; }
+  .event-card { top: calc(3rem + env(safe-area-inset-top)); }
+  .event-go, .cancel-fab { min-height: 2.5rem; }
+  .hud-sheet :deep(button) { min-height: 2.5rem; }
+}
+@media (pointer: coarse) and (max-width: 480px) {
+  .hud-topbar .topbar-optional { display: none; } /* el tiempo y la oleada no caben a 375px; la oleada sigue en el panel del Nexo */
+}
+
+/* Celular horizontal (812x375): el panel de inspección pasa a columna lateral derecha para no tapar el centro. */
+@media (max-height: 450px) and (orientation: landscape) {
+  .hud-sheet {
+    top: calc(3rem + env(safe-area-inset-top)) !important;
+    bottom: calc(0.25rem + env(safe-area-inset-bottom)) !important;
+    left: auto !important;
+    right: calc(0.5rem + env(safe-area-inset-right)) !important;
+    width: min(17rem, 42vw) !important;
+    max-height: none !important;
+    border-radius: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+  .hud-core { left: calc(0.5rem + env(safe-area-inset-left)); }
+  .hud-buildbar { max-width: calc(100vw - 8rem - env(safe-area-inset-left) - env(safe-area-inset-right)); }
 }
 @keyframes sheetUp {
   from { transform: translateY(24px); opacity: 0; }

@@ -12,6 +12,7 @@ import AccountPanel from './AccountPanel.vue'
 import { friends, dismissInvite } from '~/game/meta/friends'
 import { account, displayName, initAccount } from '~/game/meta/account'
 
+const { canFullscreen, isFullscreen, isTouch, preferLandscape, toggleFullscreen, enterGameScreen } = useScreenMode()
 const settingsOpen = ref(false)
 const difficulty = ref(appState.difficulty || 'normal')
 const mode = ref(MODES[appState.mode] ? appState.mode : DEFAULT_MODE)
@@ -62,11 +63,13 @@ function play() {
   if (appState.mp.role === 'client' || appState.mp.status === 'connecting' || appState.mp.status === 'reconnecting') return
   if (appState.mp.role === 'host') {
     if (waitingCount.value && !forceStart.value) { forceStart.value = true; return }
+    void enterGameScreen()
     const seed = Math.floor(Math.random() * 0x80000000)
     net.send({ t: 'start', difficulty: difficulty.value, mode: mode.value, sector: sector.value, seed })
     startGame(difficulty.value, mode.value, sector.value, seed)
     return
   }
+  void enterGameScreen()
   saveName()
   initUiSound()
   startGame(difficulty.value, mode.value, sector.value)
@@ -125,6 +128,7 @@ function setConnectionHandlers(role) {
 }
 
 async function hostGame() {
+  void enterGameScreen()
   saveName()
   const code = Math.random().toString(36).slice(2, 6).toUpperCase()
   roomError.value = ''
@@ -178,6 +182,7 @@ async function joinGame() {
   saveName()
   const code = joinCode.value.trim().toUpperCase()
   if (!code) return
+  void enterGameScreen()
   roomError.value = ''
   net.myEquipped = { ...profile.cosmetics.equipped }
   appState.mp.role = 'client'
@@ -225,7 +230,7 @@ function toggleReady() {
 
     <div class="relative z-10 my-auto flex flex-col items-center text-center px-4 sm:px-6 w-full">
       <!-- Emblem -->
-      <svg viewBox="0 0 64 64" class="w-20 h-20 mb-6 drop-shadow-[0_0_18px_rgba(108,200,255,0.6)]">
+      <svg viewBox="0 0 64 64" class="emblem w-20 h-20 mb-6 drop-shadow-[0_0_18px_rgba(108,200,255,0.6)]">
         <polygon points="32,6 53,18 53,42 32,54 11,42 11,18" fill="none" stroke="#6cc8ff" stroke-width="2.5" />
         <polygon points="32,18 43,32 32,46 21,32" fill="#8be9fd" opacity="0.9" />
       </svg>
@@ -233,7 +238,7 @@ function toggleReady() {
       <h1 class="title">SPACE GAME</h1>
       <p class="subtitle">MISSION&nbsp;PLUS</p>
 
-      <p class="mt-4 max-w-md text-sm text-cyan-200/60 leading-relaxed">
+      <p class="tagline mt-4 max-w-md text-sm text-cyan-200/60 leading-relaxed">
         Expande tu red de energía desde el Núcleo, mina meteoritos, construye
         defensas y sobrevive a <b class="text-cyan-200">{{ MODES[mode].waveCount }} oleadas</b> de la horda.
       </p>
@@ -274,6 +279,19 @@ function toggleReady() {
         <button class="menu-btn" @click="openView('research')">🔬 Investigación</button>
         <button class="menu-btn menu-btn--shop" @click="openView('shop')">🛒 Tienda</button>
         <button class="menu-btn" @click="settingsOpen = true">⚙ Ajustes</button>
+        <button v-if="canFullscreen" class="menu-btn" @click="toggleFullscreen">
+          {{ isFullscreen ? '🗗 Salir de pantalla completa' : '⛶ Pantalla completa' }}
+        </button>
+        <button
+          v-if="isTouch"
+          class="menu-btn"
+          role="switch"
+          :aria-checked="preferLandscape"
+          :class="{ 'menu-btn--on': preferLandscape }"
+          @click="preferLandscape = !preferLandscape; sfxUi('click')"
+        >
+          📱 Jugar en horizontal: {{ preferLandscape ? 'Sí' : 'No' }}
+        </button>
       </div>
 
       <!-- Modo -->
@@ -324,7 +342,7 @@ function toggleReady() {
       <!-- Difficulty -->
       <div class="mt-4">
         <p class="text-xs text-cyan-300/50 mb-2 tracking-widest">DIFICULTAD</p>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap justify-center gap-2">
           <button
             v-for="(d, key) in DIFFICULTY"
             :key="key"
@@ -339,7 +357,7 @@ function toggleReady() {
 
       <button
         v-if="appState.mp.role !== 'client'"
-        class="play-btn mt-8"
+        class="play-btn play-btn--inline mt-8"
         :disabled="appState.mp.status === 'connecting' || appState.mp.status === 'reconnecting'"
         @click="play"
       >JUGAR</button>
@@ -402,6 +420,14 @@ function toggleReady() {
         <p>Clic derecho o Esc para cancelar · usa Nodos para extender la red.</p>
         <p>Habilidades del comandante: Z Mega Rayo · C EMP · V Reparación · B Bombardeo · N adelanta la oleada.</p>
       </div>
+    </div>
+    <!-- Barra fija con JUGAR para pantallas angostas (CSS la muestra solo ahí) -->
+    <div v-if="appState.mp.role !== 'client'" class="play-bar">
+      <button
+        class="play-btn play-btn--bar"
+        :disabled="appState.mp.status === 'connecting' || appState.mp.status === 'reconnecting'"
+        @click="play"
+      >JUGAR</button>
     </div>
     <Settings v-if="settingsOpen" :open="settingsOpen" @close="settingsOpen = false" />
   </div>
@@ -493,6 +519,36 @@ function toggleReady() {
 .mp-btn {
   @apply px-4 py-1.5 text-sm rounded-md bg-white/5 ring-1 ring-cyan-400/20
          text-cyan-200/80 hover:bg-cyan-400/10 hover:text-white active:scale-95 transition-all;
+}
+
+.menu-btn--on { @apply bg-cyan-400/20 text-white ring-cyan-300/60; }
+
+.play-bar { display: none; }
+
+/* Pantallas angostas o táctiles: JUGAR siempre a la vista y botones de al menos 44 px */
+@media (max-width: 639px), (pointer: coarse) {
+  .lobby { padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
+  .play-btn--inline { display: none; }
+  .play-bar {
+    display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    padding: 0.6rem 1rem calc(0.6rem + env(safe-area-inset-bottom));
+    background: linear-gradient(to top, rgba(5, 7, 15, 0.97) 70%, rgba(5, 7, 15, 0));
+  }
+  .play-btn--bar { display: block; width: 100%; max-width: 28rem; margin: 0 auto; min-height: 3.25rem; padding: 0.75rem 1rem; }
+  .menu-btn, .mp-btn, .diff-btn, .sector-btn, .ready-btn, .invite-go { min-height: 44px; }
+  .invite-x { width: 44px; height: 44px; }
+}
+/* Teléfono en horizontal (~360 px de alto): el encabezado ocupaba toda la pantalla. */
+@media (max-height: 450px) {
+  .emblem { width: 2.5rem; height: 2.5rem; margin-bottom: 0.4rem; }
+  .title { font-size: 2rem; letter-spacing: 0.1em; }
+  .subtitle { margin-top: 0.1rem; font-size: 0.8rem; }
+  .tagline { display: none; }
+}
+@media (max-width: 400px) {
+  .title { font-size: 2.4rem; letter-spacing: 0.08em; }
+  .subtitle { letter-spacing: 0.3em; }
+  .diff-btn { padding-left: 1rem; padding-right: 1rem; }
 }
 
 /* CSS starfield via layered radial-gradient dots that drift slowly. */

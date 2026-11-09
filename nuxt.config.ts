@@ -50,10 +50,16 @@ export default defineNuxtConfig({
     head: {
       htmlAttrs: { lang: 'es' },
       charset: 'utf-8',
-      viewport: 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no',
+      // viewport-fit=cover: en iPhone con notch el juego ocupa toda la pantalla (la HUD usa safe-area-inset).
+      viewport: 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover',
       title: 'Space Game Mission Plus — Defiende tu núcleo',
       meta: [
         { name: 'theme-color', content: '#05070f' },
+        // «Agregar a pantalla de inicio» abre sin barras del navegador (en iPhone es la única pantalla completa).
+        { name: 'mobile-web-app-capable', content: 'yes' },
+        { name: 'apple-mobile-web-app-capable', content: 'yes' },
+        { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
+        { name: 'apple-mobile-web-app-title', content: 'Space Game' },
         { name: 'description', content: 'Tower defense espacial: construye colectores, baterías y torretas láser/misiles, gestiona tu red de energía y sobrevive las oleadas. Juega solo o en cooperativo.' },
         { name: 'twitter:card', content: 'summary_large_image' },
         { name: 'twitter:title', content: 'Space Game Mission Plus' },
@@ -68,7 +74,8 @@ export default defineNuxtConfig({
       ],
       link: [
         { rel: 'icon', type: 'image/png', href: '/assets/icon/Gemini_Generated_Image_wh42b6wh42b6wh42.png' },
-        { rel: 'apple-touch-icon', href: '/assets/icon/Gemini_Generated_Image_wh42b6wh42b6wh42.png' },
+        { rel: 'apple-touch-icon', href: '/assets/icon/apple-touch-180.png' },
+        { rel: 'manifest', href: '/manifest.webmanifest' },
         { rel: 'canonical', href: 'https://space-game-mission-plus.vercel.app/' },
       ],
     },
