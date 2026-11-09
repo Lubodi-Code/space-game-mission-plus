@@ -18,7 +18,7 @@ body,
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Pantalla de juego: sin scroll de página (lo pone pages/jugar.vue). */
+/* Pantalla de juego: sin scroll de página (lo pone pages/index.vue). */
 html.game-lock,
 html.game-lock body,
 html.game-lock #__nuxt {

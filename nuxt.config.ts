@@ -9,13 +9,15 @@ export default defineNuxtConfig({
 
   modules: ['@nuxtjs/tailwindcss'],
 
-  // Portada con SSR + prerender (SEO); el juego es solo cliente (Phaser/Three usan window).
+  // El juego es la página principal y es solo cliente (Phaser/Three usan window); '/jugar' es su alias.
+  // Mientras baja el bundle se muestra spa-loading-template.html (los metadatos para redes salen de app.head).
   // Escritorio (Electron): SPA estático puro, sin SSR; las rutas server/ se reenvían a Vercel.
   ssr: !process.env.NUXT_DESKTOP,
   routeRules: {
-    '/': { prerender: true },
+    '/': { ssr: false },
     '/jugar': { ssr: false },
   },
+  spaLoadingTemplate: 'spa-loading-template.html',
 
   css: ['~/style.css'],
 
@@ -46,6 +48,7 @@ export default defineNuxtConfig({
 
   app: {
     head: {
+      htmlAttrs: { lang: 'es' },
       charset: 'utf-8',
       viewport: 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no',
       title: 'Space Game Mission Plus — Defiende tu núcleo',
